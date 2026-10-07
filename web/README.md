@@ -83,6 +83,7 @@ whether Python may use the network: allow it for **private networks**. (The PIN 
 | Correct the text | Click the pencil button in the **Text** tab for all the tools (see below). |
 | Choose the voice and speed | Click the sliders button next to **Off** (the settings), **Voice** tab. |
 | Pause between sentences | In the same place, **Pause between sentences** adds silence after each sentence (from none up to 10 seconds) before the next one is read — time to repeat it aloud. The bar at the bottom counts down. |
+| Follow the reading | The sentence being read stays **in the middle of the page** (and of the Text list) while the app reads or an MP3 plays. When you scroll, swipe or zoom the page yourself, it stays where you put it; a **Back to the reading** button appears, and after a few seconds it follows again by itself. The button with the target in the reading bar (or **F**) switches following off and on. Settings → **Follow**: on/off, where on the page (middle, near the top, or only when the sentence leaves the screen), scrolling speed, how long to wait after you scroll, and the Text list. |
 | Repeat each sentence | In the same place, **Repeat each sentence**: once, 2 … 10 times, or **∞** (again and again until you click another sentence, pause or stop). The bar at the bottom shows “2nd time of 3”. The pause between sentences is also made between the repeats. It works for your My audio MP3s too. Quicker: the **repeat** button at the top (next to the translate button) — each click goes 2, 3, 4, 5 times, ∞, then back to once; the number shows on the button. **R** does the same. |
 | Copy or save the page text | Use the copy and save buttons in the **Text** tab. You can also save a whole book's text. |
 | Listen to recordings | Click a red **headphones** button on the page. The audio script appears in the **Script** tab and follows the recording. Click a line to jump to it. |
@@ -111,6 +112,7 @@ whether Python may use the network: allow it for **private networks**. (The PIN 
 | E | Start or finish correcting the text |
 | L | Show or hide the translations in the Text list |
 | R | Repeat each sentence: once → 2 → 3 → 4 → 5 → ∞ → once |
+| F | Follow the reading (keep the sentence being read in view): on / off |
 | Ctrl+Z | Undo the last correction |
 
 ## Correcting the text

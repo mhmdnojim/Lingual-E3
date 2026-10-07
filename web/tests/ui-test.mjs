@@ -439,6 +439,133 @@ async function libraryChecks(page) {
   check('…and delete it again', (await page.$$('.book-card')).length === 0);
 }
 
+/** How far (px) the sentence being read is from the middle of the page area that can be seen. */
+const activeOffMiddle = (page) => page.evaluate(() => {
+  const it = window.aef.reader.active;
+  if (!it) return 9999;
+  const st = document.querySelector('#stage').getBoundingClientRect();
+  const pill = document.querySelector('#reading-pill');
+  const bottom = pill.hidden ? st.bottom : pill.getBoundingClientRect().top - 8;
+  const rs = [...document.querySelectorAll('.hl-active rect')].map((r) => r.getBoundingClientRect());
+  const mid = (Math.min(...rs.map((r) => r.top)) + Math.max(...rs.map((r) => r.bottom))) / 2;
+  return Math.round(Math.abs(mid - (st.top + bottom) / 2));
+});
+
+/**
+ * Following the reading: the sentence being read stays in the middle of the page, unless the
+ * person scrolls away (then "Back to the reading", and it follows again after the wait).
+ */
+async function followChecks(page) {
+  await gotoPage(page, '#/1705/25');
+  await page.evaluate(() => {
+    window.realSpeak = speechSynthesis.speak;
+    speechSynthesis.speak = () => {}; // silent: the test says when a sentence is finished
+    const a = window.aef;
+    a.zoom = { mode: 'width', w: a.pageW };
+    a.applyZoom();
+  });
+  // The Follow tab of the settings: jump at once (so the test does not wait for scrolling).
+  await page.click('#btn-voice');
+  await page.click('#voice-pop [role=tab][data-ptab="follow"]');
+  const tab = await page.evaluate(() => !document.querySelector('#voice-pop .pop-body[data-ptab="follow"]').hidden
+    && document.querySelector('#follow-on').checked && document.querySelectorAll('#follow-where button').length === 3);
+  const setRange = (sel, v) => page.$eval(sel, (i, val) => { i.value = val; i.dispatchEvent(new Event('input', { bubbles: true })); }, v);
+  await setRange('#follow-speed', '0');
+  const speedOut = await page.$eval('#follow-speed-out', (o) => o.textContent);
+  await page.keyboard.press('Escape');
+  await page.click('#btn-voice'); // close it
+  await sleep(200);
+  check('Follow tab in the settings: on, where on the page, speed, wait, the Text list', tab && speedOut === 'jump at once');
+
+  const offMiddle = () => activeOffMiddle(page);
+  const scrollTop = () => page.$eval('#stage', (s) => Math.round(s.scrollTop));
+  // Start reading a sentence in the lower half of the page.
+  await page.evaluate(() => {
+    const a = window.aef, v = a.views[0], t = v.text;
+    const s = t.sent.findIndex(([x, y]) => (t.rects(x, y)[0] || { y: 0 }).y > 1000); // the middle of the page
+    a.reader.start(v, t.unit('sentence', s), true);
+  });
+  await sleep(400);
+  const first = await offMiddle();
+  await page.evaluate(() => window.aef.reader.finished());
+  await sleep(400);
+  const second = await offMiddle();
+  check('Following: the sentence being read is in the middle of the page, also the next one', first < 40 && second < 40, `${first}px, ${second}px from the middle`);
+
+  // The person scrolls away: the page stays where they put it; "Back to the reading" appears.
+  const st = await page.$eval('#stage', (s) => { const r = s.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 3 }; });
+  await page.mouse.move(st.x, st.y);
+  await page.mouse.wheel({ deltaY: -500 });
+  await sleep(300);
+  const away = await scrollTop();
+  await page.evaluate(() => window.aef.reader.finished());
+  await sleep(400);
+  const stayed = Math.abs((await scrollTop()) - away) < 3;
+  const backShown = await page.$eval('#follow-back', (b) => !b.hidden);
+  check('…when you scroll the page yourself it stays there (the next sentence does not pull it back); “Back to the reading” appears',
+    stayed && backShown, `scrolled to ${away}px`);
+  await page.click('#follow-back');
+  await sleep(300);
+  check('…“Back to the reading” brings the sentence being read back to the middle', (await offMiddle()) < 40 && await page.$eval('#follow-back', (b) => b.hidden));
+
+  // After the wait it follows again by itself.
+  await page.click('#btn-voice');
+  await setRange('#follow-wait', '1');
+  await page.click('#btn-voice');
+  await page.mouse.move(st.x, st.y);
+  await page.mouse.wheel({ deltaY: -500 });
+  await sleep(250);
+  const during = await offMiddle();
+  await sleep(1300);
+  check('…and after the wait (here 1 s) it follows again by itself', during > 100 && (await offMiddle()) < 40, `${during}px away, then back`);
+
+  // Switched off (button in the reading bar): the page is not moved.
+  await page.click('#reading-follow');
+  const off = await page.$eval('#reading-follow', (b) => b.getAttribute('aria-pressed'));
+  await page.mouse.move(st.x, st.y);
+  await page.mouse.wheel({ deltaY: -500 });
+  await sleep(1400);
+  const at = await scrollTop();
+  await page.evaluate(() => window.aef.reader.finished());
+  await sleep(400);
+  const notMoved = Math.abs((await scrollTop()) - at) < 3;
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.keyboard.press('f'); // on again: back to the reading at once
+  await sleep(400);
+  check('…the button in the reading bar (or F) switches following off and on', off === 'false' && notMoved
+    && (await page.$eval('#reading-follow', (b) => b.getAttribute('aria-pressed'))) === 'true' && (await offMiddle()) < 40);
+
+  // Near the top.
+  await page.click('#btn-voice');
+  await page.click('#follow-where [data-where="top"]');
+  await page.click('#btn-voice');
+  await page.evaluate(() => {
+    const a = window.aef, v = a.views[0], t = v.text;
+    a.reader.start(v, t.unit('sentence', t.sent.findIndex(([x, y]) => (t.rects(x, y)[0] || { y: 0 }).y > 1100)), true);
+  });
+  await sleep(400);
+  const nearTop = await page.evaluate(() => {
+    const st = document.querySelector('#stage').getBoundingClientRect();
+    const top = Math.min(...[...document.querySelectorAll('.hl-active rect')].map((r) => r.getBoundingClientRect().top));
+    return (top - st.top) / st.height;
+  });
+  check('…“Near the top” puts the sentence near the top of the page', nearTop > 0.08 && nearTop < 0.3, `${Math.round(nearTop * 100)}% down`);
+
+  // Back to the usual settings.
+  await page.click('#btn-voice');
+  await page.click('#follow-where [data-where="center"]');
+  await setRange('#follow-speed', '500');
+  await setRange('#follow-wait', '4');
+  await page.click('#btn-voice');
+  await page.click('#reading-stop');
+  await page.evaluate(() => {
+    speechSynthesis.speak = window.realSpeak;
+    const a = window.aef;
+    a.zoom = { mode: 'page', w: a.pageW };
+    a.applyZoom();
+  });
+}
+
 /** Phones: the layout at iPhone size, and the app used with touches only (tap, swipe, pinch, double tap). */
 async function phoneChecks(browser, problems) {
   const page = await browser.newPage();
@@ -525,6 +652,31 @@ async function phoneChecks(browser, problems) {
   await sleep(400);
   check('Phone: a double tap on a sentence in the list opens it for correcting', !!(await page.$('#text-view .qedit textarea')));
   await page.keyboard.press('Escape');
+
+  // Following the reading on a phone: in the middle of the page above the panel; a swipe pauses it.
+  // (The pinch above counts as looking around: following waits until that is a few seconds ago.)
+  await page.waitForFunction(() => !window.aef.follower.stage.busy(), { timeout: 10000 });
+  await page.evaluate(() => {
+    const a = window.aef, v = a.views[0], t = v.text;
+    const s = t.sent.findIndex(([x, y]) => (t.rects(x, y)[0] || { y: 0 }).y > 1000); // the middle of the page
+    a.reader.start(v, t.unit('sentence', s), true);
+  });
+  await sleep(1000);
+  const centred = await activeOffMiddle(page);
+  // (On the page, above the reading bar.)
+  const sy = await page.$eval('#stage', (st) => Math.round(st.getBoundingClientRect().top + 40));
+  await touch('touchStart', [[200, sy]]);
+  for (let k = 1; k <= 6; k++) { await touch('touchMove', [[200, sy + k * 30]]); await sleep(16); }
+  await touch('touchEnd', []);
+  await sleep(400);
+  const swiped = await page.$eval('#stage', (s) => s.scrollTop);
+  await page.evaluate(() => window.aef.reader.finished());
+  await sleep(900);
+  const kept = Math.abs((await page.$eval('#stage', (s) => s.scrollTop)) - swiped) < 3;
+  const backShown = await page.$eval('#follow-back', (b) => !b.hidden);
+  check('Phone: the sentence being read stays in the middle of the page; swiping the page yourself pauses that',
+    centred < 40 && kept && backShown, `${centred}px from the middle; swiped to ${swiped}px, kept ${kept}, back button ${backShown}`);
+  await page.evaluate(() => window.aef.reader.stop());
 
   // Settings: as wide as the screen.
   await page.click('#btn-voice');
@@ -1177,6 +1329,9 @@ try {
   // ONLY=phone, ONLY=library or ONLY=website runs just those checks (quicker while working on one part).
   const only = process.env.ONLY;
   if (!only) await desktopChecks(browser, page, problems);
+
+  // Following the reading (the sentence being read stays in view)
+  if (!only || only === 'follow') await followChecks(page);
 
   // The library on this computer
   if (!only || only === 'library') await libraryChecks(page);

@@ -333,6 +333,17 @@ body.hide-hotspots .hotspots { display: none; }
   background: var(--surface); border: 1px solid var(--line); border-radius: 999px;
   box-shadow: var(--shadow); z-index: 5;
 }
+/* Following the reading: back to the sentence being read after scrolling away. */
+.follow-back {
+  position: absolute; bottom: 72px; left: 50%; transform: translateX(-50%); z-index: 5;
+  display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 14px;
+  border: 1px solid var(--accent); border-radius: 999px; background: var(--surface); color: var(--accent);
+  font-weight: 600; box-shadow: var(--shadow); white-space: nowrap;
+}
+.follow-back:hover { background: var(--accent-soft); }
+.follow-back .i { width: 16px; height: 16px; }
+.reading-pill #reading-follow { margin-left: -2px; }
+.follow-where { flex-wrap: wrap; margin-bottom: 14px; }
 .pulse { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .3; } }
 .reading-pill.paused .pulse { animation: none; background: var(--muted); }
@@ -793,7 +804,12 @@ body { height: 100dvh; }
   .hs { min-width: 28px; height: 28px; padding: 0 6px; }
   .stage { touch-action: pan-x pan-y; }
   body.marking .stage { touch-action: none; }
-  .reading-pill { bottom: 10px; max-width: calc(100% - 16px); padding-left: 10px; }
+  .reading-pill { bottom: 10px; max-width: calc(100% - 16px); padding-left: 10px; gap: 6px; }
+  /* One line: the buttons show only their icons (their names are in their tooltips). */
+  #reading-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; min-width: 0; }
+  .reading-pill .btn.small { font-size: 0; gap: 0; width: 34px; padding: 0; justify-content: center; }
+  .reading-pill .btn.small .i { width: 17px; height: 17px; }
+  .follow-back { bottom: 60px; }
   .reading-pill .btn { padding: 0 10px; }
   .player { padding: 6px 10px calc(6px + env(safe-area-inset-bottom)); gap: 8px; }
   .toast { bottom: calc(var(--sheet-h) + 70px); max-width: calc(100vw - 24px); text-align: center; }

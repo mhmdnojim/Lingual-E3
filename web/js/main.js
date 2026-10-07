@@ -7,6 +7,7 @@ import { TextEditor } from './editor.js';
 import { Recordings } from './recordings.js';
 import { Translator } from './translation.js';
 import { Library } from './library.js';
+import { Follower, followSettings, setFollow } from './follow.js';
 
 const RATIO = 1984 / 2496;
 const NEEDS_API = 6; // server features this page needs (API_VERSION in web/server.py)
@@ -232,8 +233,8 @@ class Reader {
     if (item) {
       this.app.focus = { view: item.view, w: item.unit.a };
       item.view.showActive(item.unit);
-      this.app.reveal(item.view, item.unit);
-      if (center) this.app.centerPanel(item.view, item.unit);
+      // Keep it in view on the page (and in the Text list), unless the person is looking elsewhere.
+      this.app.follower.reading(item.view, item.unit, center);
     }
   }
 
@@ -283,10 +284,12 @@ class App {
     this.recordings = new Recordings(this);
     this.translator = new Translator(this);
     this.library = new Library(this);
+    this.follower = new Follower(this);
     initDialog();
 
     this.bindToolbar();
     this.bindVoice();
+    this.bindFollow();
     this.bindDrawer();
     this.bindPanel();
     this.bindTouch();
@@ -627,20 +630,8 @@ class App {
 
   layoutChanged() { requestAnimationFrame(() => this.applyZoom()); }
 
-  /** Scroll the page area so a unit is comfortably visible (or centred). */
-  reveal(view, unit, center = false) {
-    const st = $('#stage');
-    const box = view.unitBox(unit);
-    if (!box) return;
-    const pr = view.el.getBoundingClientRect(), sr = st.getBoundingClientRect();
-    const top = pr.top - sr.top + st.scrollTop + box.y;
-    const left = pr.left - sr.left + st.scrollLeft + box.x;
-    const out = top < st.scrollTop + 30 || top + box.h > st.scrollTop + st.clientHeight - 70;
-    if (center || out) st.scrollTo({ top: top - st.clientHeight / 3, behavior: 'smooth' });
-    if (left < st.scrollLeft || left + Math.min(box.w, st.clientWidth) > st.scrollLeft + st.clientWidth) {
-      st.scrollTo({ left: left - 40, behavior: 'smooth' });
-    }
-  }
+  /** Scroll the page area so a unit is comfortably visible (or centred). Reading: follower.reading. */
+  reveal(view, unit, center = false) { this.follower.reveal(view, unit, center); }
 
   /** Scroll the text list so a unit sits in the middle of it. */
   centerPanel(view, unit, smooth = true) {
@@ -691,7 +682,7 @@ class App {
     const bar = [...box.querySelectorAll('.panel-actions')].find((x) => !x.hidden);
     const top = b.top + (bar ? bar.offsetHeight : 0);
     const mid = (r1.top + r2.bottom) / 2;
-    box.scrollTo({ top: box.scrollTop + mid - (top + b.bottom) / 2, behavior: smooth ? 'smooth' : 'auto' });
+    this.follower.listTo(box.scrollTop + mid - (top + b.bottom) / 2, smooth);
   }
 
   // ---------- Highlights ----------
@@ -737,6 +728,7 @@ class App {
   readingChanged(state, label = '', waiting = false) {
     const pill = $('#reading-pill');
     pill.hidden = state === 'idle';
+    if (state === 'idle') this.follower.stopped();
     pill.classList.toggle('paused', state === 'paused' || waiting);
     $('#reading-label').textContent = waiting ? label : state === 'paused' ? `Paused · ${label}` : `Reading ${label}`;
     $('#reading-toggle').innerHTML = state === 'paused' ? `${icon('play')}Continue` : `${icon('pause')}Pause`;
@@ -1088,6 +1080,28 @@ class App {
     this.group.forEach((i) => box.children[i]?.classList.add('current'));
   }
 
+  // ---------- Following the reading (settings, Follow tab) ----------
+
+  bindFollow() {
+    const on = $('#follow-on'), list = $('#follow-list'), speed = $('#follow-speed'), wait = $('#follow-wait');
+    this.syncFollowSettings = () => {
+      on.checked = followSettings.on;
+      list.checked = followSettings.list;
+      speed.value = followSettings.speed;
+      wait.value = followSettings.wait;
+      $('#follow-speed-out').textContent = followSettings.speed ? `${(followSettings.speed / 1000).toFixed(1)} s` : 'jump at once';
+      $('#follow-wait-out').textContent = `${followSettings.wait} s`;
+      $$('#follow-where button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.where === followSettings.where)));
+      $('#follow-body')?.classList.toggle('off', !followSettings.on);
+    };
+    on.addEventListener('change', () => { if (on.checked !== followSettings.on) this.follower.toggle(); });
+    list.addEventListener('change', () => setFollow('list', list.checked));
+    speed.addEventListener('input', () => { setFollow('speed', Number(speed.value)); this.syncFollowSettings(); });
+    wait.addEventListener('input', () => { setFollow('wait', Number(wait.value)); this.syncFollowSettings(); });
+    $$('#follow-where button').forEach((b) => b.addEventListener('click', () => { setFollow('where', b.dataset.where); this.syncFollowSettings(); }));
+    this.syncFollowSettings();
+  }
+
   // ---------- Voice popover ----------
 
   bindVoice() {
@@ -1230,6 +1244,7 @@ class App {
       else if (k === 'e' || k === 'E') { if (this.editor.active) this.editor.stop(); else this.editor.start(); }
       else if (k === 'l' || k === 'L') this.translator.setList(!(this.translator.listOn && this.translator.lang));
       else if (k === 'r' || k === 'R') this.cycleRepeat();
+      else if (k === 'f' || k === 'F') this.follower.toggle();
       else if (k === '/') { e.preventDefault(); $('#search-input').focus(); }
       else if (k === ' ') {
         if (this.reader.busy) { e.preventDefault(); this.reader.toggle(); }

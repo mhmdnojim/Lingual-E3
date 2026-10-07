@@ -299,8 +299,7 @@ export class Recordings {
         const unit = { mode: 'sentence', a: range.a, b: range.b };
         view.showActive(unit);
         this.app.markPanel('active', view, unit);
-        this.app.reveal(view, unit);
-        this.app.centerPanel(view, unit);
+        this.app.follower.reading(view, unit); // keep it in view, unless the person looks elsewhere
         this.app.focus = { view, w: range.a };
       }
     }
@@ -315,6 +314,7 @@ export class Recordings {
 
   unfollow() {
     if (this.followKey === undefined) return;
+    this.app.follower.stopped();
     this.followKey = undefined;
     this.followWord = -1;
     this.app.views.forEach((v) => { v.showActive(null); v.showWord(-1); });

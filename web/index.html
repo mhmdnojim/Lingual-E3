@@ -111,6 +111,7 @@
   <div class="tabs pop-tabs" role="tablist" aria-label="Settings">
     <button role="tab" data-ptab="voice" aria-selected="true"><svg class="i"><use href="#i-volume"/></svg>Voice</button>
     <button role="tab" data-ptab="translation" aria-selected="false"><svg class="i"><use href="#i-languages"/></svg>Translation</button>
+    <button role="tab" data-ptab="follow" aria-selected="false"><svg class="i"><use href="#i-target"/></svg>Follow</button>
   </div>
   <div class="pop-body" data-ptab="voice">
   <label class="field"><span>Voice</span><select id="voice-select" class="select"></select></label>
@@ -120,6 +121,19 @@
   <label class="check"><input type="checkbox" id="follow-input" checked> Highlight each word while reading</label>
   <button class="btn" id="voice-test"><svg class="i"><use href="#i-volume"/></svg>Test voice</button>
   <p class="hint" id="voice-hint"></p>
+  </div>
+  <div class="pop-body" data-ptab="follow" hidden>
+  <label class="check"><input type="checkbox" id="follow-on"> <span>Keep the sentence being read in view (<kbd>F</kbd>)</span></label>
+  <p class="sub-head">Where on the page</p>
+  <div class="seg follow-where" id="follow-where" role="radiogroup" aria-label="Where on the page">
+    <button type="button" role="radio" data-where="center">In the middle</button>
+    <button type="button" role="radio" data-where="top">Near the top</button>
+    <button type="button" role="radio" data-where="edge" title="Only scroll when the sentence leaves the screen">When needed</button>
+  </div>
+  <label class="field"><span>Scrolling speed <output id="follow-speed-out"></output></span><input type="range" id="follow-speed" min="0" max="2000" step="100" value="500"></label>
+  <label class="field"><span>After you scroll the page yourself, wait <output id="follow-wait-out"></output></span><input type="range" id="follow-wait" min="1" max="20" step="1" value="4"></label>
+  <label class="check"><input type="checkbox" id="follow-list"> <span>Also keep it in the middle of the Text list</span></label>
+  <p class="hint">While you scroll, swipe or zoom the page yourself, the page stays where you put it. It follows the reading again after the wait — or at once with <b>Back to the reading</b>. Tapping a sentence does not count as scrolling.</p>
   </div>
   <div class="pop-body" data-ptab="translation" hidden>
   <label class="field"><span>Translate into</span><select id="tr-lang" class="select"><option value="">Loading…</option></select></label>
@@ -176,7 +190,10 @@
       <span class="pulse" aria-hidden="true"></span><span id="reading-label">Reading</span>
       <button class="btn small" id="reading-toggle" title="Pause or continue (Space)"><svg class="i"><use href="#i-pause"/></svg>Pause</button>
       <button class="btn small" id="reading-stop" title="Stop (Esc)"><svg class="i"><use href="#i-stop"/></svg>Stop</button>
+      <button class="icon-btn small" id="reading-follow" title="Follow the reading (F)" aria-label="Follow the reading" aria-pressed="true"><svg class="i"><use href="#i-target"/></svg></button>
     </div>
+    <!-- Shown when the person scrolled away while it reads: back to the sentence being read. -->
+    <button class="follow-back" id="follow-back" hidden><svg class="i"><use href="#i-target"/></svg>Back to the reading</button>
   </div>
 
   <aside class="panel" id="panel" aria-label="Side panel">

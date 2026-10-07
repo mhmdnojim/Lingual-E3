@@ -45,6 +45,7 @@ CODE_FILES = [
     ('web/js/segment.js', 'Clause splitting in the browser (same rules as segment_text.py).'),
     ('web/js/recordings.js', 'My audio: choosing sentences, creating natural-voice MP3s, the list, the page icons, highlighting while they play.'),
     ('web/js/translation.js', 'Translation: the language menu, translations under each sentence, the popup on the page, the whole book.'),
+    ('web/js/follow.js', 'Following the reading: the sentence being read stays in view, unless the person scrolls away.'),
     ('web/js/library.js', 'The library (home screen): books, adding a book, settings and sharing, reports, accounts, the admin page.'),
     ('web/js/util.js', 'Helpers: element creation, saved settings, JSON loading, downloads, messages.'),
     ('web/server.py', 'Local web server (127.0.0.1): files with HTTP Range support, and the API for text corrections and My audio.'),
@@ -70,7 +71,7 @@ CODE_FILES = [
     ('web/tools/build_all.ps1', 'Runs all build steps in order (and downloads Ruffle).'),
     ('web/tools/make_icons.py', 'Makes the app icons (home screen of phones, browser tab).'),
     ('web/tests/harness.mjs', 'Test setup: starts the server, finds Edge/Chrome, helpers.'),
-    ('web/tests/ui-test.mjs', 'End-to-end test of every feature, at desktop and phone size, and the login (140 checks).'),
+    ('web/tests/ui-test.mjs', 'End-to-end test of every feature, at desktop and phone size, and the login (148 checks).'),
     ('web/tests/capture-screenshots.mjs', 'Takes the screenshots used in this guide.'),
     ('web/tests/package.json', 'Test dependencies (puppeteer-core).'),
     ('deploy/README.md', 'Putting Lingua Books online: a VPS, the domain, HTTPS, updates, backups.'),
@@ -123,7 +124,8 @@ TREE = [
                 ('media.js', 'audio, transcripts, video, answer keys'), ('search.js', 'search'),
                 ('editor.js', 'text corrections'), ('segment.js', 'clause rules for corrections'),
                 ('recordings.js', 'My audio (natural-voice MP3s)'), ('translation.js', 'translations'),
-                ('library.js', 'the library, adding books, accounts, admin'), ('util.js', 'helpers')]]},
+                ('library.js', 'the library, adding books, accounts, admin'), ('follow.js', 'following the reading'),
+                ('util.js', 'helpers')]]},
         {'name': 'tools', 'kind': 'dir', 'desc': 'build scripts (run once)', 'children': [
             {'name': n, 'kind': 'code', 'path': f'web/tools/{n}', 'desc': d} for n, d in [
                 ('build_all.ps1', 'runs every step'), ('common.py', 'shared paths'), ('stitch_pages.py', 'step 1: tiles → page images'),
@@ -132,7 +134,7 @@ TREE = [
                 ('make_icons.py', 'app icons')]]},
         {'name': 'tests', 'kind': 'dir', 'desc': 'browser tests (Puppeteer)', 'children': [
             {'name': n, 'kind': 'code', 'path': f'web/tests/{n}', 'desc': d} for n, d in [
-                ('ui-test.mjs', '140 feature checks'), ('capture-screenshots.mjs', 'guide screenshots'),
+                ('ui-test.mjs', '148 feature checks'), ('capture-screenshots.mjs', 'guide screenshots'),
                 ('harness.mjs', 'shared test setup'), ('package.json', 'dependencies')]]},
         {'name': 'data', 'kind': 'gen', 'desc': 'everything the app reads (made by the build)', 'children': [
             {'name': 'books.json', 'kind': 'gen', 'desc': 'books, pages, hotspots, resources'},
