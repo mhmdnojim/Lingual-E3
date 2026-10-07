@@ -333,15 +333,21 @@ body.hide-hotspots .hotspots { display: none; }
   background: var(--surface); border: 1px solid var(--line); border-radius: 999px;
   box-shadow: var(--shadow); z-index: 5;
 }
-/* Following the reading: back to the sentence being read after scrolling away. */
+/* Following the reading: when the word being read is not on the screen, it is shown at the top
+   middle (word by word); the arrow points to where it is. A click brings the reading back. */
 .follow-back {
-  position: absolute; bottom: 72px; left: 50%; transform: translateX(-50%); z-index: 5;
-  display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 14px;
-  border: 1px solid var(--accent); border-radius: 999px; background: var(--surface); color: var(--accent);
-  font-weight: 600; box-shadow: var(--shadow); white-space: nowrap;
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 6;
+  display: inline-flex; align-items: center; gap: 5px; max-width: min(86%, 380px); height: 36px; padding: 0 4px 0 7px;
+  border: 0; border-radius: 11px; background: #1f2229; color: #fff; box-shadow: 0 6px 18px rgba(0, 0, 0, .28);
 }
-.follow-back:hover { background: var(--accent-soft); }
-.follow-back .i { width: 16px; height: 16px; }
+.follow-back .fb-arrow { width: 17px; height: 17px; flex: none; transition: transform .15s; }
+.follow-back.down .fb-arrow { transform: rotate(180deg); }
+.follow-back.side .fb-arrow { transform: rotate(90deg); }
+.fb-word {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 4px 11px; border-radius: 8px; background: var(--accent); color: var(--accent-ink); font-weight: 600; font-size: 14.5px;
+}
+.follow-back:hover .fb-word { background: var(--accent-hover); }
 .reading-pill #reading-follow { margin-left: -2px; }
 .follow-where { flex-wrap: wrap; margin-bottom: 14px; }
 .pulse { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
@@ -809,7 +815,7 @@ body { height: 100dvh; }
   #reading-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; min-width: 0; }
   .reading-pill .btn.small { font-size: 0; gap: 0; width: 34px; padding: 0; justify-content: center; }
   .reading-pill .btn.small .i { width: 17px; height: 17px; }
-  .follow-back { bottom: 60px; }
+  .follow-back { top: 8px; }
   .reading-pill .btn { padding: 0 10px; }
   .player { padding: 6px 10px calc(6px + env(safe-area-inset-bottom)); gap: 8px; }
   .toast { bottom: calc(var(--sheet-h) + 70px); max-width: calc(100vw - 24px); text-align: center; }

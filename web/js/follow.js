@@ -1,9 +1,10 @@
 // Following the reading: the sentence being read (or played from an MP3) stays in view — in the
 // middle of the page by default — unless the person is looking somewhere else. While they scroll,
 // swipe or zoom the page (or scroll the Text list), that area waits; it follows again a few
-// seconds after they stop, or at once with "Back to the reading". A plain tap on a sentence does
-// not count as looking elsewhere. Settings: the Follow tab of the settings box (and F, or the
-// button in the reading bar, to switch it on and off).
+// seconds after they stop. A plain tap on a sentence does not count as looking elsewhere.
+// When the word being read is not on the screen, it is shown at the top middle of the page, word
+// by word, with an arrow to where it is: a click brings the reading back to the middle.
+// Settings: the Follow tab of the settings box (and F, or the button in the reading bar).
 import { $, store, toast } from './util.js';
 
 export const followSettings = {
@@ -94,7 +95,7 @@ class Area {
       el.scrollTop = t0 + (top - t0) * k;
       el.scrollLeft = l0 + (left - l0) * k;
       if (p < 1) this.raf = requestAnimationFrame(step);
-      else { this.animating = false; this.ours = Date.now() + 150; }
+      else { this.animating = false; this.ours = Date.now() + 150; this.onDone?.(); }
     };
     this.raf = requestAnimationFrame(step);
   }
@@ -104,9 +105,13 @@ export class Follower {
   constructor(app) {
     this.app = app;
     this.stage = new Area($('#stage'), () => this.userMoved());
+    this.stage.onDone = () => this.scheduleBadge(); // (no box while the page scrolls there itself)
     this.list = new Area($('#text-view').closest('.tab-body'));
     this.current = null; // {view, unit}: being read or played
+    this.wordIdx = -1;   // the word being read in it (if the voice tells)
     $('#follow-back').addEventListener('click', () => this.backToReading());
+    this.stage.el.addEventListener('scroll', () => this.scheduleBadge(), { passive: true });
+    addEventListener('resize', () => this.scheduleBadge());
     $('#reading-follow').addEventListener('click', () => this.toggle());
     this.updateButtons();
   }
@@ -116,10 +121,19 @@ export class Follower {
   /** A new sentence is being read (or played): keep it in view, unless the person looks elsewhere. */
   reading(view, unit, list = true) {
     this.current = { view, unit };
+    this.wordIdx = -1;
+    this.scheduleBadge();
     if (!followSettings.on) return;
     if (this.stage.busy()) this.waitThenFollow();
     else this.placeOnPage(view, unit);
     if (list && followSettings.list && !this.list.busy()) this.app.centerPanel(view, unit);
+  }
+
+  /** The voice (or the MP3) is at word w: the box at the top shows it, if it is off the screen. */
+  wordShown(view, w) {
+    if (!this.current || view !== this.current.view || w < 0) return;
+    this.wordIdx = w;
+    this.scheduleBadge();
   }
 
   /** Reading (or playing) has ended. */
@@ -129,7 +143,37 @@ export class Follower {
     $('#follow-back').hidden = true;
   }
 
+  scheduleBadge() {
+    if (!this.badgeFrame) this.badgeFrame = requestAnimationFrame(() => this.updateBadge());
+  }
+
+  /**
+   * The box at the top middle: shown when the word being read is not on the screen (and the page
+   * is not on its way there): that word, and an arrow up, down or sideways to where it is.
+   */
+  updateBadge() {
+    this.badgeFrame = 0;
+    const b = $('#follow-back');
+    const c = this.current;
+    const following = followSettings.on && !this.stage.busy(); // the page will move there itself
+    if (!c || !this.isShown() || this.stage.animating || following) { b.hidden = true; return; }
+    const w = this.wordIdx >= c.unit.a && this.wordIdx < c.unit.b ? this.wordIdx : c.unit.a;
+    const box = c.view.unitBox({ a: w, b: w + 1 }) || c.view.unitBox(c.unit);
+    if (!box) { b.hidden = true; return; }
+    const st = this.stage.el.getBoundingClientRect(), pr = c.view.el.getBoundingClientRect();
+    const pill = $('#reading-pill');
+    const seenBottom = pill && !pill.hidden ? pill.getBoundingClientRect().top : st.bottom;
+    const top = pr.top + box.y, bottom = top + box.h, left = pr.left + box.x, right = left + box.w;
+    const above = bottom < st.top + 4, below = top > seenBottom - 4, aside = right < st.left + 4 || left > st.right - 4;
+    if (!above && !below && !aside) { b.hidden = true; return; }
+    $('#follow-word').textContent = (c.view.text.words[w]?.[4] || '').replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '') || '…';
+    b.classList.toggle('down', below);
+    b.classList.toggle('side', aside && !above && !below);
+    b.hidden = false;
+  }
+
   userMoved() {
+    this.scheduleBadge();
     if (!this.current || !followSettings.on) return;
     if (!this.isShown()) { this.current = null; return; } // reading ended or another page
     this.waitThenFollow();
@@ -140,14 +184,14 @@ export class Follower {
     return !!c && this.app.views.includes(c.view) && (this.app.reader.busy || this.app.audio.open);
   }
 
-  /** The person looks elsewhere: offer "Back to the reading", follow again after the wait. */
+  /** The person looks elsewhere: follow again after the wait (meanwhile the box shows the word). */
   waitThenFollow() {
-    $('#follow-back').hidden = false;
+    this.scheduleBadge();
     clearTimeout(this.timer);
     this.timer = setTimeout(() => {
       if (this.stage.busy()) { this.waitThenFollow(); return; }
-      $('#follow-back').hidden = true;
       if (this.isShown()) this.placeOnPage(this.current.view, this.current.unit);
+      this.scheduleBadge();
     }, this.stage.waitLeft() + 50);
   }
 
@@ -215,7 +259,8 @@ export class Follower {
     this.app.syncFollowSettings?.();
     toast(followSettings.on ? 'Following the reading: the sentence being read stays in view.' : 'Not following the reading: the page stays where it is.');
     if (followSettings.on) this.backToReading();
-    else { clearTimeout(this.timer); $('#follow-back').hidden = true; }
+    else clearTimeout(this.timer);
+    this.scheduleBadge();
   }
 
   updateButtons() {

@@ -19,6 +19,7 @@
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
     <symbol id="i-grid" viewBox="0 0 24 24"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></symbol>
+    <symbol id="i-chev-up" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></symbol>
     <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
     <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
     <symbol id="i-zoom-in" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></symbol>
@@ -192,8 +193,9 @@
       <button class="btn small" id="reading-stop" title="Stop (Esc)"><svg class="i"><use href="#i-stop"/></svg>Stop</button>
       <button class="icon-btn small" id="reading-follow" title="Follow the reading (F)" aria-label="Follow the reading" aria-pressed="true"><svg class="i"><use href="#i-target"/></svg></button>
     </div>
-    <!-- Shown when the person scrolled away while it reads: back to the sentence being read. -->
-    <button class="follow-back" id="follow-back" hidden><svg class="i"><use href="#i-target"/></svg>Back to the reading</button>
+    <!-- When the word being read is not on the screen: that word (word by word), at the top middle;
+         the arrow points to where it is. Click: back to the reading. -->
+    <button class="follow-back" id="follow-back" hidden title="Back to the reading" aria-label="Back to the reading"><svg class="i fb-arrow"><use href="#i-chev-up"/></svg><span class="fb-word" id="follow-word"></span></button>
   </div>
 
   <aside class="panel" id="panel" aria-label="Side panel">

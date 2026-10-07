@@ -798,7 +798,7 @@ Adam started off OK. However, after an hour, Adam decided that he was going too 
   <div class="snip" data-file="web/accounts.py" data-from="def session_user(token):"></div>
   <div class="snip" data-file="web/server.py" data-from="    def user(self):"></div>
   <h3 id="f-follow">6.23 Following the reading</h3>
-  <p>While the app reads (or an MP3 plays), the sentence being read stays <b>in the middle of the page</b> and of the Text list — but the person decides: when they scroll, swipe or zoom the page themselves, it stays where they put it, a <b>Back to the reading</b> button appears, and it follows again by itself after the chosen wait. A plain tap on a sentence does not count. Settings → <b>Follow</b>: on/off (also the target button in the reading bar, and <kbd>F</kbd>), where on the page (middle, near the top, only when it leaves the screen), the scrolling speed (or jump at once), the wait after scrolling, and whether the Text list follows too.</p>
+  <p>While the app reads (or an MP3 plays), the sentence being read stays <b>in the middle of the page</b> and of the Text list — but the person decides: when they scroll, swipe or zoom the page themselves, it stays where they put it, and it follows again by itself after the chosen wait. Meanwhile, if the word being read is not on the screen, it is shown <b>at the top middle of the page, word by word</b>, with an arrow to where it is (up, down or sideways); a click on it brings the reading back to the middle. A plain tap on a sentence does not count. Settings → <b>Follow</b>: on/off (also the target button in the reading bar, and <kbd>F</kbd>), where on the page (middle, near the top, only when it leaves the screen), the scrolling speed (or jump at once), the wait after scrolling, and whether the Text list follows too.</p>
   <ol>
     <li><b>Who is scrolling?</b> <code>follow.js</code> watches each area (the page, the Text list) separately: a mouse wheel, a finger that moved more than 10 px, two fingers (zooming) — or a scroll right after the person pressed something there (scroll bar, keys) — is the person. Scrolls caused by the layout (the panel getting taller) and by the app's own scrolling do not count.</li>
     <li><b>Its own smooth scrolling</b> (eased, with the chosen duration) instead of the browser's, so the speed can be set and the app knows which scroll events are its own; the person's wheel or finger stops it at once.</li>
@@ -806,6 +806,7 @@ Adam started off OK. However, after an hour, Adam decided that he was going too 
   </ol>
   <div class="snip" data-file="web/js/follow.js" data-from="  reading(view, unit, list = true) {"></div>
   <div class="snip" data-file="web/js/follow.js" data-from="  placeOnPage(view, unit, force = false) {"></div>
+  <div class="snip" data-file="web/js/follow.js" data-from="  updateBadge() {"></div>
 </section>
 
 <!-- ============================================================ TESTING -->
@@ -815,7 +816,7 @@ Adam started off OK. However, after an hour, Adam decided that he was going too 
   <script type="text/plain" class="codeblock" data-lang="ps1" data-title="PowerShell — run the tests">
 cd web\tests
 npm install          # once: installs puppeteer-core (uses your installed Edge, no browser download)
-node ui-test.mjs     # 148 checks, prints PASS/FAIL (ONLY=phone, ONLY=library or ONLY=website: just those)
+node ui-test.mjs     # 149 checks, prints PASS/FAIL (ONLY=phone, ONLY=library or ONLY=website: just those)
 node capture-screenshots.mjs   # re-takes the screenshots used in this guide
 </script>
   <div class="table-wrap"><table>
@@ -834,7 +835,7 @@ node capture-screenshots.mjs   # re-takes the screenshots used in this guide
     <tr><td>Video</td><td>MP4 plays (640 px), script shown</td></tr>
     <tr><td>Views and books</td><td>Two-page view shows 24–25; Workbook and Teacher's Book load; blank page message</td></tr>
     <tr><td>Phone (iPhone size, touch only)</td><td>Fits the screen (two-row top bar, nothing overlaps, page buttons inside); a tap reads a sentence and shows its translation; swipe turns the page; pinch zooms in and back to the screen width; the panel at the bottom opens, closes and is dragged taller; double tap opens a sentence for correcting; the settings fit</td></tr>
-    <tr><td>Following</td><td>The sentence being read in the middle of the page (also the next one); scrolling away keeps the page there and shows “Back to the reading”, which brings it back; after the wait it follows by itself; the button in the reading bar and F switch it off and on; “Near the top”; on a phone (above the panel), a swipe pauses it</td></tr>
+    <tr><td>Following</td><td>The sentence being read in the middle of the page (also the next one); scrolling away keeps the page there; the word being read shows at the top middle, word by word, with an arrow down to it, and a click brings the reading back; after the wait it follows by itself; the button in the reading bar and F switch it off and on; “Near the top”; on a phone (above the panel), a swipe pauses it</td></tr>
     <tr><td>Library</td><td>The home screen; the disc's books on this computer; a text lesson added through the form, every sentence clickable; deleted again</td></tr>
     <tr><td>Website</td><td>A second server with <code>--public</code>: sign up (admin by e-mail), short and wrong passwords refused; a PDF book (made by the test) read from the PDF; private books invisible to others; sharing needs licence + confirmation; anyone reads public books but cannot change them; the disc and server files never served; in the browser: a visitor reads, reports; sign up in the app; photos of a page read with OCR; sharing; the admin hides the reported book</td></tr>
     <tr><td>Errors</td><td>No JavaScript errors and no failed requests</td></tr>
@@ -860,7 +861,7 @@ PASS  …shown right to left for Arabic
 PASS  in Word mode the popup also translates the word  (Rickenbacker → ريكنباكر)
 PASS  L switches translations off and on; the second time they come from the saved file  (70 ms)
 ...
-148 passed, 0 failed
+149 passed, 0 failed
 </script>
 </section>
 

@@ -461,7 +461,7 @@ async function followChecks(page) {
     window.realSpeak = speechSynthesis.speak;
     speechSynthesis.speak = () => {}; // silent: the test says when a sentence is finished
     const a = window.aef;
-    a.zoom = { mode: 'width', w: a.pageW };
+    a.zoom = { mode: 'custom', w: a.fitWidth() * 1.8 }; // zoomed in: room to scroll the reading off the screen
     a.applyZoom();
   });
   // The Follow tab of the settings: jump at once (so the test does not wait for scrolling).
@@ -501,12 +501,28 @@ async function followChecks(page) {
   await page.evaluate(() => window.aef.reader.finished());
   await sleep(400);
   const stayed = Math.abs((await scrollTop()) - away) < 3;
-  const backShown = await page.$eval('#follow-back', (b) => !b.hidden);
-  check('…when you scroll the page yourself it stays there (the next sentence does not pull it back); “Back to the reading” appears',
-    stayed && backShown, `scrolled to ${away}px`);
+  check('…when you scroll the page yourself it stays there (the next sentence does not pull it back)', stayed, `scrolled to ${away}px`);
+  // The reading is now below the screen: the box at the top middle shows the word being read, word by word.
+  const badge = () => page.evaluate(() => {
+    const b = document.querySelector('#follow-back'), st = document.querySelector('#stage').getBoundingClientRect();
+    if (b.hidden) return null;
+    const r = b.getBoundingClientRect();
+    return { word: document.querySelector('#follow-word').textContent, down: b.classList.contains('down'),
+      top: Math.round(r.top - st.top), middle: Math.abs(r.left + r.width / 2 - (st.left + st.width / 2)) < 4 };
+  });
+  const words = [];
+  for (let k = 0; k < 3; k++) {
+    await page.evaluate((k) => { const a = window.aef, it = a.reader.active; a.showWord(it.view, it.unit.a + k); }, k);
+    await sleep(80);
+    words.push(await badge());
+  }
+  const expected = await page.evaluate(() => { const it = window.aef.reader.active;
+    return [0, 1, 2].map((k) => it.view.text.words[it.unit.a + k][4].replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')); });
+  check('…the word being read shows at the top middle of the page, word by word, with an arrow down to where it is',
+    words.every((b, k) => b && b.word === expected[k] && b.down && b.top < 30 && b.middle), words.map((b) => b?.word).join(' → '));
   await page.click('#follow-back');
   await sleep(300);
-  check('…“Back to the reading” brings the sentence being read back to the middle', (await offMiddle()) < 40 && await page.$eval('#follow-back', (b) => b.hidden));
+  check('…a click on it brings the reading back to the middle (and the box goes)', (await offMiddle()) < 40 && await page.$eval('#follow-back', (b) => b.hidden));
 
   // After the wait it follows again by itself.
   await page.click('#btn-voice');
@@ -673,9 +689,15 @@ async function phoneChecks(browser, problems) {
   await page.evaluate(() => window.aef.reader.finished());
   await sleep(900);
   const kept = Math.abs((await page.$eval('#stage', (s) => s.scrollTop)) - swiped) < 3;
-  const backShown = await page.$eval('#follow-back', (b) => !b.hidden);
+  // The word box only when the word being read is off the screen (here it is still on it).
+  const boxRight = await page.evaluate(() => {
+    const it = window.aef.reader.active, st = document.querySelector('#stage').getBoundingClientRect();
+    const pr = it.view.el.getBoundingClientRect(), box = it.view.unitBox({ a: it.unit.a, b: it.unit.a + 1 });
+    const top = pr.top + box.y, off = top + box.h < st.top || top > document.querySelector('#reading-pill').getBoundingClientRect().top;
+    return off === !document.querySelector('#follow-back').hidden;
+  });
   check('Phone: the sentence being read stays in the middle of the page; swiping the page yourself pauses that',
-    centred < 40 && kept && backShown, `${centred}px from the middle; swiped to ${swiped}px, kept ${kept}, back button ${backShown}`);
+    centred < 40 && kept && boxRight, `${centred}px from the middle; swiped to ${swiped}px, kept ${kept}, word box right ${boxRight}`);
   await page.evaluate(() => window.aef.reader.stop());
 
   // Settings: as wide as the screen.

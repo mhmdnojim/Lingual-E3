@@ -697,6 +697,7 @@ class App {
   showWord(view, w) {
     view.showWord(w);
     this.markPanel('cur', view, w >= 0 ? { a: w, b: w + 1 } : null);
+    this.follower?.wordShown(view, w); // the word at the top of the page, if it is off the screen
   }
 
   markPanel(cls, view, unit) {
