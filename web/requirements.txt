@@ -1,0 +1,6 @@
+# Python packages of the server (web/server.py). Installed by the start files and by
+# deploy/setup-server.sh:  python -m pip install -r web/requirements.txt
+edge-tts         # My audio: natural-voice MP3s
+imageio-ffmpeg   # My audio: joining the pieces into one MP3 (comes with ffmpeg)
+pdfplumber       # PDF books: the words of each page, with their place (and pypdfium2 to draw the pages)
+Pillow           # page images, text lessons, photos

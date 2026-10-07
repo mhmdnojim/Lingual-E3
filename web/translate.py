@@ -30,6 +30,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+import ids
+
 WEB = os.path.dirname(os.path.abspath(__file__))
 TR_DIR = os.environ.get('AEF_TRANSLATIONS_DIR') or os.path.join(WEB, 'translations')  # tests use their own
 CHROME_URL = 'https://translate-pa.googleapis.com/v1/translateHtml'
@@ -268,7 +270,7 @@ def translate_page(lang, book, page, paragraphs):
     """Translations for the paragraphs of a page (lists of sentences), same shape, and how many
     sentences had to be translated now. Saved sentences come from the disk; only missing ones
     go to the translator."""
-    if lang not in CODES or not re.match(r'^BO-[0-9a-f]+$', book) or not re.match(r'^PA-[0-9a-f]+$', page):
+    if lang not in CODES or not ids.BOOK_RE.match(book) or not ids.PAGE_RE.match(page):
         raise ValueError('bad language or page')
     if not (isinstance(paragraphs, list) and all(isinstance(p, list) and all(isinstance(s, str) and len(s) < 3000 for s in p) for p in paragraphs)):
         raise ValueError('bad text')

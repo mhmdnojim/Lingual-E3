@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#c4122f">
-<title>Log in · American English File 3</title>
+<title>Log in · Lingua Books</title>
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="manifest" href="manifest.webmanifest">
@@ -29,8 +29,8 @@
 </head>
 <body>
 <form id="login">
-  <div class="brand"><span class="mark">AEF</span>American English File 3</div>
-  <label for="pw">Password</label>
+  <div class="brand"><span class="mark">LB</span>Lingua Books</div>
+  <label for="pw">PIN</label>
   <input id="pw" type="password" autocomplete="current-password" required autofocus>
   <button id="go">Log in</button>
   <p class="msg" id="msg" role="alert"></p>
@@ -50,7 +50,7 @@
         location.href = next.startsWith('/web/') ? next : '/web/';
         return;
       }
-      msg.textContent = r.status === 429 ? 'Too many wrong tries. Wait 15 minutes, then try again.' : 'Wrong password.';
+      msg.textContent = r.status === 429 ? 'Too many wrong tries. Wait 15 minutes, then try again.' : 'Wrong PIN.';
     } catch {
       msg.textContent = 'The app could not be reached.';
     }

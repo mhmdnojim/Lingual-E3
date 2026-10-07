@@ -772,6 +772,31 @@ Adam started off OK. However, after an hour, Adam decided that he was going too 
   <div class="snip" data-file="web/server.py" data-from="    def gate(self, path):"></div>
   <div class="snip" data-file="web/auth.py" data-from="    def valid(self, token):"></div>
   <div class="snip" data-file="deploy/setup-server.sh" data-from="echo &quot;== The app as a service&quot;" data-to="systemctl enable --now aef3"></div>
+  <h3 id="f-library">6.22 Lingua Books: the library, accounts, a public website</h3>
+  <div class="fig-row">
+    <figure><img src="img:library" alt="The library"><figcaption>The library (home screen). On this computer the disc's books are under <i>On this computer</i>; on a website, the public books and your own.</figcaption></figure>
+    <figure><img src="img:add-book" alt="Adding a book"><figcaption><b>Add a book</b>: a text (and a picture), a PDF, or photos of pages. It stays private until you share it.</figcaption></figure>
+  </div>
+  <p>The same reader opens <b>any</b> book: a text, a PDF or photos of pages. The home screen is a <b>library</b> with tabs: <i>Public library</i> (books shared with everyone), <i>My books</i> (private until shared), <i>On this computer</i> (only on this computer: the disc's three books) and, for admins of a website, <i>Admin</i>.</p>
+  <div class="table-wrap"><table>
+    <tr><th>Kind of book</th><th>How its pages are made (<code>library.py</code>, in the background)</th></tr>
+    <tr><td>Text</td><td>Set into pages of 1200 × 1700 px with the Atkinson Hyperlegible font (made for readability). Every word is drawn by the app, so its place is known exactly; paragraphs, headings (<code>#</code>) and line breaks are kept; a picture can go under the title.</td></tr>
+    <tr><td>PDF</td><td>Each page is drawn with <b>pypdfium2</b> (1600 px wide); its words and their places come from the PDF itself with <b>pdfplumber</b>, grouped into lines. A page without text (a scan) is read with OCR.</td></tr>
+    <tr><td>Photos</td><td>Turned upright (EXIF), made at most 2000 px wide, read with <b>OCR</b> (<code>ocr.py</code>: Tesseract on the Linux server, the OCR built into Windows on this computer).</td></tr>
+  </table></div>
+  <p>Then the same steps as for the disc (<code>segment_text.py</code>: lines → paragraphs → sentences → clauses) give each page its words, sentences, clauses and paragraphs, so everything else — reading aloud, translation, repeat, MP3s, corrections — works the same. Each page keeps its own size (the disc's pages are all 1984 × 2496).</p>
+  <h4>Accounts and who may do what</h4>
+  <ul>
+    <li><b>On this computer</b> (<code>server.py</code>): no login; everything belongs to you, the admin.</li>
+    <li><b>Home Wi-Fi</b> (<code>--lan</code>): the PIN, then as on this computer.</li>
+    <li><b>Public website</b> (<code>--public --proxy</code>): anyone reads the public books; adding books, MP3s and corrections need an account. Passwords are kept only as <b>scrypt</b> hashes; the login cookie (30 days) carries the user id, the account's version (raised when the password changes: logged out everywhere) and the end time, signed with the server's secret key. Only the owner (or an admin) changes a book. The disc's books and files are never served.</li>
+    <li><b>Sharing</b> needs a licence (own work, public domain, Creative Commons…) and a tick “I may share it”. Anyone can <b>report</b> a public book; three reports from different people hide it until an admin looks at it on the <i>Admin</i> page (hide, show again, delete).</li>
+    <li><b>Limits</b> per account: books, MB, PDF size and pages, photos, books and MP3s per day; sign-ups and logins are limited per address; translations per hour.</li>
+  </ul>
+  <div class="snip" data-file="web/library.py" data-from="def can_read(b, user):"></div>
+  <div class="snip" data-file="web/library.py" data-from="def _pdf_pages(bid, path, build):"></div>
+  <div class="snip" data-file="web/accounts.py" data-from="def session_user(token):"></div>
+  <div class="snip" data-file="web/server.py" data-from="    def user(self):"></div>
 </section>
 
 <!-- ============================================================ TESTING -->
@@ -781,7 +806,7 @@ Adam started off OK. However, after an hour, Adam decided that he was going too 
   <script type="text/plain" class="codeblock" data-lang="ps1" data-title="PowerShell — run the tests">
 cd web\tests
 npm install          # once: installs puppeteer-core (uses your installed Edge, no browser download)
-node ui-test.mjs     # 125 checks, prints PASS/FAIL (ONLY=phone or ONLY=login: just those)
+node ui-test.mjs     # 140 checks, prints PASS/FAIL (ONLY=phone, ONLY=library or ONLY=website: just those)
 node capture-screenshots.mjs   # re-takes the screenshots used in this guide
 </script>
   <div class="table-wrap"><table>
@@ -800,7 +825,8 @@ node capture-screenshots.mjs   # re-takes the screenshots used in this guide
     <tr><td>Video</td><td>MP4 plays (640 px), script shown</td></tr>
     <tr><td>Views and books</td><td>Two-page view shows 24–25; Workbook and Teacher's Book load; blank page message</td></tr>
     <tr><td>Phone (iPhone size, touch only)</td><td>Fits the screen (two-row top bar, nothing overlaps, page buttons inside); a tap reads a sentence and shows its translation; swipe turns the page; pinch zooms in and back to the screen width; the panel at the bottom opens, closes and is dragged taller; double tap opens a sentence for correcting; the settings fit</td></tr>
-    <tr><td>Login</td><td>Without it only the login page opens (API: 401); wrong password refused, right one gives an HttpOnly cookie for 30 days; a made-up cookie is refused; server files, the password file and saved data are never served; the app cannot be stopped through the web; login page → app → Log out in the browser; no start on the network without a password</td></tr>
+    <tr><td>Library</td><td>The home screen; the disc's books on this computer; a text lesson added through the form, every sentence clickable; deleted again</td></tr>
+    <tr><td>Website</td><td>A second server with <code>--public</code>: sign up (admin by e-mail), short and wrong passwords refused; a PDF book (made by the test) read from the PDF; private books invisible to others; sharing needs licence + confirmation; anyone reads public books but cannot change them; the disc and server files never served; in the browser: a visitor reads, reports; sign up in the app; photos of a page read with OCR; sharing; the admin hides the reported book</td></tr>
     <tr><td>Errors</td><td>No JavaScript errors and no failed requests</td></tr>
   </table></div>
   <div class="snip" data-file="web/tests/harness.mjs" data-from="export async function startServer() {"></div>
@@ -824,7 +850,7 @@ PASS  …shown right to left for Arabic
 PASS  in Word mode the popup also translates the word  (Rickenbacker → ريكنباكر)
 PASS  L switches translations off and on; the second time they come from the saved file  (70 ms)
 ...
-125 passed, 0 failed
+140 passed, 0 failed
 </script>
 </section>
 

@@ -23,10 +23,10 @@ const BROWSERS = [
  * MP3s in an empty temporary folder, so tests never see or change the user's own (web/edits,
  * web/recordings). stopServer() removes it again.
  */
-export async function startServer({ port = PORT, args = [] } = {}) {
+export async function startServer({ port = PORT, args = [], env: extraEnv = {} } = {}) {
   const data = mkdtempSync(path.join(os.tmpdir(), 'aef3-test-'));
   const env = { ...process.env, AEF_EDITS_DIR: path.join(data, 'edits'), AEF_RECORDINGS_DIR: path.join(data, 'recordings'),
-    AEF_TRANSLATIONS_DIR: path.join(data, 'translations') };
+    AEF_TRANSLATIONS_DIR: path.join(data, 'translations'), LB_DATA_DIR: path.join(data, 'library'), ...extraEnv };
   delete env.AEF_PASSWORD;
   // A test server left on this port is replaced (server.py stops older copies of the app).
   const proc = spawn('python', [path.resolve(here, '..', 'server.py'), '--no-browser', '--port', String(port), ...args], { stdio: 'ignore', env });

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#c4122f">
+<title>Terms and privacy · Lingua Books</title>
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<style>
+  :root { --bg: #f4f5f7; --surface: #fff; --text: #1c1f26; --muted: #60677a; --line: #dfe2e8; --accent: #c4122f; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #14161b; --surface: #1d2027; --text: #e8eaef; --muted: #9aa1b2; --line: #2e323c; --accent: #ff6b7f; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px 16px 48px; background: var(--bg); color: var(--text);
+    font: 16px/1.6 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 28px 30px; }
+  h1 { margin: 0 0 4px; font-size: 26px; }
+  h2 { margin: 28px 0 8px; font-size: 19px; }
+  p, li { color: var(--text); }
+  .muted { color: var(--muted); }
+  a { color: var(--accent); }
+  .mark { background: var(--accent); color: #fff; border-radius: 6px; padding: 2px 7px; font-size: 13px; font-weight: 800; margin-right: 6px; }
+</style>
+</head>
+<body>
+<main>
+  <h1><span class="mark">LB</span>Terms and privacy</h1>
+  <p class="muted">Lingua Books makes texts clickable, read aloud and translated, for learning languages. Please read this before you add or share a book.</p>
+
+  <h2>1. What you may add and share</h2>
+  <ul>
+    <li>Your books are <b>private</b> (only you can see them) until you choose to share one.</li>
+    <li>Share a book with everyone <b>only if you have the right to</b>: it is your own work, it is in the public domain, or its licence allows sharing (for example Creative Commons). Say which licence it has, and where it comes from.</li>
+    <li>Do <b>not</b> share books, course books or other material that someone else owns without their permission, even with a new name or cover.</li>
+    <li>No illegal, hateful, violent or sexual content, and nothing that harms children.</li>
+    <li>For your private books you are responsible for having the right to use them.</li>
+  </ul>
+
+  <h2>2. Problems and copyright complaints</h2>
+  <p>Every public book has a <b>Report a problem</b> button (in the book's <i>About</i> tab). The admins look at every report. A book reported by several people is hidden until they have looked at it. Books that break these rules are removed, and accounts that break them again and again are closed.</p>
+  <p>If you own the rights to something shared here without your permission, report the book, or write to <span id="contact">the site's admin</span>, with a link to the book and what you own. It is removed quickly.</p>
+
+  <h2>3. What is kept about you</h2>
+  <ul>
+    <li><b>Your account</b>: e-mail address, name, and your password as a one-way hash (nobody can read it).</li>
+    <li><b>What you add</b>: your books (the files and the pages made from them), your corrections, your MP3s.</li>
+    <li><b>One cookie</b>: it keeps you logged in for 30 days. There are no advertising or tracking cookies. Your reading settings (voice, speed, language) stay in your own browser.</li>
+    <li>Reports keep the internet address of the sender for a while, against abuse.</li>
+  </ul>
+  <p>To delete your books, use <i>Settings → Delete</i>. To close your account and delete everything, write to the admin.</p>
+
+  <h2>4. Services used for some features</h2>
+  <ul>
+    <li><b>Reading aloud</b> uses the voices of your own device. <b>MP3s</b> with natural voices are made with Microsoft's online voices: the sentences are sent there.</li>
+    <li><b>Translations</b> are made with Google Translate: the sentences are sent there. Translations are machine-made and not always right.</li>
+  </ul>
+
+  <h2>5. No guarantee</h2>
+  <p>The site is offered as it is, for learning. Texts read from photos and PDFs (OCR) can contain mistakes. We may change these terms; the date below shows the last change.</p>
+  <p class="muted">Last changed: October 2026.</p>
+  <p><a href="/web/">← Back to Lingua Books</a></p>
+</main>
+<script>
+  fetch('/api/me').then((r) => r.json()).then((me) => {
+    if (me.contact) {
+      const a = document.createElement('a');
+      a.href = `mailto:${me.contact}`;
+      a.textContent = me.contact;
+      document.getElementById('contact').replaceChildren(a);
+    }
+  }).catch(() => {});
+</script>
+</body>
+</html>

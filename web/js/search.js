@@ -39,7 +39,7 @@ export class Search {
     const id = ++this.runId;
     if (q.length < 2) { this.showHint(); return; }
     this.app.showTab('search');
-    const books = this.allBox.checked ? this.app.data.books : [this.app.book];
+    const books = this.allBox.checked && this.app.book?.disc ? this.app.discList : [this.app.book];
     const needle = fold(q);
     const results = [];
     let total = 0;

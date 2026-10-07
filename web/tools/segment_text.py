@@ -45,12 +45,14 @@ def clean_word(t):
     return re.sub(r'^0(?=[A-Z]+\W*$)', 'O', t)  # "0K." -> "OK."
 
 
-def make_lines(raw):
+def make_lines(raw, ocr=True):
+    """Lines with their words and box. ocr=False (text from a PDF): only blank words are dropped,
+    not what looks like an OCR slip on the original disc."""
     lines = []
     for ln in raw.get('lines', []):
         words = []
         for w in ln['words']:
-            t = clean_word(w['t'])
+            t = clean_word(w['t']) if ocr else (w['t'].strip() or None)
             if t is not None:
                 words.append({'t': t, 'x': w['x'], 'y': w['y'], 'w': w['w'], 'h': w['h']})
         if not words:
@@ -154,10 +156,16 @@ def split_clauses(tokens, a, b):
     return merged
 
 
-def segment(raw):
-    lines = make_lines(raw)
+def segment(raw, ocr=True):
+    """The page text document of raw OCR (or PDF) lines: paragraphs found from the layout."""
+    return doc_from_blocks(group_blocks(make_lines(raw, ocr)))
+
+
+def doc_from_blocks(block_list):
+    """words, sentences, clauses and paragraphs of blocks (paragraphs), each a list of lines
+    ({'words': [{'t', 'x', 'y', 'w', 'h'}]})."""
     words, sents, clauses, blocks = [], [], [], []
-    for block in group_blocks(lines):
+    for block in block_list:
         start_word = len(words)
         # Flatten the block's words, remembering which physical line each came from.
         flat = [(w, id(line)) for line in block for w in line['words']]

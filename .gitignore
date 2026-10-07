@@ -1,12 +1,13 @@
 # Only the app's code goes into the repository. Everything else in this folder is the original
-# disc (Oxford University Press content), made from it, or your own data, and is copied to the
-# web host separately (deploy/upload-content.ps1).
+# American English File disc (Oxford University Press content), made from it, or your own data
+# (corrections, MP3s, translations, the library): it stays on this computer.
 
 # Everything at the top level, except:
 /*
 !/.gitignore
 !/.gitattributes
-!/Start American English File.bat
+!/README.md
+!/Start Lingua Books.bat
 !/Start for phones (home Wi-Fi).bat
 !/web/
 !/guide/
@@ -20,6 +21,7 @@
 /web/edits/
 /web/recordings/
 /web/translations/
+/web/library/
 /web/server-config.json
 
 # The guide: only its sources. The built guide, the kit and the screenshots (they show book

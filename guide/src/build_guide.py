@@ -30,7 +30,8 @@ SB_SLUG, P25 = 'BO-ff57d1a56e6bf', 'PA-74f1d4f6f1dd3'
 
 # Code shown in the guide (path relative to the main folder, description).
 CODE_FILES = [
-    ('Start American English File.bat', 'Double-click launcher: checks for Python and starts the server.'),
+    ('README.md', 'Lingua Books in short (the front page of the GitHub repository).'),
+    ('Start Lingua Books.bat', 'Double-click launcher: checks for Python, installs the tools once, starts the server.'),
     ('Start for phones (home Wi-Fi).bat', 'The same, but phones and tablets on the home Wi-Fi can open the app too (with a PIN).'),
     ('web/index.html', 'The app page: toolbar, page area, side panel, player bar, dialog and the SVG icon set.'),
     ('web/css/app.css', 'All styles: colour tokens, light/dark theme, page layers, highlights, panels.'),
@@ -44,9 +45,17 @@ CODE_FILES = [
     ('web/js/segment.js', 'Clause splitting in the browser (same rules as segment_text.py).'),
     ('web/js/recordings.js', 'My audio: choosing sentences, creating natural-voice MP3s, the list, the page icons, highlighting while they play.'),
     ('web/js/translation.js', 'Translation: the language menu, translations under each sentence, the popup on the page, the whole book.'),
+    ('web/js/library.js', 'The library (home screen): books, adding a book, settings and sharing, reports, accounts, the admin page.'),
     ('web/js/util.js', 'Helpers: element creation, saved settings, JSON loading, downloads, messages.'),
     ('web/server.py', 'Local web server (127.0.0.1): files with HTTP Range support, and the API for text corrections and My audio.'),
-    ('web/auth.py', 'The password login for phones on the home Wi-Fi and for a web host (signed cookie, limit on wrong tries).'),
+    ('web/library.py', 'Lingua Books: the library — books from a text, a PDF or photos of pages; who may see and change them; reports.'),
+    ('web/accounts.py', 'Accounts on a website: sign up, log in, scrypt password hashes, the signed login cookie, admins.'),
+    ('web/db.py', 'The library database (SQLite): users, books, reports.'),
+    ('web/ocr.py', 'Reading the words of page images: Tesseract (Linux) or the OCR built into Windows.'),
+    ('web/ids.py', 'The ids of books and pages (the disc and the library).'),
+    ('web/requirements.txt', 'The Python packages of the server.'),
+    ('web/terms.html', 'Terms and privacy of the public website.'),
+    ('web/auth.py', 'The PIN for phones on the home Wi-Fi.'),
     ('web/login.html', 'The login page.'),
     ('web/manifest.webmanifest', 'Lets phones add the app to the home screen (name, icons, full screen).'),
     ('web/tts.py', 'My audio on the server: natural voices (edge-tts), joining sentences into one MP3 (ffmpeg), word timings, the library.'),
@@ -61,26 +70,27 @@ CODE_FILES = [
     ('web/tools/build_all.ps1', 'Runs all build steps in order (and downloads Ruffle).'),
     ('web/tools/make_icons.py', 'Makes the app icons (home screen of phones, browser tab).'),
     ('web/tests/harness.mjs', 'Test setup: starts the server, finds Edge/Chrome, helpers.'),
-    ('web/tests/ui-test.mjs', 'End-to-end test of every feature, at desktop and phone size, and the login (125 checks).'),
+    ('web/tests/ui-test.mjs', 'End-to-end test of every feature, at desktop and phone size, and the login (140 checks).'),
     ('web/tests/capture-screenshots.mjs', 'Takes the screenshots used in this guide.'),
     ('web/tests/package.json', 'Test dependencies (puppeteer-core).'),
-    ('deploy/README.md', 'Putting the app on your own website: GitHub, a VPS, HTTPS.'),
-    ('deploy/setup-server.sh', 'Sets up a new Ubuntu server: Python, Caddy (HTTPS), the code from GitHub, the password, the service.'),
-    ('deploy/upload-content.ps1', 'Copies the book content and your data from this computer to the server.'),
+    ('deploy/README.md', 'Putting Lingua Books online: a VPS, the domain, HTTPS, updates, backups.'),
+    ('deploy/setup-server.sh', 'Sets up a new Ubuntu server: Python, Tesseract, Caddy (HTTPS), the code from GitHub, the admin, the service.'),
     ('deploy/update.sh', 'On the server: the newest code from GitHub, then a restart.'),
+    ('deploy/backup.sh', 'On the server: everything people added, in one file.'),
     ('.gitignore', 'What goes into the git repository: only code (not the book content, not your data).'),
     ('guide/src/make_figures.py', 'Makes the explanatory figures of this guide.'),
     ('guide/src/build_guide.py', 'Builds this guide and the rebuild kit zip.'),
 ]
 
 TREE = [
-    {'name': 'Start American English File.bat', 'kind': 'code', 'path': 'Start American English File.bat', 'desc': 'double-click to start'},
+    {'name': 'README.md', 'kind': 'code', 'path': 'README.md', 'desc': 'Lingua Books in short'},
+    {'name': 'Start Lingua Books.bat', 'kind': 'code', 'path': 'Start Lingua Books.bat', 'desc': 'double-click to start'},
     {'name': 'Start for phones (home Wi-Fi).bat', 'kind': 'code', 'path': 'Start for phones (home Wi-Fi).bat', 'desc': 'also for phones on the home Wi-Fi'},
     {'name': '.gitignore', 'kind': 'code', 'path': '.gitignore', 'desc': 'git: only code goes into the repository'},
     {'name': 'deploy', 'kind': 'dir', 'desc': 'your own website (VPS + domain)', 'children': [
         {'name': n, 'kind': 'code', 'path': f'deploy/{n}', 'desc': d} for n, d in [
             ('README.md', 'the steps'), ('setup-server.sh', 'set up the server once'),
-            ('upload-content.ps1', 'copy the content and your data'), ('update.sh', 'newest code from GitHub')]]},
+            ('update.sh', 'newest code from GitHub'), ('backup.sh', 'a copy of everything')]]},
     {'name': '.shared', 'kind': 'orig', 'desc': 'original disc content (not changed)', 'children': [
         {'name': 'books', 'kind': 'orig', 'desc': '3 books → pages → tiles at zoom 2/3/4, thumb, index.json (hotspots)', 'children': []},
         {'name': 'assets', 'kind': 'orig', 'desc': 'audio (MP3 + XML scripts), swf (answer keys), video (FLV), document (PDF/PPT), covers', 'children': []},
@@ -92,7 +102,14 @@ TREE = [
         {'name': 'server.py', 'kind': 'code', 'path': 'web/server.py', 'desc': 'local server with Range support and the app API'},
         {'name': 'tts.py', 'kind': 'code', 'path': 'web/tts.py', 'desc': 'natural-voice MP3s (My audio)'},
         {'name': 'translate.py', 'kind': 'code', 'path': 'web/translate.py', 'desc': 'translations (Google Translate, saved per page)'},
-        {'name': 'auth.py', 'kind': 'code', 'path': 'web/auth.py', 'desc': 'password login (home Wi-Fi, web host)'},
+        {'name': 'library.py', 'kind': 'code', 'path': 'web/library.py', 'desc': 'the library: books from text, PDF, photos'},
+        {'name': 'accounts.py', 'kind': 'code', 'path': 'web/accounts.py', 'desc': 'accounts, login cookie, admins'},
+        {'name': 'db.py', 'kind': 'code', 'path': 'web/db.py', 'desc': 'the database (SQLite)'},
+        {'name': 'ocr.py', 'kind': 'code', 'path': 'web/ocr.py', 'desc': 'OCR: Tesseract or Windows'},
+        {'name': 'auth.py', 'kind': 'code', 'path': 'web/auth.py', 'desc': 'the PIN (home Wi-Fi)'},
+        {'name': 'terms.html', 'kind': 'code', 'path': 'web/terms.html', 'desc': 'terms and privacy'},
+        {'name': 'fonts', 'kind': 'gen', 'desc': 'Atkinson Hyperlegible (text lessons; open font licence)', 'children': []},
+        {'name': 'library', 'kind': 'gen', 'desc': 'the library on this computer: database, books (never in git)', 'children': []},
         {'name': 'login.html', 'kind': 'code', 'path': 'web/login.html', 'desc': 'the login page'},
         {'name': 'manifest.webmanifest', 'kind': 'code', 'path': 'web/manifest.webmanifest', 'desc': 'phone home-screen app'},
         {'name': 'icons', 'kind': 'gen', 'desc': 'app icons (made by tools/make_icons.py)', 'children': []},
@@ -105,7 +122,8 @@ TREE = [
                 ('pagetext.js', 'sentences/clauses/words of a page'), ('speech.js', 'text to speech'),
                 ('media.js', 'audio, transcripts, video, answer keys'), ('search.js', 'search'),
                 ('editor.js', 'text corrections'), ('segment.js', 'clause rules for corrections'),
-                ('recordings.js', 'My audio (natural-voice MP3s)'), ('translation.js', 'translations'), ('util.js', 'helpers')]]},
+                ('recordings.js', 'My audio (natural-voice MP3s)'), ('translation.js', 'translations'),
+                ('library.js', 'the library, adding books, accounts, admin'), ('util.js', 'helpers')]]},
         {'name': 'tools', 'kind': 'dir', 'desc': 'build scripts (run once)', 'children': [
             {'name': n, 'kind': 'code', 'path': f'web/tools/{n}', 'desc': d} for n, d in [
                 ('build_all.ps1', 'runs every step'), ('common.py', 'shared paths'), ('stitch_pages.py', 'step 1: tiles → page images'),
@@ -114,7 +132,7 @@ TREE = [
                 ('make_icons.py', 'app icons')]]},
         {'name': 'tests', 'kind': 'dir', 'desc': 'browser tests (Puppeteer)', 'children': [
             {'name': n, 'kind': 'code', 'path': f'web/tests/{n}', 'desc': d} for n, d in [
-                ('ui-test.mjs', '125 feature checks'), ('capture-screenshots.mjs', 'guide screenshots'),
+                ('ui-test.mjs', '140 feature checks'), ('capture-screenshots.mjs', 'guide screenshots'),
                 ('harness.mjs', 'shared test setup'), ('package.json', 'dependencies')]]},
         {'name': 'data', 'kind': 'gen', 'desc': 'everything the app reads (made by the build)', 'children': [
             {'name': 'books.json', 'kind': 'gen', 'desc': 'books, pages, hotspots, resources'},
@@ -294,8 +312,10 @@ Contents
 
 
 def build_zip():
-    include = ['Start American English File.bat', 'Start for phones (home Wi-Fi).bat', '.gitignore', '.gitattributes',
-               'web/index.html', 'web/login.html', 'web/manifest.webmanifest', 'web/README.md', 'web/css/app.css']
+    include = ['README.md', 'Start Lingua Books.bat', 'Start for phones (home Wi-Fi).bat', '.gitignore', '.gitattributes',
+               'web/index.html', 'web/login.html', 'web/terms.html', 'web/manifest.webmanifest', 'web/README.md',
+               'web/requirements.txt', 'web/css/app.css']
+    include += [p.replace(os.sep, '/') for p in glob.glob('web/fonts/*', root_dir=ROOT)]
     include += [p.replace(os.sep, '/') for p in glob.glob('deploy/*', root_dir=ROOT) + glob.glob('web/icons/*', root_dir=ROOT)]
     include += [p.replace(os.sep, '/') for p in
                 glob.glob('web/*.py', root_dir=ROOT) + glob.glob('web/js/*.js', root_dir=ROOT) + glob.glob('web/tools/*.py', root_dir=ROOT) +

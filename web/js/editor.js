@@ -315,8 +315,15 @@ export class TextEditor {
 
   // ---------- Mode ----------
 
+  /** Books of others (shared with everyone) can be read, not corrected. */
+  allowed() {
+    if (this.app.book?.canEdit !== false) return true;
+    toast('Only the owner of this book can correct its text.');
+    return false;
+  }
+
   start() {
-    if (this.active) return;
+    if (this.active || !this.allowed()) return;
     this.saveInline();
     // Start on the sentence being read or last used (or the one in the middle of the list).
     const focus = this.app.currentFocus();
@@ -450,7 +457,8 @@ export class TextEditor {
     let press = null; // {handle, row, x, y, id}: the handle is pressed, the drag starts after 5 px
     this.box.addEventListener('pointerdown', (e) => {
       // In correction mode the number of a sentence is its handle; in the Text list, the dots on its left.
-      const handle = e.button === 0 && !this.inline && e.target.closest(this.active ? '.esent .handle' : '.sline .grip');
+      const handle = e.button === 0 && !this.inline && this.app.book?.canEdit !== false
+        && e.target.closest(this.active ? '.esent .handle' : '.sline .grip');
       if (!handle) return;
       e.preventDefault(); // no text selection, and the sentence box keeps its focus
       press = { handle, row: handle.closest(this.active ? '.esent' : '.sline'), x: e.clientX, y: e.clientY, id: e.pointerId };
@@ -562,7 +570,7 @@ export class TextEditor {
   // ---------- Quick correction in the Text list (double click; no correction mode) ----------
 
   editInline(view, bi, si) {
-    if (this.active || !view?.doc) return;
+    if (this.active || !view?.doc || !this.allowed()) return;
     this.saveInline();
     const vi = this.app.views.indexOf(view);
     const line = this.box.querySelector(`.sline[data-v="${vi}"][data-b="${bi}"][data-s="${si}"]`);

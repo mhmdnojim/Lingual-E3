@@ -1,7 +1,7 @@
 {
-  "name": "American English File 3",
-  "short_name": "AEF 3",
-  "description": "American English File 2e Level 3 with clickable, read-aloud and translated text.",
+  "name": "Lingua Books",
+  "short_name": "Lingua Books",
+  "description": "Any text, PDF or photo of a page: every sentence clickable, read aloud, translated and repeated.",
   "start_url": "/web/",
   "scope": "/web/",
   "display": "standalone",

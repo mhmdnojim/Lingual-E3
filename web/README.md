@@ -1,16 +1,49 @@
-# American English File 3 — browser version
+# Lingua Books
 
-A new version of the old Oxford iTools app. It runs in your web browser
-(Microsoft Edge or Google Chrome) on your own computer, and it does not need Flash.
+Any text, PDF or photo of a book page becomes a book where **every sentence is clickable**:
+hear it read aloud (sentence, part of a sentence, or word), translate it into 43 languages,
+repeat it, make MP3s with natural voices, correct the text. On computers, Android and iPhone.
 
-## How to start
+It runs in your web browser (Microsoft Edge or Google Chrome) from a small Python program:
+on your own computer, or as a **public website** where people sign up, add their books and
+share them (see `deploy\README.md`).
 
-1. Double-click **`Start American English File.bat`** (in the main folder).
-2. Your browser opens the app at `http://127.0.0.1:8765/web/`.
+## How to start (on your computer)
+
+1. Double-click **`Start Lingua Books.bat`** (in the main folder).
+2. Your browser opens the app at `http://127.0.0.1:8765/web/`: the **library**.
 3. Keep the black window open while you use the app. Close it to stop the app.
 
-Python must be installed (it is already installed on this computer).
+Python must be installed. The first start installs the app's tools (`web\requirements.txt`).
 **Microsoft Edge** is recommended because it has the most natural voices.
+
+## The library
+
+| Tab | What is there |
+|---|---|
+| **Public library** | Books people shared with everyone. |
+| **My books** | Your own books. They are private (only you see them) until you share one. |
+| **On this computer** | Only on your computer: the books of the American English File disc, if its files are in this folder. They are never on the website. |
+| **Admin** | Only for admins of the website: reports, hiding and deleting books. |
+
+**Add a book** (button at the top):
+
+| Kind | What happens |
+|---|---|
+| **Text** | Paste or type a text (an empty line starts a paragraph; a line starting with `#` is a heading), add a picture if you like. It is set into pages. |
+| **PDF** | Up to 300 pages. Text in the PDF is used as it is; scanned pages are read with OCR. |
+| **Photos of pages** | One photo per page (in the order of the file names). The words are read with OCR. Photograph straight from above, in good light. |
+
+When the pages are ready, the book opens. Every sentence can be clicked, as described below.
+
+**Share a book with everyone:** in the library click the settings button of the book (or, in
+the book, the page list → **About** → **Settings and sharing**), tick **Share with everyone**,
+choose its **licence** and confirm that you may share it. Only share your own work, texts in the
+public domain, or texts with a licence that allows sharing (for example Creative Commons).
+
+**Report a problem** with a public book: page list → **About** → **Report a problem**.
+
+Others' public books can be read, listened to and translated, but only their owner corrects them.
 
 ## On phones and tablets
 
@@ -32,7 +65,8 @@ and a **PIN** to log in. The phone must be on the same Wi-Fi. The first time, Wi
 whether Python may use the network: allow it for **private networks**. (The PIN is kept in
 `web\server-config.json`; delete that file to get a new one.)
 
-**On your own website** (anywhere, with a password): see `deploy\README.md`.
+**As a public website** (anyone can read the shared books; accounts to add books): see
+`deploy\README.md`.
 
 ## What you can do
 

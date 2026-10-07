@@ -7,7 +7,6 @@
 import { $, el, icon, store, toast } from './util.js';
 import { PageText } from './pagetext.js';
 
-const PAGE_W = 1984;
 
 export class Translator {
   constructor(app) {
@@ -118,7 +117,7 @@ export class Translator {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ lang: this.lang, book, page: path, paragraphs }),
     }).catch(() => null);
-    if (!r) throw new Error('The app’s server is not running. Start the app with Start American English File.bat.');
+    if (!r) throw new Error('The app’s server is not running. Start the app with Start Lingua Books.bat.');
     if (r.status === 404) throw new Error('The app’s server is an older version. Close the black window and start the app again.');
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw Object.assign(new Error(d.error || 'The translation failed.'), { busy: !!d.busy, wait: d.wait || 60 });
@@ -237,7 +236,7 @@ export class Translator {
   /** Below the sentence; above it if there is no room; else beside it. Again after scrolling. */
   placeTip(view, area) {
     const page = view.el.getBoundingClientRect();
-    const k = page.width / PAGE_W;
+    const k = page.width / view.W;
     const s = { left: page.left + area.x0 * k, top: page.top + area.y0 * k, right: page.left + area.x1 * k, bottom: page.top + area.y1 * k };
     const b = $('#stage').getBoundingClientRect();
     if (s.bottom < b.top || s.top > b.bottom) { this.tip.hidden = true; return; } // scrolled out of sight

@@ -1,81 +1,68 @@
-# Putting the app on your own website
+# Putting Lingua Books online (a public website)
 
-The app runs on a small server of your own, behind a password. GitHub keeps the **code**;
-the **book content** (about 1 GB, Oxford University Press's) and **your data** (corrections,
-MP3s, translations) go from your computer straight to the server.
+The website runs on a small server of your own. GitHub keeps the **code**; the server gets it
+from there. Accounts, books and MP3s live only on the server (back them up with `backup.sh`).
+The books of the American English File disc stay on your computer: the website never shows them.
 
 ```
-your computer ── git push ──▶ GitHub (private) ── update.sh ──▶ server ◀── upload-content.ps1 ── your computer
-                                                                  │
-                                                     https://your-domain  (phones, tablets, computers)
+your computer ── git push ──▶ GitHub ── update.sh ──▶ server  ──▶  https://your-domain
+                                                       (accounts, books, MP3s)
 ```
 
 ## What you need
 
-- A **VPS** (virtual server), not "shared hosting": the app needs its Python helper running
-  all the time. Ubuntu 22.04 or 24.04, 1–2 GB memory, 25 GB disk or more.
-  For example Hetzner, DigitalOcean, Contabo, Vultr (about 5–10 US$ a month).
-- A **domain** (or a subdomain such as `aef.your-domain.com`). In the domain's DNS settings,
+- A **VPS** (virtual server), not "shared hosting": the app needs its Python program running all
+  the time. Ubuntu 22.04 or 24.04, 2 GB memory, 40 GB disk or more (books with pictures take
+  room). For example Hetzner, DigitalOcean, Contabo, Vultr (about 5–10 US$ a month).
+- A **domain** (or a subdomain such as `books.your-domain.com`). In the domain's DNS settings,
   add an **A record** that points to the server's IP address.
-- A **GitHub** account with a **private** repository for the code.
 
-## 1. Code to GitHub (on your computer, once)
+## 1. Code to GitHub
 
-Create an empty **private** repository on github.com (no README, no .gitignore). Then in this
-folder:
+Already done: https://github.com/mhmdnojim/American-English-File-2e-Level-3 (you can rename it
+on GitHub: Settings → General → Repository name; the old address keeps working). Later changes:
 
 ```
-git remote add origin https://github.com/YOUR-NAME/YOUR-REPO.git
-git push -u origin main
+git add -A
+git commit -m "What changed"
+git push
 ```
-
-The first push opens a browser window to sign in to GitHub.
 
 ## 2. Set up the server (once)
 
 Log in to the server (`ssh root@SERVER-IP`) and run:
 
 ```
-curl -O https://raw.githubusercontent.com/YOUR-NAME/YOUR-REPO/main/deploy/setup-server.sh
+curl -O https://raw.githubusercontent.com/mhmdnojim/American-English-File-2e-Level-3/main/deploy/setup-server.sh
+bash setup-server.sh your-domain.com https://github.com/mhmdnojim/American-English-File-2e-Level-3.git
 ```
 
-(For a private repository that link does not work: copy the file instead, from your computer:
-`scp deploy\setup-server.sh root@SERVER-IP:` )
+(For a **private** repository use the `git@github.com:…` address instead: the script then shows
+a key to add on GitHub under Settings → Deploy keys.)
 
-```
-bash setup-server.sh your-domain.com git@github.com:YOUR-NAME/YOUR-REPO.git
-```
+It asks for **your e-mail address**: when you sign up on the website with it, you are the
+**admin** (you see the *Admin* tab: reports, hiding and deleting books).
 
-It shows a key: add it on GitHub (repository → **Settings → Deploy keys → Add deploy key**,
-"Allow write access" off), then press Enter. It asks for the **password** of the website.
-
-## 3. Copy the content and your data (on your computer)
-
-```
-powershell -ExecutionPolicy Bypass -File deploy\upload-content.ps1 -Server root@SERVER-IP
-```
-
-About 1 GB the first time. Later, `-SkipContent` copies only your data again.
-
-Open `https://your-domain.com` and log in. On a phone: browser menu → **Add to Home screen**,
-and the app opens full screen with its own icon.
+Open `https://your-domain.com`, **Sign up** with that e-mail, and add the first books.
 
 ## Updates
 
-Change the code on your computer, test it, then:
+After `git push`:
 
 ```
-git add -A
-git commit -m "What changed"
-git push
-ssh root@SERVER-IP /opt/aef3/deploy/update.sh
+ssh root@SERVER-IP /opt/lingua-books/deploy/update.sh
 ```
 
 ## Good to know
 
-- Where things are on the server: code and content in `/opt/aef3`, your data in
-  `/var/lib/aef3`, the password in `/etc/aef3.env` (change it there, then
-  `systemctl restart aef3`).
-- Log in again after 30 days, or after the password was changed.
-- Back up `/var/lib/aef3` now and then (or keep working on your computer and upload).
-- The website is for your own use. Making Oxford's books open to others needs their permission.
+- Where things are on the server: the code in `/opt/lingua-books`, everything people add in
+  `/var/lib/lingua-books`, the settings in `/etc/lingua-books.env` (after a change:
+  `systemctl restart lingua-books`).
+- **Backups**: `/opt/lingua-books/deploy/backup.sh` makes one file with everything; copy it to
+  your computer now and then (`scp root@SERVER-IP:/root/lingua-books-*.tar.gz .`).
+- **Limits** for each account (in `web/library.py`, `LIMITS`): 100 books, 600 MB, PDFs up to
+  60 MB and 300 pages, 200 photos per book, 30 new books and 40 MP3s a day. Admins have no limits.
+- **Reports**: a book reported by three different people is hidden at once until an admin looks
+  at it (Admin tab). Answer copyright complaints quickly: hide or delete the book.
+- Photos of pages are read with **Tesseract** on the server; translations use Google's free
+  translator and MP3s Microsoft's online voices (see the terms page).

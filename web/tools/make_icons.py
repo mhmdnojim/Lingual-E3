@@ -12,8 +12,7 @@ RED, WHITE = (196, 18, 47), (255, 255, 255)
 
 SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
 <rect width="64" height="64" rx="14" fill="#c4122f"/>
-<text x="32" y="38" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="800" fill="#fff" letter-spacing="0.5">AEF</text>
-<text x="32" y="54" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="700" fill="#fff" opacity=".85">3</text>
+<text x="32" y="42" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="27" font-weight="800" fill="#fff" letter-spacing="0.5">LB</text>
 </svg>
 """
 
@@ -32,9 +31,7 @@ def icon(size, maskable=False):
     img = Image.new('RGB', (size, size), RED)
     d = ImageDraw.Draw(img)
     scale = 0.8 if maskable else 1.0
-    big, small = font(int(size * 0.33 * scale)), font(int(size * 0.17 * scale))
-    d.text((size / 2, size * (0.5 - 0.06 * scale)), 'AEF', font=big, fill=WHITE, anchor='mm')
-    d.text((size / 2, size * (0.5 + 0.24 * scale)), '3', font=small, fill=WHITE, anchor='mm')
+    d.text((size / 2, size / 2), 'LB', font=font(int(size * 0.42 * scale)), fill=WHITE, anchor='mm')
     return img
 
 

@@ -4,15 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#c4122f">
-<title>American English File 3</title>
-<meta name="description" content="Browser version of the American English File 2e Level 3 classroom software, with clickable, read-aloud text.">
+<title>Lingua Books</title>
+<meta name="description" content="Lingua Books: any text, PDF or photo of a page becomes clickable, read aloud, translated and repeated — for learning languages.">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <!-- "Add to Home screen" on phones: the app opens full screen with its own icon. -->
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="AEF 3">
+<meta name="apple-mobile-web-app-title" content="Lingua Books">
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
@@ -40,6 +40,9 @@
     <symbol id="i-repeat" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></symbol>
     <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M21 4h-7"/><path d="M10 4H3"/><path d="M21 12h-9"/><path d="M8 12H3"/><path d="M21 20h-5"/><path d="M12 20H3"/><path d="M14 2v4"/><path d="M8 10v4"/><path d="M16 18v4"/></symbol>
     <symbol id="i-panel" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+    <symbol id="i-flag" viewBox="0 0 24 24"><path d="M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 8 2a6 6 0 0 0 3.6-1.2.5.5 0 0 1 .4.4V14a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.5"/></symbol>
+    <symbol id="i-books" viewBox="0 0 24 24"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/><path d="M8 7h8"/><path d="M8 11h6"/></symbol>
     <symbol id="i-file" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></symbol>
     <symbol id="i-text" viewBox="0 0 24 24"><path d="M17 6.1H3"/><path d="M21 12.1H3"/><path d="M15.1 18H3"/></symbol>
     <symbol id="i-back" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
@@ -64,8 +67,8 @@
 <header class="topbar">
   <div class="tb-group">
     <button class="icon-btn" id="btn-pages" title="All pages and resources (P)" aria-label="All pages and resources" aria-expanded="false"><svg class="i"><use href="#i-grid"/></svg></button>
-    <div class="brand"><span class="brand-mark">AEF</span><span class="brand-name">American English File <b>3</b></span></div>
-    <select id="book-select" class="select" aria-label="Book"></select>
+    <button class="brand" id="brand" title="The library"><span class="brand-mark">LB</span><span class="brand-name">Lingua <b>Books</b></span></button>
+    <button class="book-title" id="book-title" title="Back to the library"><svg class="i"><use href="#i-books"/></svg><span id="book-name">Library</span></button>
   </div>
 
   <nav class="tb-group pager" aria-label="Page navigation">
@@ -132,6 +135,24 @@
 </div>
 
 <main class="layout">
+  <!-- The library: the home screen (web/js/library.js). -->
+  <section class="library" id="library" hidden aria-label="Library">
+    <div class="lib-head">
+      <div class="tabs lib-tabs" role="tablist">
+        <button role="tab" data-scope="public" aria-selected="false">Public library</button>
+        <button role="tab" data-scope="mine" aria-selected="false">My books</button>
+        <button role="tab" data-scope="local" aria-selected="false" hidden>On this computer</button>
+        <button role="tab" data-scope="admin" aria-selected="false" hidden>Admin</button>
+      </div>
+      <div class="lib-tools">
+        <label class="search-field lib-search"><svg class="i"><use href="#i-search"/></svg><input id="lib-q" type="search" placeholder="Find a book" aria-label="Find a book" autocomplete="off"></label>
+        <button class="btn primary" id="lib-add"><svg class="i"><use href="#i-plus"/></svg>Add a book</button>
+        <span class="lib-account" id="lib-account"></span>
+      </div>
+    </div>
+    <div class="lib-body" id="lib-body"></div>
+    <footer class="lib-foot"><a href="/web/terms.html" target="_blank">Terms and privacy</a> · Lingua Books: every sentence clickable, read aloud, translated.</footer>
+  </section>
   <aside class="drawer" id="drawer" aria-label="Pages and resources" hidden>
     <div class="tabs" role="tablist">
       <button role="tab" data-dtab="pages" aria-selected="true">Pages</button>
@@ -139,13 +160,13 @@
       <button class="icon-btn small push" id="drawer-close" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
     </div>
     <div class="drawer-body" data-dtab="pages"><div class="thumbs" id="thumbs"></div></div>
-    <div class="drawer-body" data-dtab="resources" hidden><ul class="res-list" id="res-list"></ul></div>
+    <div class="drawer-body" data-dtab="resources" hidden><ul class="res-list" id="res-list"></ul><div class="about-box" id="about-box"></div></div>
   </aside>
 
   <div class="stage-wrap">
     <div class="update-notice" id="update-notice" role="alert" hidden>
       <p><b>The app was updated.</b> An older copy of its server is still running. Close the black
-      “American English File 3” window, then start the app again with <b>Start American English File.bat</b>.</p>
+      window of the app, then start it again with <b>Start Lingua Books.bat</b> (or restart the server).</p>
       <button class="icon-btn small" aria-label="Close" onclick="this.parentElement.hidden = true"><svg class="i"><use href="#i-x"/></svg></button>
     </div>
     <section class="stage" id="stage" tabindex="-1" aria-label="Book page">

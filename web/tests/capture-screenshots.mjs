@@ -4,7 +4,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { KnownDevices } from 'puppeteer-core';
-import { gotoPage, openBrowser, sleep, startServer, stopServer, wordCenter } from './harness.mjs';
+import { BASE, gotoPage, openBrowser, sleep, startServer, stopServer, wordCenter } from './harness.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(process.argv[2] || path.join(here, '..', '..', 'guide', 'src', 'images'));
@@ -16,6 +16,19 @@ const shot = async (name) => { await page.screenshot({ path: path.join(OUT, `${n
 const hoverWord = async (i) => { const c = await wordCenter(page, i); await page.mouse.move(c.x, c.y); await sleep(200); return c; };
 
 try {
+  // The library (home screen) and the form to add a book.
+  await page.goto(BASE + '#/', { waitUntil: 'networkidle0' });
+  await page.click('#library [data-scope="local"]');
+  await sleep(800);
+  await shot('library');
+  await page.click('#lib-add');
+  await sleep(300);
+  await page.click('.add-kind [data-kind="text"]');
+  await page.type('.lib-form input[type=text]', 'The Seaplane Race');
+  await page.type('.lib-form textarea', 'Once the boat passed through the bay, he entered open water. It was a lovely day.\n\nThe seaplane was faster.');
+  await shot('add-book');
+  await page.keyboard.press('Escape');
+
   await gotoPage(page, '#/1705/25'); // a fresh browser profile, so default settings
   await shot('app-main');
 

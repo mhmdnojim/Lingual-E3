@@ -1,6 +1,8 @@
 // End-to-end test of every feature in headless Edge/Chrome.
 //   cd web\tests && npm install && node ui-test.mjs
 import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { KnownDevices } from 'puppeteer-core';
@@ -202,63 +204,239 @@ async function editorChecks(page) {
   check('the original sentence is unchanged', original.length > 0);
 }
 
-/**
- * The login (phones on the home Wi-Fi, a web host): a second test server with a password, as on
- * a host. Without logging in nothing can be opened but the login page; server files are never served.
- */
-async function loginChecks(browser, problems) {
-  const port = 8797, base = `http://127.0.0.1:${port}`;
-  const srv = await startServer({ port, args: ['--password', 'test-pass-123'] });
-  try {
-    const get = (p, cookie) => fetch(base + p, { redirect: 'manual', headers: cookie ? { Cookie: cookie } : {} });
-    const post = (p, body, cookie) => fetch(base + p, { method: 'POST', redirect: 'manual',
-      headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) }, body: JSON.stringify(body) });
-    const app = await get('/web/');
-    const api = await get('/api/version');
-    const open = await Promise.all(['/web/login.html', '/web/manifest.webmanifest', '/web/icons/icon-192.png'].map((p) => get(p)));
-    check('Login: without it only the login page opens (the app sends you there, the API says “log in”)',
-      app.status === 302 && app.headers.get('location').startsWith('/web/login.html') && api.status === 401 && open.every((r) => r.ok),
-      `app ${app.status}, api ${api.status}`);
-    const wrong = await post('/api/login', { password: 'nope' });
-    const right = await post('/api/login', { password: 'test-pass-123' });
-    const cookie = (right.headers.get('set-cookie') || '').split(';')[0];
-    check('…a wrong password is refused; the right one gives a login cookie (HttpOnly, 30 days)', wrong.status === 401 && right.ok
-      && /^aef_session=\d+\.[0-9a-f]{64}$/.test(cookie) && /HttpOnly/.test(right.headers.get('set-cookie')) && /Max-Age=2592000/.test(right.headers.get('set-cookie')));
-    const inApp = await get('/web/', cookie), inApi = await get('/api/version', cookie);
-    const forged = await get('/api/version', 'aef_session=9999999999.0000000000000000000000000000000000000000000000000000000000000000');
-    check('…with the cookie the app and its API work; a made-up cookie does not', inApp.ok && (await inApp.text()).includes('American English File 3')
-      && inApi.ok && forged.status === 401);
-    const secret = ['/web/server.py', '/web/auth.py', '/web/server-config.json', '/web/tools/build_data.py', '/web/tests/ui-test.mjs',
-      '/web/edits/x.json', '/windows/oup.exe', '/guide/src/build_guide.py'];
-    const codes = await Promise.all(secret.map((p) => get(p, cookie).then((r) => r.status)));
-    check('…server files, the password file and saved data are never served as files', codes.every((c) => c === 404), codes.join(' '));
-    const quit = await post('/api/quit', {}, cookie);
-    check('…and the app cannot be stopped through the web', quit.status === 403 && (await get('/api/version', cookie)).ok);
+/** A one-page PDF with real text (Helvetica), to test PDF books without a file on disk. */
+function makePdf(lines) {
+  const content = `BT /F1 26 Tf 30 TL 72 700 Td ${lines.map((l) => `(${l}) Tj T*`).join(' ')} ET`;
+  const objs = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets = objs.map((o, i) => { const at = pdf.length; pdf += `${i + 1} 0 obj\n${o}\nendobj\n`; return at; });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`;
+  pdf += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(pdf, 'latin1');
+}
 
-    // In the browser: the login page, then the app; "Log out" in the settings.
+/**
+ * Lingua Books as a public website (server.py --public): a second test server. Accounts, private
+ * and shared books (text, PDF, photos), reports and the admin; the disc's content is never served.
+ */
+async function websiteChecks(browser, problems) {
+  const port = 8797, base = `http://127.0.0.1:${port}`;
+  const srv = await startServer({ port, args: ['--public'], env: { LB_ADMIN_EMAIL: 'boss@example.com', LB_CONTACT_EMAIL: 'help@example.com' } });
+  const tmp = mkdtempSync(path.join(os.tmpdir(), 'lb-files-'));
+  try {
+    // ---- Through the API (like any program would): each "client" keeps its own login cookie.
+    const client = () => {
+      let cookie = '';
+      return async (method, p, body, raw) => {
+        const r = await fetch(base + p, { method, redirect: 'manual',
+          headers: { ...(cookie ? { Cookie: cookie } : {}), 'Content-Type': raw ? 'application/octet-stream' : 'application/json' },
+          body: raw || (body !== undefined ? JSON.stringify(body) : undefined) });
+        const set = r.headers.get('set-cookie');
+        if (set) cookie = set.split(';')[0];
+        const type = r.headers.get('content-type') || '';
+        return { status: r.status, data: type.includes('json') ? await r.json() : Buffer.from(await r.arrayBuffer()) };
+      };
+    };
+    const anon = client(), boss = client(), ann = client();
+    const ready = async (who, id) => {
+      for (let i = 0; i < 120; i++) {
+        const j = (await who('GET', `/api/books/${id}/job`)).data;
+        if (j.status === 'ready' || j.status === 'error') return j;
+        await sleep(500);
+      }
+      return { status: 'timeout' };
+    };
+    let r = await anon('GET', '/api/me');
+    check('Website: anyone can visit (no account needed to read), the disc is not there', r.data.mode === 'public' && !r.data.user && !r.data.disc);
+    r = await anon('POST', '/api/books', { kind: 'text', title: 'X' });
+    check('…adding a book needs an account', r.status === 401 && r.data.account);
+    r = await boss('POST', '/api/signup', { email: 'boss@example.com', name: 'Boss', password: 'secret-123' });
+    const r2 = await ann('POST', '/api/signup', { email: 'ann@example.com', name: 'Ann', password: 'short' });
+    const r3 = await ann('POST', '/api/signup', { email: 'ann@example.com', name: 'Ann', password: 'another-pass' });
+    check('…sign up: the admin (LB_ADMIN_EMAIL) and a user; a short password is refused', r.data.user?.admin && r2.status === 400 && r3.status === 200 && !r3.data.user.admin);
+    const bad = await anon('POST', '/api/login', { email: 'ann@example.com', password: 'wrong-pass' });
+    check('…a wrong password is refused', bad.status === 400);
+
+    const pdfBook = (await ann('POST', '/api/books', { kind: 'pdf', title: 'A PDF lesson' })).data;
+    await ann('PUT', `/api/books/${pdfBook.id}/source/pdf`, undefined, makePdf(['Reading is fun.', 'This PDF has two sentences of text.']));
+    await ann('POST', `/api/books/${pdfBook.id}/make`, {});
+    const pj = await ready(ann, pdfBook.id);
+    const pdoc = (await ann('GET', `/api/text/${pdfBook.id}/p1`)).data;
+    const psents = (pdoc.sent || []).map(([a, b]) => pdoc.words.slice(a, b).map((w) => w[4]).join(' '));
+    check('…a PDF book: its page is drawn and its words come from the PDF', pj.status === 'ready' && psents.includes('Reading is fun.'), psents.join(' | '));
+    const notPdf = await ann('PUT', `/api/books/${pdfBook.id}/source/pdf`, undefined, Buffer.from('hello'));
+    check('…a file that is not a PDF is refused', notPdf.status === 400, notPdf.data.error);
+
+    const textBook = (await ann('POST', '/api/books', { kind: 'text', title: 'Ann’s lesson', author: 'Ann' })).data;
+    await ann('PUT', `/api/books/${textBook.id}/source/text`, undefined, Buffer.from(JSON.stringify({ text: 'Hello world. This is my lesson.\n\nIt has two paragraphs. Good luck!' })));
+    await ann('POST', `/api/books/${textBook.id}/make`, {});
+    const tj = await ready(ann, textBook.id);
+    const id = textBook.id;
+    check('…a text book is made into pages', tj.status === 'ready' && tj.book.pageCount === 1);
+    const priv = [await anon('GET', `/api/books/${id}`), await boss('GET', '/api/books?scope=public'), await anon('GET', `/lib/${id}/pages/1.webp`)];
+    check('…a book is private at first: nobody else sees it or its pages', priv[0].status === 404 && !priv[1].data.some((b) => b.id === id) && priv[2].status === 404);
+    const noRights = await ann('PUT', `/api/books/${id}`, { visibility: 'public', license: 'own' });
+    const shared = await ann('PUT', `/api/books/${id}`, { visibility: 'public', license: 'own', rights: true });
+    check('…sharing it needs a licence and “I may share it”', noRights.status === 400 && shared.data.visibility === 'public' && shared.data.licenseName === 'My own work');
+    const seen = [await anon('GET', '/api/books?scope=public'), await anon('GET', `/api/books/${id}`), await anon('GET', `/lib/${id}/pages/1.webp`), await anon('GET', `/api/text/${id}/p1`)];
+    check('…then anyone finds it, opens it, sees its pages and text', seen[0].data.some((b) => b.id === id) && seen[1].data.pages[0].w === 1200
+      && seen[2].data.subarray(0, 4).toString() === 'RIFF' && seen[3].data.sent.length >= 4);
+    const edit = await anon('PUT', `/api/text/${id}/p1`, seen[3].data);
+    const others = await client()('PUT', `/api/books/${id}`, { title: 'Mine now' });
+    check('…only its owner (or an admin) changes it', edit.status === 401 && others.status === 401);
+    const quit = await boss('POST', '/api/quit', {});
+    check('…and the website cannot be stopped from outside', quit.status === 403 && (await anon('GET', '/api/version')).status === 200);
+    const secret = ['/web/data/books.json', '/.shared/assets/misc/', '/web/vendor/ruffle/ruffle.js', '/web/library/library.db', '/web/server.py',
+      '/web/server-config.json', '/web/tools/build_data.py', '/web/edits/x.json', '/windows/oup.exe'];
+    const codes = await Promise.all(secret.map((p) => anon('GET', p).then((x) => x.status)));
+    const discList = (await boss('GET', '/api/books?scope=local')).data;
+    check('…the disc’s books and the server’s files are never served on a website', codes.every((c) => c === 404) && discList.length === 0, codes.join(' '));
+
+    // ---- In the browser: a visitor, an account, photos of pages, sharing, a report, the admin.
     const page = await browser.newPage();
-    page.on('pageerror', (e) => problems.push(`login page error: ${e.message}`));
+    page.on('pageerror', (e) => problems.push(`website page error: ${e.message}`));
+    page.on('dialog', (d) => d.accept());
     await page.goto(`${base}/web/`, { waitUntil: 'networkidle0' });
-    const atLogin = page.url().includes('/web/login.html');
-    await page.type('#pw', 'test-pass-123');
-    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }), page.click('#go')]);
+    await page.waitForFunction(() => document.querySelectorAll('.book-card').length > 0, { timeout: 10000 }).catch(() => {});
+    const cards = await page.$$eval('.book-card h3', (h) => h.map((x) => x.textContent));
+    await page.click(`.book-card[data-id="${id}"] .bc-cover`);
     await page.waitForFunction(() => document.querySelector('.page-img')?.complete, { timeout: 15000 });
-    const inside = new URL(page.url()).pathname === '/web/'; // (the app adds its page to the address: #/…)
-    await page.click('#btn-voice');
+    await sleep(500);
+    const visitor = await page.evaluate(() => ({ readonly: document.body.classList.contains('readonly'), words: document.querySelectorAll('.hits rect').length,
+      pencil: !!document.querySelector('#edit-text')?.offsetParent }));
+    check('Website in the browser: a visitor sees the public library and reads a book (no correcting)', cards.includes('Ann’s lesson') && visitor.readonly
+      && !visitor.pencil && visitor.words > 5, JSON.stringify(visitor));
+    // Report it (About tab of the page list).
+    await page.evaluate(() => window.aef.setDrawer(true));
+    await page.click('#drawer [role=tab][data-dtab="resources"]');
     await sleep(200);
-    const logoutShown = await page.$eval('#logout-row', (r) => !r.hidden);
-    await Promise.all([page.waitForNavigation(), page.click('#btn-logout')]);
-    const out = page.url().includes('/web/login.html');
-    check('…in the browser: the login page, then the app; “Log out” in the settings', atLogin && inside && logoutShown && out,
-      `login page ${atLogin}, app ${inside}, log out shown ${logoutShown}, logged out ${out}`);
+    const about = await page.$eval('#about-box', (b) => b.textContent);
+    await page.evaluate(() => [...document.querySelectorAll('#about-box button')].find((b) => /Report/.test(b.textContent)).click());
+    await sleep(200);
+    await page.type('.lib-form textarea', 'Copied from a course book.');
+    await page.click('.lib-form button[type=submit]');
+    await sleep(500);
+    const reports = (await boss('GET', '/api/admin/reports')).data;
+    check('…its About tab shows its licence; “Report a problem” reaches the admins', /My own work/.test(about) && reports.some((x) => x.book === id && /course book/.test(x.note)));
+
+    // Sign up in the app, then add photos of a page (made here, read with OCR).
+    await page.click('#book-title');
+    await sleep(400);
+    await page.click('#lib-account .btn.primary'); // Sign up
+    await page.type('.lib-form input[type=email]', 'cara@example.com');
+    await page.type('.lib-form input[autocomplete=name]', 'Cara');
+    await page.type('.lib-form input[type=password]', 'cara-pass-1');
+    await page.click('.lib-form button[type=submit]');
+    await page.waitForFunction(() => /Cara/.test(document.querySelector('#lib-account').textContent), { timeout: 10000 }).catch(() => {});
+    const signedUp = /Cara/.test(await page.$eval('#lib-account', (a) => a.textContent));
+    const png = await page.evaluate(() => {
+      const c = document.createElement('canvas');
+      c.width = 1400; c.height = 900;
+      const g = c.getContext('2d');
+      g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+      g.fillStyle = '#111'; g.font = '56px Arial';
+      ['Learning with Lingua Books.', 'Every sentence can be heard.', 'Photos of pages work too.'].forEach((t, i) => g.fillText(t, 80, 200 + i * 110));
+      return c.toDataURL('image/png').split(',')[1];
+    });
+    const photo = path.join(tmp, 'page-1.png');
+    writeFileSync(photo, Buffer.from(png, 'base64'));
+    await page.click('#lib-add');
+    await sleep(300);
+    await page.click('.add-kind [data-kind="images"]');
+    await page.type('.lib-form input[type=text]', 'Photo lesson');
+    await (await page.$('.lib-form input[type=file][multiple]')).uploadFile(photo);
+    await page.click('.lib-form button[type=submit]');
+    await page.waitForFunction(() => location.hash.startsWith('#/L'), { timeout: 120000 }).catch(() => {});
+    await page.waitForFunction(() => document.querySelector('.page-img')?.complete && document.querySelectorAll('#text-view .sline').length, { timeout: 20000 }).catch(() => {});
+    const ocrText = await page.$$eval('#text-view .sline', (ls) => ls.map((l) => [...l.querySelectorAll('.w')].map((w) => w.textContent).join('').trim()));
+    check('…sign up in the app; add photos of a page: the words are read (OCR) and clickable', signedUp && ocrText.some((t) => /Lingua Books/.test(t)) && ocrText.length >= 3,
+      ocrText.join(' | '));
+    // Share it with everyone (settings: licence + "I may share it").
+    const photoId = (await page.evaluate(() => location.hash)).split('/')[1];
+    await page.evaluate(() => window.aef.setDrawer(true));
+    await page.click('#drawer [role=tab][data-dtab="resources"]');
+    await page.evaluate(() => [...document.querySelectorAll('#about-box button')].find((b) => /Settings/.test(b.textContent)).click());
+    await sleep(200);
+    await page.click('.share-toggle input');
+    await page.select('.share-box select', 'public-domain');
+    await page.click('.share-box .check input');
+    await page.click('.lib-form button[type=submit]');
+    await sleep(600);
+    const pub = (await anon('GET', '/api/books?scope=public')).data;
+    check('…share it: licence and “I may share it”, then it is in the public library', pub.some((b) => b.id === photoId && b.licenseName === 'Public domain'));
+
+    // The admin hides the reported book on the Admin page.
+    const adminCtx = await browser.createBrowserContext(); // a separate window: its own cookies (login)
+    const adminPage = await adminCtx.newPage();
+    adminPage.on('pageerror', (e) => problems.push(`admin page error: ${e.message}`));
+    adminPage.on('dialog', (d) => d.accept());
+    await adminPage.goto(`${base}/web/#/`, { waitUntil: 'networkidle0' });
+    await adminPage.click('#lib-account .btn:not(.primary)'); // Log in
+    await adminPage.type('.lib-form input[type=email]', 'boss@example.com');
+    await adminPage.type('.lib-form input[type=password]', 'secret-123');
+    await adminPage.click('.lib-form button[type=submit]');
+    await adminPage.waitForFunction(() => !document.querySelector('#library [data-scope="admin"]').hidden, { timeout: 10000 }).catch(() => {});
+    await adminPage.click('#library [data-scope="admin"]');
+    await adminPage.waitForFunction(() => document.querySelector('.admin-table'), { timeout: 10000 }).catch(() => {});
+    const listed = await adminPage.$$eval('.admin-table', (t) => t[0]?.textContent || '');
+    await adminPage.evaluate(() => [...document.querySelectorAll('.admin-table')[0].querySelectorAll('button')].find((b) => b.textContent === 'Hide').click());
+    await sleep(600);
+    const hiddenNow = (await anon('GET', `/api/books/${id}`)).status;
+    check('…the admin sees the report on the Admin page and hides the book: nobody else can open it', /Ann’s lesson/.test(listed) && /Copied from a course book/.test(listed)
+      && hiddenNow === 404 && (await ann('GET', `/api/books/${id}`)).data.hidden);
+    await adminCtx.close();
     await page.close();
   } finally {
     stopServer(srv);
+    rmSync(tmp, { recursive: true, force: true });
   }
-  // Reachable from other devices without a password: it does not start.
+  // Reachable from other devices without a login: it does not start.
   const refused = spawnSync('python', [path.resolve(here, '..', 'server.py'), '--no-browser', '--host', '0.0.0.0', '--port', '8796'],
-    { env: { ...process.env, AEF_PASSWORD: '' }, timeout: 20000, encoding: 'utf-8' });
-  check('…and the server refuses to be reachable from other devices without a password', refused.status === 1 && /not started/.test(refused.stdout));
+    { timeout: 20000, encoding: 'utf-8' });
+  check('…and the server refuses to be reachable from other devices without a login', refused.status === 1 && /not started/.test(refused.stdout));
+}
+
+/** The library on this computer: the disc's books are there; a text lesson is added through the form. */
+async function libraryChecks(page) {
+  await page.goto(BASE + '#/', { waitUntil: 'networkidle0' });
+  await sleep(500);
+  const home = await page.evaluate(() => ({ open: !document.querySelector('#library').hidden,
+    tabs: [...document.querySelectorAll('#library [role=tab]:not([hidden])')].map((t) => t.dataset.scope) }));
+  await page.click('#library [data-scope="local"]');
+  await sleep(500);
+  const disc = await page.$$eval('.book-card h3', (h) => h.map((x) => x.textContent));
+  check('Library: the home screen; on this computer the disc’s three books are there', home.open && home.tabs.includes('local')
+    && ['Student Book', 'Workbook', "Teacher's Book"].every((b) => disc.includes(b)), disc.join(', '));
+  await page.click('#lib-add');
+  await sleep(300);
+  await page.click('.add-kind [data-kind="text"]');
+  await page.type('.lib-form input[type=text]', 'My first lesson');
+  await page.type('.lib-form textarea', 'Hello world. This is my first lesson in Lingua Books.\n\nThe second paragraph is here. It is short.');
+  await page.click('.lib-form button[type=submit]');
+  await page.waitForFunction(() => location.hash.startsWith('#/L'), { timeout: 30000 }).catch(() => {});
+  await page.waitForFunction(() => document.querySelector('.page-img')?.complete && document.querySelectorAll('#text-view .sline').length, { timeout: 15000 }).catch(() => {});
+  const lesson = await page.evaluate(() => ({ title: document.querySelector('#book-name').textContent, lines: document.querySelectorAll('#text-view .sline').length,
+    words: document.querySelectorAll('.hits rect').length, readonly: document.body.classList.contains('readonly') }));
+  check('…add a text lesson: set into a page, every sentence clickable, yours to correct', lesson.title === 'My first lesson' && lesson.lines === 5
+    && lesson.words === 21 && !lesson.readonly, JSON.stringify(lesson));
+  // Delete it again (settings).
+  await page.click('#book-title');
+  await sleep(500);
+  await page.click('#library [data-scope="mine"]');
+  await sleep(500);
+  page.once('dialog', (d) => d.accept().catch(() => {})); // (an earlier check may answer it already)
+  await page.click('.book-card .bc-edit');
+  await sleep(200);
+  await page.evaluate(() => [...document.querySelectorAll('.lib-form button')].find((b) => /Delete/.test(b.textContent)).click());
+  await sleep(600);
+  check('…and delete it again', (await page.$$('.book-card')).length === 0);
 }
 
 /** Phones: the layout at iPhone size, and the app used with touches only (tap, swipe, pinch, double tap). */
@@ -996,15 +1174,18 @@ async function desktopChecks(browser, page, problems) {
 const server = await startServer();
 const { browser, page, problems } = await openBrowser();
 try {
-  // ONLY=phone or ONLY=login runs just those checks (quicker while working on one part).
+  // ONLY=phone, ONLY=library or ONLY=website runs just those checks (quicker while working on one part).
   const only = process.env.ONLY;
   if (!only) await desktopChecks(browser, page, problems);
+
+  // The library on this computer
+  if (!only || only === 'library') await libraryChecks(page);
 
   // Phones (iPhone size, touch only)
   if (!only || only === 'phone') await phoneChecks(browser, problems);
 
-  // The login (for phones on the home Wi-Fi and web hosts)
-  if (!only || only === 'login') await loginChecks(browser, problems);
+  // Lingua Books as a public website (accounts, sharing, reports, the admin)
+  if (!only || only === 'website') await websiteChecks(browser, problems);
 
   check('no errors in the browser', problems.length === 0, problems.slice(0, 5).join(' | '));
 } finally {

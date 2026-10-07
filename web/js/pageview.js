@@ -4,7 +4,6 @@ import { PageText } from './pagetext.js';
 import { el, icon } from './util.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const PAGE_W = 1984, PAGE_H = 2496;
 
 const HOTSPOT = {
   audio: { cls: 'hs-audio', icon: 'headphones' },
@@ -21,8 +20,8 @@ function svg(tag, attrs = {}) {
 
 export class PageView {
   /**
-   * @param {object} book   entry from books.json
-   * @param {object} page   page entry ({n, path, a})
+   * @param {object} book   a book from /api/books/<id>
+   * @param {object} page   one of its pages: {n, path, w, h, img, thumb, a: hotspots (disc books)}
    * @param {object} hooks  {onHover(view, unit), onClick(view, unit, event), onHotspot(view, asset)}
    */
   constructor(book, page, hooks) {
@@ -32,16 +31,19 @@ export class PageView {
     this.text = null;
     this.mode = 'sentence';
 
-    this.el = el('div', { class: 'page', dataset: { page: page.n } });
+    // Page coordinates (word boxes, hotspots) are in pixels of the page image: w × h.
+    this.W = page.w || 1984;
+    this.H = page.h || 2496;
+    this.el = el('div', { class: 'page', dataset: { page: page.n }, style: `aspect-ratio: ${this.W} / ${this.H}` });
     this.loading = el('div', { class: 'page-loading' }, 'Loading page…');
     this.img = el('img', {
       class: 'page-img', alt: `${book.type}, page ${page.n}`, decoding: 'async', draggable: 'false',
-      src: `/web/data/pages/${book.slug}/${page.path}.webp`,
+      src: page.img,
     });
     this.img.addEventListener('load', () => this.loading.remove());
     this.img.addEventListener('error', () => { this.loading.textContent = 'This page image is missing.'; });
 
-    this.svg = svg('svg', { class: 'text-layer', viewBox: `0 0 ${PAGE_W} ${PAGE_H}`, preserveAspectRatio: 'none' });
+    this.svg = svg('svg', { class: 'text-layer', viewBox: `0 0 ${this.W} ${this.H}`, preserveAspectRatio: 'none' });
     this.gPick = svg('g', { class: 'hl-pick' }); // sentences chosen for a new audio
     this.gActive = svg('g', { class: 'hl-active' });
     this.gWord = svg('g', { class: 'hl-word' });
@@ -98,7 +100,7 @@ export class PageView {
     let start = null;
     const toPage = (e) => {
       const r = this.el.getBoundingClientRect();
-      return { x: ((e.clientX - r.left) / r.width) * PAGE_W, y: ((e.clientY - r.top) / r.height) * PAGE_H };
+      return { x: ((e.clientX - r.left) / r.width) * this.W, y: ((e.clientY - r.top) / r.height) * this.H };
     };
     const box = (a, b) => ({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) });
     layer.addEventListener('pointerdown', (e) => {
@@ -126,17 +128,17 @@ export class PageView {
 
   renderHotspots() {
     this.buttons = new Map();
-    for (const a of this.page.a) {
+    for (const a of this.page.a || []) { // (only the disc's pages have them)
       const kind = HOTSPOT[a.t];
       if (!kind) continue;
       const label = a.t === 'link' ? `p.${a.page}` : '';
       // Buttons at the edge of the page grow inwards, so wide ones (p.104) stay on the screen.
-      const edge = a.x / PAGE_W > 0.9 ? ' hs-r' : a.x / PAGE_W < 0.1 ? ' hs-l' : '';
+      const edge = a.x / this.W > 0.9 ? ' hs-r' : a.x / this.W < 0.1 ? ' hs-l' : '';
       const b = el('button', {
         class: `hs ${kind.cls}${edge}`,
         title: a.title,
         'aria-label': a.title,
-        style: `left:${(a.x / PAGE_W) * 100}%;top:${(a.y / PAGE_H) * 100}%`,
+        style: `left:${(a.x / this.W) * 100}%;top:${(a.y / this.H) * 100}%`,
         html: icon(kind.icon) + (label ? `<span>${label}</span>` : ''),
       });
       b.addEventListener('click', (e) => { e.stopPropagation(); this.hooks.onHotspot(this, a, b); });
@@ -188,7 +190,7 @@ export class PageView {
     if (!this.text) return null;
     const rs = this.text.rects(unit.a, unit.b);
     if (!rs.length) return null;
-    const s = this.el.clientWidth / PAGE_W;
+    const s = this.el.clientWidth / this.W;
     const y0 = Math.min(...rs.map((r) => r.y)), y1 = Math.max(...rs.map((r) => r.y + r.h));
     const x0 = Math.min(...rs.map((r) => r.x)), x1 = Math.max(...rs.map((r) => r.x + r.w));
     return { x: x0 * s, y: y0 * s, w: (x1 - x0) * s, h: (y1 - y0) * s };
@@ -209,7 +211,7 @@ export class PageView {
     this.recSpots.replaceChildren(...spots.map((s) => {
       const b = el('button', {
         class: 'rec-spot', title: `My audio: ${s.title}`, 'aria-label': `Play my audio: ${s.title}`,
-        style: `left:${(s.x / PAGE_W) * 100}%;top:${(s.y / PAGE_H) * 100}%`, html: icon('wave'),
+        style: `left:${(s.x / this.W) * 100}%;top:${(s.y / this.H) * 100}%`, html: icon('wave'),
       });
       b.addEventListener('click', (e) => { e.stopPropagation(); onPlay(s.id); });
       this.recButtons.set(s.id, b);

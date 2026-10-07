@@ -225,7 +225,7 @@ export class Recordings {
     const sum = this.list.find((r) => r.id === id);
     if (!sum) return;
     if (!this.app.views.some((v) => v.page.path === sum.path)) {
-      this.app.go(sum.bookId, sum.page);
+      await this.app.go(sum.bookId, sum.page); // (the book may have to be loaded first)
       await this.app.pageReady;
     }
     let rec;
@@ -352,6 +352,10 @@ export class Recordings {
   // ---------------------------------------------------------------- Choosing sentences
 
   startPicking() {
+    if (this.app.me.mode === 'public' && !this.app.me.user) { // on a website MP3s belong to an account
+      this.app.library.accountDialog('signup', 'Create a free account (or log in) to make MP3s with a natural voice.');
+      return;
+    }
     if (this.app.editor.active) this.app.editor.stop();
     this.app.reader.stop();
     this.picking = true;
@@ -518,12 +522,12 @@ export class Recordings {
     if (!this.voicesPromise) {
       this.voicesPromise = fetch('/api/voices').then(async (r) => {
         if (r.status === 404) {
-          throw new Error('The app’s server is an older version. Close the black “American English File 3” window and start the app again with Start American English File.bat.');
+          throw new Error('The app’s server is an older version. Close its black window and start the app again with Start Lingua Books.bat.');
         }
         const data = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(`${data.error || 'The voices could not be loaded.'} Making audio needs the internet (playing it later does not).`);
         return data;
-      }, () => { throw new Error('The app’s server is not running. Start the app with Start American English File.bat.'); });
+      }, () => { throw new Error('The app’s server is not running. Start the app with Start Lingua Books.bat.'); });
       this.voicesPromise.catch(() => { this.voicesPromise = null; });
     }
     return this.voicesPromise;

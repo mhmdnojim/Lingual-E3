@@ -104,7 +104,13 @@ button { cursor: pointer; }
 .tb-group.end { margin-left: auto; border-left: 0; }
 .tb-label { color: var(--muted); font-size: 12.5px; margin-right: 4px; white-space: nowrap; }
 
-.brand { display: flex; align-items: center; gap: 8px; margin: 0 6px 0 4px; white-space: nowrap; }
+.brand { display: flex; align-items: center; gap: 8px; margin: 0 6px 0 4px; white-space: nowrap; border: 0; background: none; padding: 0; color: inherit; font: inherit; }
+.book-title {
+  display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 11px; max-width: 280px; min-width: 0;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); font-weight: 500;
+}
+.book-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.book-title:hover { background: var(--surface-3); }
 .brand-mark {
   background: var(--accent); color: var(--accent-ink);
   font-weight: 700; font-size: 11px; letter-spacing: .06em;
@@ -640,6 +646,89 @@ body.marking .stage { box-shadow: inset 0 0 0 3px #2563eb; }
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+/* ---------- Library (the home screen) ---------- */
+.layout { position: relative; }
+.library { position: absolute; inset: 0; z-index: 25; display: flex; flex-direction: column; overflow: auto; background: var(--bg); }
+.lib-head {
+  position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 16px;
+  padding: 8px 20px 0; background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.lib-tabs { padding: 0; border-bottom: 0; }
+.lib-tools { margin-left: auto; display: flex; align-items: center; gap: 8px; padding-bottom: 8px; }
+.lib-search { width: 210px; }
+.lib-account { display: flex; gap: 6px; }
+.lib-body { flex: 1; padding: 22px 20px; }
+.lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 24px 18px; max-width: 1400px; margin: 0 auto; }
+.book-card { position: relative; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.bc-cover {
+  aspect-ratio: 3 / 4; padding: 0; overflow: hidden; display: grid; place-items: center;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow-sm); transition: box-shadow .15s, transform .15s;
+}
+.bc-cover:hover { box-shadow: var(--shadow); transform: translateY(-2px); }
+.bc-cover img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+.cover-note { display: grid; justify-items: center; gap: 10px; padding: 14px; font-size: 13px; color: var(--muted); text-align: center; }
+.cover-note.err { color: var(--accent); }
+.bc-body h3 { margin: 0; font-size: 15px; line-height: 1.3; }
+.bc-title { border: 0; background: none; padding: 0; text-align: left; font: inherit; color: inherit; overflow-wrap: anywhere; }
+.bc-title:hover { text-decoration: underline; }
+.bc-meta { margin: 3px 0 0; font-size: 12.5px; color: var(--muted); }
+.bc-badges { margin: 7px 0 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.bc-badges:empty { display: none; }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 999px; background: var(--surface-3); color: var(--muted); font-size: 11px; font-weight: 600; }
+.badge.public { background: rgba(29, 138, 77, .14); color: #1d8a4d; }
+.badge.warn { background: var(--accent-soft); color: var(--accent); }
+.bc-edit { position: absolute; top: 7px; right: 7px; background: var(--surface); box-shadow: var(--shadow-sm); }
+.lib-empty { max-width: 540px; margin: 48px auto; text-align: center; color: var(--muted); font-size: 14.5px; }
+.lib-empty h3 { margin: 0 0 8px; color: var(--text); font-size: 18px; }
+.lib-actions { display: flex; justify-content: center; gap: 8px; }
+.lib-foot { padding: 16px 20px 20px; text-align: center; font-size: 12.5px; color: var(--muted); }
+.lib-foot a { color: inherit; }
+.spinner { width: 22px; height: 22px; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+/* While the library is open the reader's tools are not needed. */
+body.lib-open :is(.pager, .view-tools, .read-tools, .tb-group.end, #btn-pages, #book-title) { display: none !important; }
+
+/* Forms in dialogs (adding a book, settings, accounts, reports) */
+.lib-form { display: grid; gap: 2px; width: min(580px, 92vw); padding: 16px 20px 20px; }
+.lib-form > p { margin: 0 0 8px; }
+.input { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--text); font: inherit; }
+.lib-form .input { height: 40px; }
+textarea.input, .lib-form textarea.input { height: auto; resize: vertical; line-height: 1.5; }
+.input:focus { outline: 2px solid var(--focus); outline-offset: 0; border-color: transparent; }
+.form-msg { margin: 6px 0; color: var(--accent); font-size: 13.5px; font-weight: 500; }
+.form-msg:empty { display: none; }
+.form-buttons { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+.form-buttons .push { flex: 1; }
+.danger-btn { color: var(--accent); }
+.add-kind { justify-self: start; margin-bottom: 12px; }
+.share-toggle { margin-top: 8px; }
+.share-box { margin: 2px 0 8px; padding-left: 12px; border-left: 3px solid var(--line); }
+.trap { position: absolute; left: -9999px; width: 1px; height: 1px; }
+.lib-progress-title { margin: 0 0 12px; font-size: 16px; }
+
+/* About the open book (second tab of the page list) */
+.about-box { padding: 14px 16px; }
+.about-box:empty { display: none; }
+.about-title { margin: 0 0 10px; font-size: 16px; }
+.about-list { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 0 0 12px; font-size: 13.5px; }
+.about-list dt { color: var(--muted); }
+.about-list dd { margin: 0; overflow-wrap: anywhere; }
+.about-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+
+/* Admin page */
+.admin { max-width: 1200px; margin: 0 auto; }
+.admin h3 { margin: 18px 0 6px; }
+.table-scroll { overflow-x: auto; }
+.admin-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.admin-table th, .admin-table td { padding: 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.admin-table th { color: var(--muted); font-weight: 600; font-size: 12.5px; }
+.admin-acts { display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* Books of others: read, translate, listen; not correct. */
+body.readonly #edit-text, body.readonly .list-hint, body.readonly .sline .grip .i { display: none !important; }
+body.readonly .sline .grip { cursor: default; }
+body.readonly .sline:hover .grip .num { display: inline; }
+
 /* ---------- Narrow screens ---------- */
 @media (max-width: 1280px) {
   .tb-label, .brand-name { display: none; }
@@ -671,7 +760,9 @@ body { height: 100dvh; }
   .read-tools { order: 4; flex: 1; }
   .tb-group.end { order: 5; margin-left: 0; }
   .brand, .tb-label, .view-tools, #btn-panel { display: none; }
-  #book-select { flex: 0 1 auto; min-width: 0; max-width: 170px; height: 36px; text-overflow: ellipsis; }
+  .book-title { height: 36px; }
+  body.lib-open .brand { display: flex; }
+  body.lib-open .brand-name { display: inline; }
   .topbar .icon-btn { width: 40px; height: 40px; }
   .page-field { height: 36px; padding: 0 6px; }
   .page-field input { width: 2.3em; }
@@ -715,6 +806,17 @@ body { height: 100dvh; }
   .video-wrap video { width: 100vw; max-height: 42dvh; }
   .dialog-body .cue-list { width: auto; flex: 1; border-left: 0; border-top: 1px solid var(--line); }
   .swf-wrap { padding: 6px; }
+
+  /* The library on a phone: two books side by side, the tools below the tabs. */
+  .lib-head { padding: 4px 10px 0; }
+  .lib-tools { width: 100%; margin-left: 0; flex-wrap: wrap; }
+  .lib-search { flex: 1; width: auto; min-width: 120px; }
+  .lib-search:focus-within { position: static; }
+  .lib-body { padding: 14px 10px; }
+  .lib-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 12px; }
+  .book-title { max-width: none; flex: 1; }
+  .brand { display: none; }
+  .lib-tabs [role=tab] { padding: 8px 8px 9px; }
 
   /* Very narrow phones (320-370 px): a little tighter. */
   @media (max-width: 370px) {

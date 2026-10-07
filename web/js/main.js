@@ -6,9 +6,10 @@ import { Search } from './search.js';
 import { TextEditor } from './editor.js';
 import { Recordings } from './recordings.js';
 import { Translator } from './translation.js';
+import { Library } from './library.js';
 
 const RATIO = 1984 / 2496;
-const NEEDS_API = 5; // server features this page needs (API_VERSION in web/server.py)
+const NEEDS_API = 6; // server features this page needs (API_VERSION in web/server.py)
 const CHUNK_UNITS = 10; // sentences (or clauses) read in one go, for a smooth flow
 const CHUNK_CHARS = 1500;
 const MODES = ['sentence', 'clause', 'word', 'off'];
@@ -255,14 +256,15 @@ class Reader {
 
 class App {
   async init() {
-    this.data = await getJSON('/web/data/books.json');
-    if (!this.data) {
+    this.me = await fetch('/api/me', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    if (!this.me) {
       $('#spread').replaceChildren(el('div', { class: 'empty' },
-        'The book data could not be loaded. Start the app with “Start American English File.bat” instead of opening this file directly.'));
+        'The app could not reach its server. Start it with “Start Lingua Books.bat” instead of opening this file directly.'));
       return;
     }
     this.checkServer();
-    this.booksById = new Map(this.data.books.map((b) => [b.id, b]));
+    this.books = new Map(); // book id -> Promise of the book with its pages (from /api/books/<id>)
+    this.discList = this.me.disc ? await fetch('/api/books?scope=local').then((r) => r.json()).catch(() => []) : [];
     this.views = [];
     this.group = [];
     this.book = null;
@@ -280,6 +282,7 @@ class App {
     this.editor = new TextEditor(this);
     this.recordings = new Recordings(this);
     this.translator = new Translator(this);
+    this.library = new Library(this);
     initDialog();
 
     this.bindToolbar();
@@ -293,12 +296,46 @@ class App {
 
     new ResizeObserver(() => this.applyZoom()).observe($('#stage'));
     window.addEventListener('hashchange', () => this.route());
-    if (!this.parseHash()) {
-      const last = store.get('last', null);
-      const book = (last && this.booksById.get(last.book)) || this.data.books[0];
-      history.replaceState(null, '', `#/${book.id}/${last?.page ?? book.pages[0].n}`);
-    }
+    // No address of a page: the book read last, else the library.
+    const last = store.get('last', null);
+    if (!this.parseHash() && last && location.hash !== '#/') history.replaceState(null, '', `#/${last.book}/${last.page}`);
     this.route();
+  }
+
+  /** A book with its pages (the server tells what it may show), or null. */
+  loadBook(id) {
+    if (!this.books.has(id)) {
+      const p = fetch(`/api/books/${encodeURIComponent(id)}`, { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      p.then((b) => { if (!b) this.books.delete(id); });
+      this.books.set(id, p);
+    }
+    return this.books.get(id);
+  }
+
+  forgetBook(id) { this.books.delete(id); }
+
+  /** The open book changed (its settings, or who is logged in): load it again, same page. */
+  async reloadBook() {
+    if (!this.book || this.library.isOpen) return;
+    this.forgetBook(this.book.id);
+    const page = this.book.pages[this.idx]?.n;
+    const book = await this.loadBook(this.book.id);
+    if (!book) { this.goHome(); return; }
+    this.book = null; // shown again
+    this.show(book, Math.max(0, book.pages.findIndex((x) => x.n === page)));
+  }
+
+  /** Logged in or out: what may be done changes. */
+  accountChanged() {
+    this.books.clear();
+    this.recordings.load();
+    this.translator.loadLanguages?.();
+    if (this.book && !this.library.isOpen) this.reloadBook();
+  }
+
+  goHome() {
+    if (location.hash !== '#/') history.pushState(null, '', '#/');
+    return this.route();
   }
 
   /** After an update the page is new but an older server may still run: say how to fix it. */
@@ -314,13 +351,22 @@ class App {
     return m ? { book: m[1], page: decodeURIComponent(m[2]) } : null;
   }
 
-  route() {
-    const r = this.parseHash() || {};
-    const book = this.booksById.get(r.book) || this.data.books[0];
-    let idx = book.pages.findIndex((p) => p.n === r.page);
-    if (idx < 0) idx = 0;
+  async route() {
+    const r = this.parseHash();
     const opts = this.pendingOpts || {};
     this.pendingOpts = null;
+    if (!r) { this.library.open(); return; }
+    const book = await this.loadBook(r.book);
+    if (this.parseHash()?.book !== r.book) return; // went somewhere else meanwhile
+    if (!book) {
+      toast('This book does not exist, or is not shared any more.');
+      store.set('last', null);
+      this.goHome();
+      return;
+    }
+    this.library.close();
+    let idx = book.pages.findIndex((p) => p.n === r.page);
+    if (idx < 0) idx = 0;
     this.show(book, idx, opts);
   }
 
@@ -332,7 +378,7 @@ class App {
     this.pendingOpts = opts;
     const hash = `#/${bookId}/${encodeURIComponent(pageN)}`;
     if (location.hash !== hash) history.pushState(null, '', hash);
-    this.route(); // at once, so callers can wait for this.pageReady
+    return this.route(); // callers can wait for it, then for this.pageReady
   }
 
   groupFor(book, idx) {
@@ -358,6 +404,7 @@ class App {
       this.editor.commitText();
       this.editor.cancelMarking();
       this.editor.flush();
+      const newBook = this.book !== book;
       this.book = book;
       this.group = group;
       const hooks = {
@@ -365,6 +412,7 @@ class App {
         onClick: (v, u, e) => this.pageClick(v, u, e),
         onHotspot: (v, a) => this.hotspot(v, a),
       };
+      if (newBook) this.bookShown(book);
       this.views = group.map((i) => new PageView(book, book.pages[i], hooks));
       this.applyMode();
       const spread = $('#spread');
@@ -397,8 +445,18 @@ class App {
     const pages = this.book.pages;
     const around = [this.group[0] - 1, this.group[this.group.length - 1] + 1, this.group[this.group.length - 1] + 2];
     for (const i of around) {
-      if (i >= 0 && i < pages.length) new Image().src = `/web/data/pages/${this.book.slug}/${pages[i].path}.webp`;
+      if (i >= 0 && i < pages.length) new Image().src = pages[i].img;
     }
+  }
+
+  /** Another book is opened: its name, what may be done with it, its details. */
+  bookShown(book) {
+    $('#book-name').textContent = book.type;
+    document.body.classList.toggle('readonly', book.canEdit === false); // only the owner corrects the text
+    document.body.classList.toggle('disc-book', !!book.disc);
+    this.library.renderAbout(book);
+    this.renderResources(book);
+    $('#search-all').closest('label').hidden = !book.disc; // "all three books": the disc only
   }
 
   findOnPage(query) {
@@ -447,14 +505,6 @@ class App {
   // ---------- Toolbar ----------
 
   bindToolbar() {
-    const sel = $('#book-select');
-    sel.replaceChildren(...this.data.books.map((b) => el('option', { value: b.id }, b.type)));
-    sel.addEventListener('change', () => {
-      const b = this.booksById.get(sel.value);
-      const first = b.pages.find((p) => !p.blank) || b.pages[0];
-      this.go(b.id, store.get('page.' + b.id, first.n));
-    });
-
     $('#btn-prev').addEventListener('click', () => this.step(-1));
     $('#btn-next').addEventListener('click', () => this.step(1));
     $('#btn-back').addEventListener('click', () => {
@@ -495,13 +545,12 @@ class App {
     if (!this.book) return;
     const pages = this.book.pages;
     const first = pages[this.group[0]].n, last = pages[this.group[this.group.length - 1]].n;
-    $('#book-select').value = this.book.id;
     if (document.activeElement !== $('#page-input')) $('#page-input').value = first === last ? first : `${first}–${last}`;
     $('#page-input').style.width = `${Math.max(3.2, String($('#page-input').value).length * 0.62 + 1)}em`;
     $('#page-total').textContent = `/ ${pages.length}`;
     $('#btn-prev').disabled = this.group[0] === 0;
     $('#btn-next').disabled = this.group[this.group.length - 1] >= pages.length - 1;
-    document.title = `${this.book.type} p.${first} · American English File 3`;
+    document.title = `${this.book.type} p.${first} · Lingua Books`;
     this.updateThumbs();
   }
 
@@ -539,7 +588,9 @@ class App {
     const availW = this.fitWidth() * n;
     const availH = stage.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 22;
     let w;
-    if (this.zoom.mode === 'page') w = Math.min(availH * RATIO, availW / n);
+    const pg = this.views[0]?.page;
+    const ratio = pg?.w && pg?.h ? pg.w / pg.h : RATIO; // pages of library books have their own size
+    if (this.zoom.mode === 'page') w = Math.min(availH * ratio, availW / n);
     else if (this.zoom.mode === 'width') w = availW / n;
     else w = this.zoom.w;
     w = Math.round(Math.max(160, Math.min(5000, w)));
@@ -700,8 +751,7 @@ class App {
     else if (a.t === 'video') openVideo(this, a);
     else if (a.t === 'swf') openSwf(this, a);
     else if (a.t === 'link') {
-      const book = this.booksById.get(a.book) || this.book;
-      this.go(book.id, a.page, { fromLink: true });
+      this.go(a.book || this.book.id, a.page, { fromLink: true });
     }
   }
 
@@ -786,12 +836,12 @@ class App {
     $('#copy-text').addEventListener('click', () => this.copyText());
     $('#save-text').addEventListener('click', () => {
       const pages = this.views.map((v) => v.page.n).join('-');
-      downloadText(`AEF3 ${this.book.type} p${pages}.txt`, this.pageText());
+      downloadText(`${this.book.type} p${pages}.txt`, this.pageText());
     });
     $('#save-book-text').addEventListener('click', async () => {
       const idx = await getJSON(`/api/search/${this.book.slug}`);
       if (!idx?.length) { toast('No text has been extracted for this book yet.'); return; }
-      downloadText(`AEF3 ${this.book.type} - all text.txt`, idx.map((p) => `--- Page ${p.p} ---\n${p.t}`).join('\n\n'));
+      downloadText(`${this.book.type} - all text.txt`, idx.map((p) => `--- Page ${p.p} ---\n${p.t}`).join('\n\n'));
     });
   }
 
@@ -995,7 +1045,11 @@ class App {
       $$('#drawer [role=tab]').forEach((x) => x.setAttribute('aria-selected', String(x === t)));
       $$('#drawer .drawer-body').forEach((b) => { b.hidden = b.dataset.dtab !== t.dataset.dtab; });
     }));
-    $('#res-list').replaceChildren(...this.data.resources.map((r) => el('li', {},
+  }
+
+  /** The disc's resources (PDF and PowerPoint files) in the page list's second tab. */
+  renderResources(book) {
+    $('#res-list').replaceChildren(...(book.resources || []).map((r) => el('li', {},
       el('a', { href: r.src, target: '_blank', rel: 'noopener', download: r.kind === 'pdf' ? null : '', html:
         `${icon('file')}<span>${r.title.replace(/[&<>]/g, '')}</span><span class="kind">${r.kind}</span>` }))));
   }
@@ -1016,7 +1070,7 @@ class App {
     box.dataset.book = this.book.id;
     box.replaceChildren(...this.book.pages.map((p, i) => {
       const b = el('button', { class: p.blank ? 'thumb blank' : 'thumb', dataset: { i }, title: p.blank ? `Page ${p.n} (not on the disc)` : `Page ${p.n}` },
-        el('img', { loading: 'lazy', alt: '', src: `/web/data/thumbs/${this.book.slug}/${p.path}.webp` }),
+        el('img', { loading: 'lazy', alt: '', src: p.thumb }),
         p.n);
       b.addEventListener('click', () => {
         this.go(this.book.id, p.n);

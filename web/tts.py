@@ -17,8 +17,11 @@ import subprocess
 import threading
 import time
 
+import ids
+
 WEB = os.path.dirname(os.path.abspath(__file__))
 REC_DIR = os.environ.get('AEF_RECORDINGS_DIR') or os.path.join(WEB, 'recordings')  # tests use their own
+# On a website every user has a folder of their own (rec_dir); the voice list and samples are shared.
 RATE = 24000                      # sample rate of the edge-tts audio (mono)
 VOICE_RE = re.compile(r'^[a-z]{2,3}-[A-Z]{2}-[A-Za-z]+Neural$')
 ID_RE = re.compile(r'^r\d{8}-\d{6}-[0-9a-f]{4}$')
@@ -181,20 +184,21 @@ def _clean_request(req):
         words = s.get('words') if isinstance(s, dict) else None
         if not (isinstance(words, list) and all(isinstance(w, str) and len(w) < 200 for w in words)
                 and isinstance(s.get('a'), int) and isinstance(s.get('b'), int) and s['b'] - s['a'] == len(words)
-                and isinstance(s.get('text'), str) and re.match(r'^PA-[0-9a-f]+$', str(s.get('path', '')))):
+                and isinstance(s.get('text'), str) and ids.PAGE_RE.match(str(s.get('path', '')))):
             raise ValueError('bad sentence')
         clean.append({'path': s['path'], 'a': s['a'], 'b': s['b'], 'text': s['text'][:2000], 'words': words})
     title = str(req.get('title') or '').strip()[:120] or clean[0]['text'][:60]
     meta = {k: str(req.get(k, ''))[:40] for k in ('book', 'bookId', 'bookType', 'page', 'path')}
-    if not re.match(r'^BO-[0-9a-f]+$', meta['book']) or not re.match(r'^PA-[0-9a-f]+$', meta['path']):
+    if not ids.BOOK_RE.match(meta['book']) or not ids.PAGE_RE.match(meta['path']):
         raise ValueError('bad page')
     return {**meta, 'title': title, 'voice': voice, 'voiceName': str(req.get('voiceName', ''))[:60],
             'rate': rate, 'gap': float(gap), 'sentences': clean}
 
 
-def start_job(req):
-    """Check the request and create the MP3 in the background. Returns the job id."""
+def start_job(req, rec_dir=None):
+    """Check the request and create the MP3 (in rec_dir) in the background. Returns the job id."""
     job = _clean_request(req)
+    job['dir'] = rec_dir or REC_DIR
     jid = secrets.token_hex(6)
     with jobs_lock:
         jobs[jid] = {'state': 'running', 'done': 0, 'total': len(job['sentences'])}
@@ -322,18 +326,19 @@ async def _create(jid, job):
                            'start': round(start, 3), 'end': round(now(), 3), 'words': word_times}
     pcm = out
 
-    os.makedirs(REC_DIR, exist_ok=True)
+    folder = job['dir']
+    os.makedirs(folder, exist_ok=True)
     rid = time.strftime('r%Y%m%d-%H%M%S-') + secrets.token_hex(2)
-    _encode(bytes(pcm), os.path.join(REC_DIR, rid + '.mp3'), job['title'])
+    _encode(bytes(pcm), os.path.join(folder, rid + '.mp3'), job['title'])
     meta = {
         'id': rid, 'title': job['title'], 'created': time.strftime('%Y-%m-%dT%H:%M:%S'),
         **{k: job[k] for k in ('book', 'bookId', 'bookType', 'page', 'path', 'voice', 'voiceName', 'rate', 'gap')},
         'duration': round(len(pcm) / 2 / RATE, 2), 'file': f'/web/recordings/{rid}.mp3',
         'sentences': timeline,
     }
-    with open(os.path.join(REC_DIR, rid + '.json'), 'w', encoding='utf-8') as f:
+    with open(os.path.join(folder, rid + '.json'), 'w', encoding='utf-8') as f:
         json.dump(meta, f, ensure_ascii=False)
-    _write_subtitles(meta)
+    _write_subtitles(meta, folder)
     return _summary(meta)
 
 
@@ -344,7 +349,7 @@ def _clock(sec, sep):
     return f'{ms // 3600000:02d}:{ms // 60000 % 60:02d}:{ms // 1000 % 60:02d}{sep}{ms % 1000:03d}'
 
 
-def _write_subtitles(meta):
+def _write_subtitles(meta, folder):
     """Save the sentence times as subtitles next to the MP3: <id>.srt and <id>.vtt."""
     cues = [s for s in meta['sentences'] if s['end'] > s['start']]
     srt = '\n'.join(f"{n}\n{_clock(s['start'], ',')} --> {_clock(s['end'], ',')}\n{s['text']}\n"
@@ -352,7 +357,7 @@ def _write_subtitles(meta):
     vtt = 'WEBVTT\n\n' + '\n'.join(f"{n}\n{_clock(s['start'], '.')} --> {_clock(s['end'], '.')}\n{s['text']}\n"
                                    for n, s in enumerate(cues, 1))
     for ext, text in (('.srt', srt), ('.vtt', vtt)):
-        with open(os.path.join(REC_DIR, meta['id'] + ext), 'w', encoding='utf-8', newline='\n') as f:
+        with open(os.path.join(folder, meta['id'] + ext), 'w', encoding='utf-8', newline='\n') as f:
             f.write(text)
 
 
@@ -371,41 +376,51 @@ def _summary(meta):
     return out
 
 
-def _path(rid, ext):
+def _path(rid, ext, rec_dir=None):
     if not ID_RE.match(rid):
         raise ValueError('bad id')
-    return os.path.join(REC_DIR, rid + ext)
+    return os.path.join(rec_dir or REC_DIR, rid + ext)
 
 
-def list_recordings():
-    if not os.path.isdir(REC_DIR):
+def list_recordings(rec_dir=None):
+    folder = rec_dir or REC_DIR
+    if not os.path.isdir(folder):
         return []
     out = []
-    for f in os.listdir(REC_DIR):
+    for f in os.listdir(folder):
         if ID_RE.match(f[:-5]) and f.endswith('.json'):
-            with open(os.path.join(REC_DIR, f), encoding='utf-8') as fh:
+            with open(os.path.join(folder, f), encoding='utf-8') as fh:
                 meta = json.load(fh)
-            if not os.path.exists(os.path.join(REC_DIR, meta['id'] + '.srt')):
-                _write_subtitles(meta)  # audio made before subtitles existed: the times are in the JSON
+            if not os.path.exists(os.path.join(folder, meta['id'] + '.srt')):
+                _write_subtitles(meta, folder)  # audio made before subtitles existed: the times are in the JSON
             out.append(_summary(meta))
     return sorted(out, key=lambda r: r['created'], reverse=True)
 
 
-def get_recording(rid):
-    with open(_path(rid, '.json'), encoding='utf-8') as f:
+def get_recording(rid, rec_dir=None):
+    with open(_path(rid, '.json', rec_dir), encoding='utf-8') as f:
         return json.load(f)
 
 
-def rename_recording(rid, title):
-    meta = get_recording(rid)
+def rename_recording(rid, title, rec_dir=None):
+    meta = get_recording(rid, rec_dir)
     meta['title'] = str(title).strip()[:120] or meta['title']
-    with open(_path(rid, '.json'), 'w', encoding='utf-8') as f:
+    with open(_path(rid, '.json', rec_dir), 'w', encoding='utf-8') as f:
         json.dump(meta, f, ensure_ascii=False)
     return _summary(meta)
 
 
-def delete_recording(rid):
+def delete_recording(rid, rec_dir=None):
     for ext in ('.mp3', '.json', '.srt', '.vtt'):
-        p = _path(rid, ext)
+        p = _path(rid, ext, rec_dir)
         if os.path.exists(p):
             os.remove(p)
+
+
+def recording_file(name, rec_dir=None):
+    """The path of one of a user's files (<id>.mp3, .srt, .vtt), or None."""
+    rid, ext = os.path.splitext(name)
+    if ext not in ('.mp3', '.srt', '.vtt') or not ID_RE.match(rid):
+        return None
+    p = _path(rid, ext, rec_dir)
+    return p if os.path.isfile(p) else None
