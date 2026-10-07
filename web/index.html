@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#c4122f">
+<title>American English File 3</title>
+<meta name="description" content="Browser version of the American English File 2e Level 3 classroom software, with clickable, read-aloud text.">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<!-- "Add to Home screen" on phones: the app opens full screen with its own icon. -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="AEF 3">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></symbol>
+    <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-zoom-in" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></symbol>
+    <symbol id="i-zoom-out" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M8 11h6"/></symbol>
+    <symbol id="i-fit" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
+    <symbol id="i-spread" viewBox="0 0 24 24"><path d="M2 4h7a3 3 0 0 1 3 3v13a2.5 2.5 0 0 0-2.5-2.5H2z"/><path d="M22 4h-7a3 3 0 0 0-3 3v13a2.5 2.5 0 0 1 2.5-2.5H22z"/></symbol>
+    <symbol id="i-headphones" viewBox="0 0 24 24"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect width="14" height="14" x="5" y="5" rx="2"/></symbol>
+    <symbol id="i-video" viewBox="0 0 24 24"><path d="m16 13 5.2 3.5a.5.5 0 0 0 .8-.4V7.9a.5.5 0 0 0-.8-.4L16 11"/><rect x="2" y="6" width="14" height="12" rx="2"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+    <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></symbol>
+    <symbol id="i-repeat" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M21 4h-7"/><path d="M10 4H3"/><path d="M21 12h-9"/><path d="M8 12H3"/><path d="M21 20h-5"/><path d="M12 20H3"/><path d="M14 2v4"/><path d="M8 10v4"/><path d="M16 18v4"/></symbol>
+    <symbol id="i-panel" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></symbol>
+    <symbol id="i-text" viewBox="0 0 24 24"><path d="M17 6.1H3"/><path d="M21 12.1H3"/><path d="M15.1 18H3"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-scissors" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/></symbol>
+    <symbol id="i-merge-up" viewBox="0 0 24 24"><path d="M5 3h14"/><path d="m18 13-6-6-6 6"/><path d="M12 7v14"/></symbol>
+    <symbol id="i-merge-down" viewBox="0 0 24 24"><path d="M12 17V3"/><path d="m6 11 6 6 6-6"/><path d="M19 21H5"/></symbol>
+    <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></symbol>
+    <symbol id="i-arrow-down" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></symbol>
+    <symbol id="i-pilcrow" viewBox="0 0 24 24"><path d="M13 4v16"/><path d="M17 4v16"/><path d="M19 4H9.5a4.5 4.5 0 0 0 0 9H13"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M22 12h-4"/><path d="M6 12H2"/><path d="M12 6V2"/><path d="M12 22v-4"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></symbol>
+    <symbol id="i-languages" viewBox="0 0 24 24"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></symbol>
+    <symbol id="i-wave" viewBox="0 0 24 24"><path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/></symbol>
+    <symbol id="i-grip" viewBox="0 0 24 24"><circle cx="9" cy="5" r="1.4"/><circle cx="15" cy="5" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="19" r="1.4"/><circle cx="15" cy="19" r="1.4"/></symbol>
+    <symbol id="i-restore" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
+  </defs>
+</svg>
+
+<header class="topbar">
+  <div class="tb-group">
+    <button class="icon-btn" id="btn-pages" title="All pages and resources (P)" aria-label="All pages and resources" aria-expanded="false"><svg class="i"><use href="#i-grid"/></svg></button>
+    <div class="brand"><span class="brand-mark">AEF</span><span class="brand-name">American English File <b>3</b></span></div>
+    <select id="book-select" class="select" aria-label="Book"></select>
+  </div>
+
+  <nav class="tb-group pager" aria-label="Page navigation">
+    <button class="icon-btn" id="btn-back" title="Back to the page you came from" aria-label="Back" hidden><svg class="i"><use href="#i-back"/></svg></button>
+    <button class="icon-btn" id="btn-prev" title="Previous page (←)" aria-label="Previous page"><svg class="i"><use href="#i-left"/></svg></button>
+    <label class="page-field"><span class="sr">Page</span><input id="page-input" inputmode="numeric" autocomplete="off" aria-label="Page number"><span id="page-total" class="muted"></span></label>
+    <button class="icon-btn" id="btn-next" title="Next page (→)" aria-label="Next page"><svg class="i"><use href="#i-right"/></svg></button>
+  </nav>
+
+  <div class="tb-group view-tools">
+    <button class="icon-btn" id="btn-zoom-out" title="Zoom out (−)" aria-label="Zoom out"><svg class="i"><use href="#i-zoom-out"/></svg></button>
+    <button class="icon-btn" id="btn-fit" title="Fit page / fit width (0)" aria-label="Fit"><svg class="i"><use href="#i-fit"/></svg></button>
+    <button class="icon-btn" id="btn-zoom-in" title="Zoom in (+)" aria-label="Zoom in"><svg class="i"><use href="#i-zoom-in"/></svg></button>
+    <button class="icon-btn" id="btn-spread" title="Two pages side by side" aria-label="Two-page view" aria-pressed="false"><svg class="i"><use href="#i-spread"/></svg></button>
+  </div>
+
+  <div class="tb-group read-tools">
+    <span class="tb-label">Click to hear</span>
+    <div class="seg" id="mode-seg" role="radiogroup" aria-label="Click text to hear">
+      <button role="radio" data-mode="sentence" title="Click a sentence to hear it (1)">Sentence</button>
+      <button role="radio" data-mode="clause" title="Click part of a sentence to hear it (2)">Clause</button>
+      <button role="radio" data-mode="word" title="Click a word to hear it (3)">Word</button>
+      <button role="radio" data-mode="off" title="Turn off clickable text (4)">Off</button>
+    </div>
+    <button class="icon-btn" id="btn-voice" title="Settings: voice, speed and translation" aria-label="Settings: voice, speed and translation" aria-expanded="false"><svg class="i"><use href="#i-sliders"/></svg></button>
+    <button class="icon-btn" id="btn-translate" title="Translation on the page: show it when pointing at a sentence" aria-label="Translation on the page" aria-pressed="false"><svg class="i"><use href="#i-languages"/></svg></button>
+    <button class="icon-btn" id="btn-repeat" title="Repeat each sentence: once. Click: 2, 3, 4, 5 times, ∞ (R)" aria-label="Repeat each sentence: once" aria-pressed="false"><svg class="i"><use href="#i-repeat"/></svg><span class="count-badge" id="repeat-badge" hidden></span></button>
+  </div>
+
+  <div class="tb-group end">
+    <label class="search-field">
+      <svg class="i"><use href="#i-search"/></svg>
+      <input id="search-input" type="search" placeholder="Search text  ( / )" aria-label="Search the book text" autocomplete="off">
+    </label>
+    <button class="icon-btn" id="btn-panel" title="Show or hide the side panel (T)" aria-label="Side panel" aria-pressed="true"><svg class="i"><use href="#i-panel"/></svg></button>
+  </div>
+</header>
+
+<div class="popover" id="voice-pop" hidden>
+  <div class="tabs pop-tabs" role="tablist" aria-label="Settings">
+    <button role="tab" data-ptab="voice" aria-selected="true"><svg class="i"><use href="#i-volume"/></svg>Voice</button>
+    <button role="tab" data-ptab="translation" aria-selected="false"><svg class="i"><use href="#i-languages"/></svg>Translation</button>
+  </div>
+  <div class="pop-body" data-ptab="voice">
+  <label class="field"><span>Voice</span><select id="voice-select" class="select"></select></label>
+  <label class="field"><span>Speed <output id="rate-out">1.0×</output></span><input type="range" id="rate-input" min="0.5" max="1.5" step="0.05" value="1"></label>
+  <label class="field" title="Silence after each sentence (or clause) before the next one is read — time to repeat it aloud"><span>Pause between sentences <output id="gap-out">none</output></span><input type="range" id="gap-input" min="0" max="10" step="0.5" value="0"></label>
+  <label class="field" title="How many times each sentence is read before the next one; ∞ repeats it until you click another sentence, pause or stop"><span>Repeat each sentence <output id="repeat-out">once</output></span><input type="range" id="repeat-input" min="1" max="11" step="1" value="1"></label>
+  <label class="check"><input type="checkbox" id="follow-input" checked> Highlight each word while reading</label>
+  <button class="btn" id="voice-test"><svg class="i"><use href="#i-volume"/></svg>Test voice</button>
+  <p class="hint" id="voice-hint"></p>
+  </div>
+  <div class="pop-body" data-ptab="translation" hidden>
+  <label class="field"><span>Translate into</span><select id="tr-lang" class="select"><option value="">Loading…</option></select></label>
+  <p class="sub-head">Show the translation</p>
+  <label class="check"><input type="checkbox" id="tr-show"> In the Text list, under each sentence</label>
+  <label class="check"><input type="checkbox" id="tr-page"> On the page, in a popup when you point at a sentence (Word mode: the word too)</label>
+  <p class="hint tr-hint">The translate buttons switch them on and off quickly: the one at the top for the page, the one in the Text tab (or <kbd>L</kbd>) for the list. Translating needs the internet the first time; then it is saved on this computer.</p>
+  <button class="btn" id="tr-book">Translate the whole book now</button>
+  <div class="rec-progress" id="tr-progress" hidden><div></div></div>
+  <p class="hint" id="tr-status"></p>
+  </div>
+  <p class="pop-foot" id="logout-row" hidden><button class="link-btn" id="btn-logout">Log out on this device</button></p>
+</div>
+
+<main class="layout">
+  <aside class="drawer" id="drawer" aria-label="Pages and resources" hidden>
+    <div class="tabs" role="tablist">
+      <button role="tab" data-dtab="pages" aria-selected="true">Pages</button>
+      <button role="tab" data-dtab="resources" aria-selected="false">Resources</button>
+      <button class="icon-btn small push" id="drawer-close" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="drawer-body" data-dtab="pages"><div class="thumbs" id="thumbs"></div></div>
+    <div class="drawer-body" data-dtab="resources" hidden><ul class="res-list" id="res-list"></ul></div>
+  </aside>
+
+  <div class="stage-wrap">
+    <div class="update-notice" id="update-notice" role="alert" hidden>
+      <p><b>The app was updated.</b> An older copy of its server is still running. Close the black
+      “American English File 3” window, then start the app again with <b>Start American English File.bat</b>.</p>
+      <button class="icon-btn small" aria-label="Close" onclick="this.parentElement.hidden = true"><svg class="i"><use href="#i-x"/></svg></button>
+    </div>
+    <section class="stage" id="stage" tabindex="-1" aria-label="Book page">
+      <div class="spread" id="spread"></div>
+    </section>
+    <div class="reading-pill" id="reading-pill" role="status" hidden>
+      <span class="pulse" aria-hidden="true"></span><span id="reading-label">Reading</span>
+      <button class="btn small" id="reading-toggle" title="Pause or continue (Space)"><svg class="i"><use href="#i-pause"/></svg>Pause</button>
+      <button class="btn small" id="reading-stop" title="Stop (Esc)"><svg class="i"><use href="#i-stop"/></svg>Stop</button>
+    </div>
+  </div>
+
+  <aside class="panel" id="panel" aria-label="Side panel">
+    <!-- Phones: the panel is a sheet at the bottom; drag this bar to make it taller or shorter, tap it to open or close. -->
+    <div class="sheet-handle" id="sheet-handle" role="button" aria-label="Open or close the panel" tabindex="-1"><span></span></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" data-tab="text" aria-selected="true"><svg class="i"><use href="#i-text"/></svg>Text</button>
+      <button role="tab" data-tab="listen" aria-selected="false" title="Audio script"><svg class="i"><use href="#i-headphones"/></svg>Script</button>
+      <button role="tab" data-tab="search" aria-selected="false"><svg class="i"><use href="#i-search"/></svg>Search</button>
+      <button role="tab" data-tab="audio" aria-selected="false" title="MP3s you made with a natural voice"><svg class="i"><use href="#i-wave"/></svg>My audio</button>
+    </div>
+
+    <div class="tab-body" data-tab="text">
+      <div class="panel-actions" id="read-actions">
+        <button class="btn primary" id="read-page" title="Read the page from the start. Tip: click any sentence to read from there; click it again to pause."><svg class="i"><use href="#i-play"/></svg>Read page aloud</button>
+        <button class="icon-btn" id="tr-toggle" title="Show translations (L)" aria-label="Show translations" aria-pressed="false"><svg class="i"><use href="#i-languages"/></svg></button>
+        <button class="icon-btn" id="edit-text" title="Correct the text (E)" aria-label="Correct the text"><svg class="i"><use href="#i-pencil"/></svg></button>
+        <button class="icon-btn" id="copy-text" title="Copy the page text" aria-label="Copy the page text"><svg class="i"><use href="#i-copy"/></svg></button>
+        <button class="icon-btn" id="save-text" title="Save the page text as a .txt file" aria-label="Save the page text"><svg class="i"><use href="#i-download"/></svg></button>
+      </div>
+      <div class="panel-actions edit-actions" id="edit-actions" hidden>
+        <button class="btn primary" id="edit-done" title="Finish correcting (E)"><svg class="i"><use href="#i-check"/></svg>Done</button>
+        <button class="icon-btn" id="edit-undo" title="Undo (Ctrl+Z)" aria-label="Undo"><svg class="i"><use href="#i-back"/></svg></button>
+        <button class="icon-btn" id="edit-reset" title="Restore the original text of this page" aria-label="Restore the original text"><svg class="i"><use href="#i-restore"/></svg></button>
+        <span class="edit-status" id="edit-status" role="status"></span>
+        <div class="edit-tools" id="edit-tools" role="toolbar" aria-label="Correct the selected sentence">
+          <button class="icon-btn small" data-op="edit" title="Change the text of the selected sentence (Enter, or double-click it)" aria-label="Change the text"><svg class="i"><use href="#i-pencil"/></svg></button>
+          <button class="icon-btn small" data-op="split" title="Split into two sentences" aria-label="Split"><svg class="i"><use href="#i-scissors"/></svg></button>
+          <button class="icon-btn small" data-op="mergePrev" title="Merge with the sentence before" aria-label="Merge with the sentence before"><svg class="i"><use href="#i-merge-up"/></svg></button>
+          <button class="icon-btn small" data-op="mergeNext" title="Merge with the sentence after" aria-label="Merge with the sentence after"><svg class="i"><use href="#i-merge-down"/></svg></button>
+          <button class="icon-btn small" data-op="up" title="Move up (before the sentence above)" aria-label="Move up"><svg class="i"><use href="#i-arrow-up"/></svg></button>
+          <button class="icon-btn small" data-op="down" title="Move down (after the sentence below)" aria-label="Move down"><svg class="i"><use href="#i-arrow-down"/></svg></button>
+          <button class="icon-btn small" data-op="paragraph" title="New paragraph from this sentence" aria-label="New paragraph"><svg class="i"><use href="#i-pilcrow"/></svg></button>
+          <button class="icon-btn small" data-op="mark" title="Mark on page: drag a box around the sentence on the page image" aria-label="Mark on page"><svg class="i"><use href="#i-target"/></svg></button>
+          <button class="icon-btn small" data-op="add" title="Add a new sentence after this one" aria-label="Add a sentence after"><svg class="i"><use href="#i-plus"/></svg></button>
+          <button class="icon-btn small danger" data-op="delete" title="Delete the sentence (Delete key; Undo brings it back)" aria-label="Delete"><svg class="i"><use href="#i-trash"/></svg></button>
+          <span class="edit-sel" id="edit-sel"></span>
+        </div>
+      </div>
+      <div class="text-view" id="text-view"></div>
+      <div class="panel-foot"><button class="link-btn" id="save-book-text">Save the whole book's text (.txt)</button></div>
+    </div>
+
+    <div class="tab-body" data-tab="listen" hidden>
+      <div class="cue-head" id="cue-head"></div>
+      <ol class="cue-list" id="cue-list"></ol>
+    </div>
+
+    <div class="tab-body" data-tab="search" hidden>
+      <div class="search-opts">
+        <label class="check"><input type="checkbox" id="search-all"> Search all three books</label>
+        <span class="muted" id="search-meta"></span>
+      </div>
+      <ol class="results" id="search-results"></ol>
+    </div>
+
+    <div class="tab-body" data-tab="audio" hidden>
+      <div class="panel-actions" id="rec-actions">
+        <button class="btn primary" id="rec-new" title="Choose sentences and make an MP3 with a natural voice"><svg class="i"><use href="#i-plus"/></svg>New audio</button>
+        <div class="seg small" id="rec-filter" role="radiogroup" aria-label="Show">
+          <button role="radio" data-f="page">This page</button><button role="radio" data-f="book">This book</button><button role="radio" data-f="all">All</button>
+        </div>
+      </div>
+      <div class="panel-actions" id="rec-pick-actions" hidden>
+        <button class="btn primary" id="rec-create" disabled><svg class="i"><use href="#i-wave"/></svg>Create audio…</button>
+        <button class="btn" id="rec-cancel">Cancel</button>
+        <span class="edit-status" id="rec-count"></span>
+      </div>
+      <div class="rec-search" id="rec-search-row">
+        <svg class="i"><use href="#i-search"/></svg><input id="rec-search" type="search" placeholder="Search your audio" aria-label="Search your audio" autocomplete="off">
+      </div>
+      <div class="rec-view" id="rec-view"></div>
+    </div>
+  </aside>
+</main>
+
+<footer class="player" id="player" hidden>
+  <button class="icon-btn play" id="pl-play" aria-label="Play"><svg class="i"><use href="#i-play"/></svg></button>
+  <div class="pl-main">
+    <div class="pl-title" id="pl-title"></div>
+    <input type="range" id="pl-seek" min="0" max="1000" value="0" aria-label="Seek">
+  </div>
+  <span class="pl-time" id="pl-time">0:00 / 0:00</span>
+  <select class="select small" id="pl-rate" aria-label="Playback speed">
+    <option value="0.75">0.75×</option><option value="0.9">0.9×</option><option value="1" selected>1×</option><option value="1.15">1.15×</option><option value="1.3">1.3×</option>
+  </select>
+  <button class="icon-btn" id="pl-close" aria-label="Close player"><svg class="i"><use href="#i-x"/></svg></button>
+  <audio id="audio" preload="metadata"></audio>
+</footer>
+
+<dialog class="dialog" id="media-dialog">
+  <div class="dialog-head">
+    <h2 id="md-title"></h2>
+    <button class="icon-btn" id="md-close" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
+  </div>
+  <div class="dialog-body" id="md-body"></div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

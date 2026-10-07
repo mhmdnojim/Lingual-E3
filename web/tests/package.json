@@ -1,0 +1,13 @@
+{
+  "name": "aef3-web-tests",
+  "private": true,
+  "type": "module",
+  "description": "Browser tests and guide screenshots for the American English File 3 browser version.",
+  "scripts": {
+    "test": "node ui-test.mjs",
+    "screenshots": "node capture-screenshots.mjs"
+  },
+  "dependencies": {
+    "puppeteer-core": "^24.0.0"
+  }
+}

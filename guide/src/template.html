@@ -1,0 +1,951 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AEF3 Rebuild Guide</title>
+<meta name="description" content="How the American English File 2e Level 3 Flash app was rebuilt as a browser app: every step, every feature, with the real code and live demos.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23c4122f'/%3E%3Cpath d='M9 8h9a5 5 0 0 1 5 5v11H14a5 5 0 0 1-5-5z' fill='white'/%3E%3C/svg%3E">
+<!--STYLE-->
+</head>
+<body>
+<header class="topbar">
+  <button class="icon-btn" id="toc-toggle" aria-label="Contents"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  <span class="mark">AEF</span>
+  <span class="title">American English File 3 — Browser Version · Rebuild Guide</span>
+  <span class="spacer"></span>
+  <button class="icon-btn" id="theme-toggle" aria-label="Light or dark theme" title="Light or dark theme"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
+</header>
+
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <input class="toc-search" id="toc-search" type="search" placeholder="Filter contents…" aria-label="Filter contents">
+  <ol id="toc-list"></ol>
+  <p class="toc-empty" id="toc-empty" hidden>No section matches.</p>
+</nav>
+
+<main>
+
+<!-- ============================================================ OVERVIEW -->
+<section class="chapter" id="ch-overview">
+  <div class="hero">
+    <span class="audience">For: anyone rebuilding or changing this app — you or a developer</span>
+    <h1>From a dead Flash app to a <span>modern browser app</span></h1>
+    <p class="lead">This guide explains how the old <b>American English File 2e Level 3</b> classroom software was rebuilt to run in a web browser.
+      It shows every step, every feature, the real code (read directly from the project files), every screenshot, and small live demos you can try here.</p>
+    <div class="stats">
+      <div class="stat"><b data-stat="pages">472</b><span>book pages</span></div>
+      <div class="stat"><b data-stat="words">—</b><span>clickable words</span></div>
+      <div class="stat"><b data-stat="sentences">—</b><span>sentences</span></div>
+      <div class="stat"><b data-stat="clauses">—</b><span>clauses</span></div>
+      <div class="stat"><b data-stat="audio">346</b><span>audio buttons</span></div>
+      <div class="stat"><b data-stat="videos">38</b><span>videos converted</span></div>
+      <div class="stat"><b data-stat="swf">741</b><span>answer keys</span></div>
+    </div>
+  </div>
+
+  <h2 id="overview">1. Overview</h2>
+
+  <h3 id="old-app">What the old app was</h3>
+  <p>The disc contained <b>Oxford iTools 2.0</b> (2014). It was a desktop program (<code>windows/oup.exe</code>) built on <b>Mozilla XULRunner</b> (an old Firefox engine).
+    It showed book pages with a map library called <b>OpenLayers</b> and played audio, video and answer keys with <b>Adobe Flash Player 13</b>.</p>
+  <p>Adobe stopped Flash at the end of 2020, and XULRunner is no longer maintained. The program also checked a licence online. So on a modern Windows 11 computer the app no longer worked.</p>
+
+  <h3 id="new-app">What the new app does</h3>
+  <p>The new version is a small website that runs <b>only on your own computer</b>. A tiny Python server sends the files to Microsoft Edge or Chrome. No Flash and no internet are needed (except for the optional “Natural” voices).</p>
+  <p>The content was converted <b>once</b> by build scripts. The page images, audio and answer keys come from the original disc. The page text was read from the page images with OCR, and it is what makes every sentence, clause and word clickable.</p>
+
+  <h3 id="old-vs-new">Old app vs new app</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Part</th><th>Old app (2014)</th><th>New browser app</th></tr>
+    <tr><td>Program</td><td>XULRunner desktop app + Flash Player 13</td><td>HTML + CSS + JavaScript in Edge/Chrome, Python server</td></tr>
+    <tr><td>Pages</td><td>OpenLayers map of small tiles (124×156 px)</td><td>One WebP image per page + an SVG layer on top</td></tr>
+    <tr><td>Text</td><td>Only pictures of text</td><td>OCR text: clickable sentences, clauses and words; copy, save, search</td></tr>
+    <tr><td>Read aloud</td><td>—</td><td>Web Speech API with word-by-word highlighting</td></tr>
+    <tr><td>Audio</td><td>Flash player + XML script</td><td>HTML5 audio + script that follows the recording</td></tr>
+    <tr><td>Video</td><td>FLV (VP6 codec) in Flash</td><td>MP4 (H.264), plays in any browser</td></tr>
+    <tr><td>Answer keys</td><td>Flash SWF files</td><td>Same SWF files, played by Ruffle (a Flash emulator in WebAssembly)</td></tr>
+    <tr><td>Search</td><td>—</td><td>Full-text search in one or all three books</td></tr>
+    <tr><td>Text corrections</td><td>—</td><td>Edit, split, merge, move, add, delete sentences; saved per page</td></tr>
+  </table></div>
+
+  <h3 id="feature-tour">Feature tour</h3>
+  <p>Click a card to jump to how it works.</p>
+  <div class="cards">
+    <a class="card" href="#f-click"><img src="img:mode-sentence-reading" alt=""><div><b>Clickable text</b><span>Sentence, clause or word: click to hear it.</span></div></a>
+    <a class="card" href="#f-speech"><img src="img:voice-settings" alt=""><div><b>Text to speech</b><span>Choose a voice and speed; words light up.</span></div></a>
+    <a class="card" href="#f-reader"><img src="img:read-page-aloud" alt=""><div><b>Read page aloud</b><span>Reads every sentence in order.</span></div></a>
+    <a class="card" href="#f-text"><img src="img:app-main" alt=""><div><b>Text extraction</b><span>Copy or save the page text.</span></div></a>
+    <a class="card" href="#f-audio"><img src="img:audio-transcript" alt=""><div><b>Audio + script</b><span>The script follows the recording.</span></div></a>
+    <a class="card" href="#f-video"><img src="img:video" alt=""><div><b>Video</b><span>MP4 with a clickable script.</span></div></a>
+    <a class="card" href="#f-keys"><img src="img:answer-key" alt=""><div><b>Answer keys</b><span>Original Flash files via Ruffle.</span></div></a>
+    <a class="card" href="#f-search"><img src="img:search" alt=""><div><b>Search</b><span>Find any word in the books.</span></div></a>
+    <a class="card" href="#f-view"><img src="img:spread-pages" alt=""><div><b>Two pages, all pages</b><span>Spread view and page grid.</span></div></a>
+    <a class="card" href="#f-edit"><img src="img:editor" alt=""><div><b>Text corrections</b><span>Fix, split, merge, move, add sentences.</span></div></a>
+    <a class="card" href="#f-myaudio"><img src="img:rec-playing" alt=""><div><b>My audio (MP3)</b><span>Natural-voice MP3s of chosen paragraphs.</span></div></a>
+    <a class="card" href="#f-translate"><img src="img:tr-panel" alt=""><div><b>Translation</b><span>43 languages, under each sentence and on the page.</span></div></a>
+    <a class="card" href="#f-phone"><img src="img:phone" alt=""><div><b>Phones and tablets</b><span>Android and iPhone: tap, swipe, pinch.</span></div></a>
+    <a class="card" href="#f-host"><img src="img:phone-page" alt=""><div><b>Your own website</b><span>Login, GitHub, a VPS with HTTPS.</span></div></a>
+    <a class="card" href="#f-theme"><img src="img:dark-mode" alt=""><div><b>Dark mode</b><span>Follows the Windows setting.</span></div></a>
+  </div>
+</section>
+
+<!-- ============================================================ QUICK START -->
+<section class="chapter">
+  <h2 id="quick-start">2. Quick start</h2>
+
+  <h3 id="requirements">Requirements</h3>
+  <div class="table-wrap"><table>
+    <tr><th>To use the app</th><th>To rebuild the app</th></tr>
+    <tr><td>
+      <ul>
+        <li>Windows 10 or 11</li>
+        <li>Python 3 (any recent version)</li>
+        <li>Microsoft Edge (best voices) or Google Chrome</li>
+        <li>The built folder (with <code>web\data</code>)</li>
+      </ul></td><td>
+      <ul>
+        <li>The original disc folder (the <code>.shared</code> folder)</li>
+        <li>Python 3 with <code>pillow</code> and <code>imageio-ffmpeg</code> (installed automatically)</li>
+        <li>Windows OCR with the English (United States) language</li>
+        <li>Node.js (only to download Ruffle and to run the tests)</li>
+        <li>About 1 GB of free disk space and 25–30 minutes</li>
+      </ul></td></tr>
+  </table></div>
+
+  <h3 id="start">Start the app</h3>
+  <ol class="steps">
+    <li>Double-click <b>Start American English File.bat</b> in the main folder.</li>
+    <li>A black window opens and says <code>American English File 3 is running at http://127.0.0.1:8765/web/</code>. The browser opens by itself.</li>
+    <li>Keep the black window open while you use the app. Close it to stop the app.</li>
+  </ol>
+  <div class="snip" data-file="Start American English File.bat"></div>
+  <div class="callout warn"><b class="tag">Note</b><p>Do not open <code>web\index.html</code> by double-clicking it. Browsers block data loading from <code>file://</code> pages, so the app needs the small server. <a href="#f-server">Why the server is needed</a></p></div>
+
+  <h3 id="shortcuts">Keyboard shortcuts</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Key</th><th>Action</th><th>Key</th><th>Action</th></tr>
+    <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Previous / next page</td><td><kbd>P</kbd></td><td>All pages and resources</td></tr>
+    <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></td><td>Sentence, Clause, Word, Off</td><td><kbd>T</kbd></td><td>Show or hide the side panel</td></tr>
+    <tr><td><kbd>+</kbd> <kbd>−</kbd> <kbd>0</kbd></td><td>Zoom in, zoom out, fit</td><td><kbd>S</kbd></td><td>One page or two pages</td></tr>
+    <tr><td><kbd>/</kbd></td><td>Search</td><td><kbd>Space</kbd></td><td>Pause or continue reading (or the recording)</td></tr>
+    <tr><td><kbd>Esc</kbd></td><td>Stop reading, close popups</td><td><kbd>E</kbd></td><td>Start or finish correcting the text</td></tr>
+  </table></div>
+</section>
+
+<!-- ============================================================ ARCHITECTURE -->
+<section class="chapter">
+  <h2 id="architecture">3. Architecture</h2>
+  <p>There are two separate parts: <b>build scripts</b> that convert the old disc content once, and the <b>browser app</b> that only reads the converted files.</p>
+
+  <h3 id="build-then-run">Build once, then run</h3>
+  <p>The build pipeline (click a step to read about it):</p>
+  <div class="flow">
+    <a class="src" href="#inv-folder"><b>Original disc</b><span>.shared: tiles, MP3, FLV, SWF, XML</span></a>
+    <a href="#step-stitch"><b>1 · Stitch tiles</b><span>256 tiles → 1 page image</span></a>
+    <a href="#step-ocr"><b>2 · OCR</b><span>Windows reads the text + word boxes</span></a>
+    <a href="#step-segment"><b>3 · Sentences</b><span>blocks → sentences → clauses</span></a>
+    <a href="#step-video"><b>4 · Videos</b><span>FLV (VP6) → MP4 (H.264)</span></a>
+    <a href="#step-data"><b>5 · Book index</b><span>hotspots, transcripts, blank pages</span></a>
+    <a href="#step-ruffle"><b>6 · Ruffle</b><span>Flash emulator for answer keys</span></a>
+    <a class="out" href="#formats"><b>web\data</b><span>everything the app reads</span></a>
+  </div>
+  <p>At run time:</p>
+  <div class="runtime">
+    <div class="box"><b>Browser (Edge / Chrome)</b>index.html + js/*.js modules, Web Speech API, Ruffle</div>
+    <div class="arr">⇄</div>
+    <div class="box"><b>web\server.py</b>127.0.0.1 only, sends files, supports Range requests</div>
+    <div class="arr">⇄</div>
+    <div class="box"><b>Files on disk</b>web\data (converted) + .shared (original audio, answer keys)</div>
+  </div>
+  <div class="callout tip"><b class="tag">Why</b>
+    <ul>
+      <li><b>Heavy work happens once.</b> Joining tiles and OCR take about 20 minutes, so they are not done in the browser.</li>
+      <li><b>No frameworks.</b> The app is plain JavaScript modules, so there is nothing to install or compile, and it will keep working for many years.</li>
+      <li><b>Original files are reused</b> where browsers can play them (MP3, page tiles, SWF through Ruffle). Only the videos had to be converted.</li>
+      <li><b>The original app is not changed.</b> All new files are in <code>web\</code> and <code>guide\</code>.</li>
+    </ul>
+  </div>
+
+  <h3 id="folders">Folder structure</h3>
+  <p>Click a blue file name to see its code.</p>
+  <div class="legend"><span><i style="background:var(--link)"></i>code (in this guide)</span><span><i style="background:var(--ok)"></i>made by the build</span><span><i style="background:var(--warn)"></i>original disc content</span></div>
+  <div class="tree" id="file-tree"></div>
+
+  <h3 id="modules">Browser modules</h3>
+  <p>The app is split into small JavaScript modules. <code>main.js</code> controls everything and uses the others:</p>
+  <div class="table-wrap"><table>
+    <tr><th>Module</th><th>Job</th></tr>
+    <tr><td><code>main.js</code></td><td><b>App</b>: page navigation, toolbar, zoom, two-page view, click modes, side panel, page grid, voice settings, keyboard. <b>Reader</b>: the read-aloud queue.</td></tr>
+    <tr><td><code>pageview.js</code></td><td>Draws one page: the image, the invisible word targets, the highlight layers and the hotspot buttons.</td></tr>
+    <tr><td><code>pagetext.js</code></td><td>The text of one page: which words form which sentence/clause, highlight rectangles, the text to speak.</td></tr>
+    <tr><td><code>speech.js</code></td><td>Text to speech: finds and ranks voices, speaks, falls back to an offline voice.</td></tr>
+    <tr><td><code>media.js</code></td><td>Audio player bar, transcript that follows the time, video dialog, answer keys with Ruffle.</td></tr>
+    <tr><td><code>search.js</code></td><td>Full-text search across the books.</td></tr>
+    <tr><td><code>editor.js</code></td><td>Text corrections: the editable model, every correction, word-box matching, undo and saving.</td></tr>
+    <tr><td><code>segment.js</code></td><td>Clause splitting in the browser (same rules as the build), used after corrections.</td></tr>
+    <tr><td><code>util.js</code></td><td>Small helpers: element creation, saved settings, JSON loading, downloads, messages.</td></tr>
+  </table></div>
+  <div class="snip" data-file="web/js/main.js" data-from="import { $, $$" data-n="6" data-title="imports"></div>
+</section>
+
+<!-- ============================================================ INVESTIGATION -->
+<section class="chapter">
+  <h2 id="investigation">4. How the old app was investigated</h2>
+  <p>Before writing any code, the old app had to be understood. These are the steps, the commands, and what each one showed.</p>
+
+  <h3 id="inv-folder">4.1 Look at the folder</h3>
+  <script type="text/plain" class="codeblock" data-lang="ps1" data-title="PowerShell">
+Get-ChildItem -Force | Select-Object Mode, LastWriteTime, Length, Name
+Get-Content readme.txt -TotalCount 60
+Get-Content windows\application.ini
+</script>
+  <ul>
+    <li><code>readme.txt</code> said <b>Oxford iTools 2.0 / iPack 2.0 / My Digital Book 2.0</b> (2014).</li>
+    <li><code>windows\application.ini</code> showed a <b>XULRunner</b> app (Gecko version 1.8 – 27).</li>
+    <li><code>.flash_installers\windows\install_flash_player.exe</code> was <b>Flash 13.0.0.214</b>.</li>
+    <li>All the content was in <code>.shared\</code>: <code>books</code>, <code>assets</code>, <code>content</code>.</li>
+  </ul>
+
+  <h3 id="inv-types">4.2 Count the file types</h3>
+  <script type="text/plain" class="codeblock" data-lang="ps1" data-title="PowerShell">
+Get-ChildItem -Recurse -File | Group-Object Extension | Sort-Object Count -Descending |
+  Select-Object Name, Count, @{n='MB';e={[math]::Round(($_.Group | Measure-Object Length -Sum).Sum/1MB,1)}}
+</script>
+  <div class="table-wrap"><table>
+    <tr><th>Type</th><th class="num">Files</th><th class="num">MB</th><th>What it turned out to be</th></tr>
+    <tr><td>.png</td><td class="num">160,346</td><td class="num">1,135.6</td><td>Page tiles (3 zoom levels) and thumbnails</td></tr>
+    <tr><td>.xml</td><td class="num">4,956</td><td class="num">27.2</td><td>Timed audio/video scripts, Flash exercise data</td></tr>
+    <tr><td>.swf</td><td class="num">1,186</td><td class="num">57.7</td><td>Answer keys (741 linked from pages) and interactive Flash parts</td></tr>
+    <tr><td>.json</td><td class="num">473</td><td class="num">0.3</td><td>Book index + one hotspot list per page</td></tr>
+    <tr><td>.mp3</td><td class="num">312</td><td class="num">469.0</td><td>Audio recordings — browsers play these directly</td></tr>
+    <tr><td>.flv</td><td class="num">38</td><td class="num">624.8</td><td>Videos in VP6 — browsers cannot play these</td></tr>
+    <tr><td>.pdf / .ppt</td><td class="num">47 / 20</td><td class="num">61</td><td>Teacher resources</td></tr>
+  </table></div>
+
+  <h3 id="inv-index">4.3 The book and page index</h3>
+  <p><code>.shared\content\index.json</code> lists the three books. Each page has a number and a folder name:</p>
+  <div class="example" data-key="orig_index" data-title=".shared/content/index.json (shortened)"></div>
+
+  <h3 id="inv-tiles">4.4 How pages are stored</h3>
+  <p>Each page folder has three zoom levels (<code>2</code>, <code>3</code>, <code>4</code>) with 4×4, 8×8 and 16×16 tiles. Every tile is <b>124 × 156 pixels</b>, so zoom 4 gives a page of <b>1984 × 2496 pixels</b>.</p>
+  <p>The old viewer's code (<code>.shared\content\javascripts\page.map.js</code>) showed the most important detail: the tile path is <code>zoom/column/row.png</code>, and <b>row 0 is at the bottom</b> (the “TMS” map convention), not at the top.</p>
+  <script type="text/plain" class="codeblock" data-lang="js" data-title="What page.map.js does (simplified)">
+// Tile constants in the old viewer
+TILE_WIDTH = 124; TILE_HEIGHT = 156; MAX_BOUNDS_X = 1984; MAX_BOUNDS_Y = 2496;
+// Tile URL for a map position: x = column from the left, y = row from the BOTTOM
+path = pagePath + "/" + zoom + "/" + x + "/" + y + ".png";
+// Hotspot icons are centred on their point
+offset = new OpenLayers.Pixel(-(size.w / 2), -(size.h / 2));
+</script>
+
+  <h3 id="inv-hotspots">4.5 Where the clickable buttons are</h3>
+  <p>Each page folder has an <code>index.json</code> with its buttons (“page assets”). Positions use map units: <code>lon</code> is x from the left, <code>lat</code> is y <b>from the bottom</b>.</p>
+  <div class="example" data-key="orig_page" data-title=".shared/books/BO-ff57d1a56e6bf/pages/PA-74f1d4f6f1dd3/index.json (Student Book p.25)"></div>
+  <p>There are four types: <code>swf</code> (answer key) <span data-stat="swf">741</span>, <code>audio</code> <span data-stat="audio">346</span>, <code>page-link</code> <span data-stat="links">123</span>, <code>video</code> <span data-stat="video_hotspots">25</span>.</p>
+
+  <h3 id="inv-scripts">4.6 Audio and video scripts</h3>
+  <p>Many recordings have an XML file with <b>timed lines</b>: <code>value</code> is the start time in milliseconds. This made the “script follows the audio” feature possible.</p>
+  <div class="example" data-key="orig_audio_xml" data-lang="xml" data-title="AEF_SB3_CD2_Track09.xml"></div>
+
+  <h3 id="inv-video">4.7 Video format</h3>
+  <p>FLV files can contain different video codecs. This script reads the first video packet of every FLV to see which one:</p>
+  <script type="text/plain" class="codeblock" data-lang="py" data-title="Python — detect the FLV video codec">
+import glob, collections
+codecs = collections.Counter()
+for f in glob.glob('.shared/assets/video/*/*.flv'):
+    b = open(f, 'rb').read(2_000_000)
+    i = 13                      # skip the 9-byte header + 4-byte size
+    while i + 11 < len(b):
+        tag_type = b[i]
+        size = int.from_bytes(b[i+1:i+4], 'big')
+        if tag_type == 9:       # 9 = video tag; low 4 bits of the first data byte = codec
+            codecs[b[i+11] & 0x0F] += 1
+            break
+        i += 11 + size + 4
+print(codecs)                   # {4: 38}  → 4 = On2 VP6 (not supported by browsers)
+</script>
+  <p>Result: all 38 videos are <b>VP6 + MP3</b>, so they must be converted (<a href="#step-video">step 4</a>).</p>
+
+  <h3 id="inv-swf">4.8 Answer keys</h3>
+  <p>The answer keys are small compressed SWF files (signature <code>CWS</code>, version 9, 3–6 KB). They only show text, which <b>Ruffle</b> renders well, so they are kept as they are.</p>
+
+  <h3 id="inv-pilot">4.9 A pilot on one page</h3>
+  <p>Before processing all 472 pages, one page (Student Book p.25) was stitched and recognised. The pilot found a real bug (black areas, see <a href="#step-stitch">step 1</a>) and proved that OCR quality is very good (about 1 second per page).</p>
+</section>
+
+<!-- ============================================================ PIPELINE -->
+<section class="chapter">
+  <h2 id="pipeline">5. The build pipeline</h2>
+  <p>All build scripts are in <code>web\tools</code>. Shared paths and the page geometry are in <code>common.py</code>:</p>
+  <div class="snip" data-file="web/tools/common.py" data-from="ROOT =" data-to="MAX_ZOOM"></div>
+
+  <h3 id="run-all">Run everything</h3>
+  <p><code>build_all.ps1</code> runs all steps in order. Every step skips work that is already done, so it is safe to run again.</p>
+  <script type="text/plain" class="codeblock" data-lang="ps1" data-title="PowerShell — from the main folder">
+powershell -ExecutionPolicy Bypass -File web\tools\build_all.ps1
+</script>
+  <div class="snip" data-file="web/tools/build_all.ps1"></div>
+
+  <h3 id="step-stitch">Step 1 — Join the tiles into page images</h3>
+  <p><b>Goal:</b> one image per page, because one image is simpler to show and is needed for OCR.</p>
+  <p><b>How:</b> for each of the 16×16 tiles at zoom 4, paste it at <code>x = column × 124</code>, <code>y = (15 − row) × 156</code>. The <code>15 − row</code> part flips the bottom-based rows.</p>
+  <div class="demo" data-demo="tiles">
+    <div class="demo-head"><span class="badge">Try it</span><b>Tile layout</b></div>
+    <div class="demo-body">
+      <div class="demo-row"><label class="f">Zoom level <select><option value="2">2 (4×4)</option><option value="3">3 (8×8)</option><option value="4" selected>4 (16×16)</option></select></label><span class="muted">Point at a tile.</span></div>
+      <div class="demo-split">
+        <div class="page-demo"><img src="img:fig-page25-small" alt="Student Book page 25"><div class="grid-overlay"></div></div>
+        <div class="side"><div class="out"></div></div>
+      </div>
+    </div>
+  </div>
+  <p><b>The bug the pilot found:</b> some tiles are transparent (black text on no background). Converting them straight to RGB made the transparent parts <b>black</b>. The fix is to paste each tile <b>with its alpha mask</b> onto a white page.</p>
+  <figure><img src="img:fig-stitch-fix" alt="Before and after the transparency fix"><figcaption>Left: the first version (transparent tiles became black). Right: tiles flattened onto white.</figcaption></figure>
+  <div class="snip" data-file="web/tools/stitch_pages.py" data-from="def stitch(book_slug, page_path):"></div>
+  <p>Each page is then saved three ways: a WebP for the app (quality 88, about 270 KB), a 240 px thumbnail for the page grid, and a lossless PNG only for OCR (deleted afterwards).</p>
+  <div class="snip" data-file="web/tools/stitch_pages.py" data-from="img = stitch(slug, path)" data-n="9"></div>
+
+  <h3 id="step-ocr">Step 2 — Read the text (OCR)</h3>
+  <p><b>Goal:</b> know every word on the page <b>and where it is</b> (a box in pixels). The boxes are what make the text clickable on top of the image.</p>
+  <p><b>Tool:</b> the OCR engine built into Windows 10/11 (<code>Windows.Media.Ocr</code>). It is free, offline, already installed, fast (about 1 s per page) and very accurate on printed text. It returns lines, and each word with its bounding box.</p>
+  <p><b>How:</b> Windows OCR is a “WinRT” API. Windows PowerShell 5.1 can call it, but its functions are asynchronous. The trick is to turn each WinRT operation into a .NET <code>Task</code> with <code>AsTask</code> and wait for it:</p>
+  <div class="snip" data-file="web/tools/ocr_windows.ps1" data-from="$asTaskGeneric =" data-to="Select-Object -First 1"></div>
+  <div class="snip" data-file="web/tools/ocr_windows.ps1" data-from="function Await("></div>
+  <p>Then for each page image: open the file, decode it to a bitmap, and recognise it with the English engine:</p>
+  <div class="snip" data-file="web/tools/ocr_windows.ps1" data-from="$engine = [Windows" data-n="2"></div>
+  <div class="snip" data-file="web/tools/ocr_windows.ps1" data-from="$file = Await" data-to="$result = Await"></div>
+  <div class="snip" data-file="web/tools/ocr_windows.ps1" data-from="$lines = foreach" data-to="WriteAllText"></div>
+  <p>Raw output for one page (first line only):</p>
+  <div class="example" data-key="ocr_raw" data-title="web/_build/ocr_raw/BO-ff57d1a56e6bf__PA-74f1d4f6f1dd3.json (shortened)"></div>
+  <figure><img src="img:fig-ocr-hotspots" alt="OCR word boxes and hotspot positions"><figcaption>Blue: every word box found by Windows OCR. Red circles: the original hotspot positions after converting lat/lon (step 5).</figcaption></figure>
+
+  <h3 id="step-segment">Step 3 — Sentences and clauses</h3>
+  <p><b>Goal:</b> OCR only gives lines and words. To click a <b>sentence</b> or a <b>clause</b>, the words must be grouped. This is done in four stages in <code>segment_text.py</code>.</p>
+  <figure><img src="img:fig-segmentation" alt="Sentences, clauses and blocks on page 25"><figcaption>The result on page 25. Yellow/blue fill = alternate sentences. Red outlines = clauses. Grey boxes = blocks (paragraphs, list items, headings).</figcaption></figure>
+
+  <h4>a) Clean the words</h4>
+  <p>Remove noise: the audio icon is read as <code>@9)))</code> or <code>@10))</code>, and lone symbols have no letters. Fix a common slip: <code>0K</code> → <code>OK</code>.</p>
+  <div class="snip" data-file="web/tools/segment_text.py" data-from="def clean_word(t):"></div>
+
+  <h4>b) Group lines into blocks</h4>
+  <p>Two lines belong to the same block (paragraph) only if all these are true: similar font size, the gap between them is small, they overlap horizontally, the new line is not further left (a new column), the first line is not a short heading above longer text, and the new line does not start a numbered item.</p>
+  <div class="snip" data-file="web/tools/segment_text.py" data-from="def same_block(prev, line):"></div>
+  <div class="callout"><b class="tag">Tuning</b><p>The rules were tuned on real pages. Examples: a one-word last line (“context.”) has a smaller box, so the font-size rule only compares lines with 3+ words; the removed audio icon is still used for the line's left edge, so the line is not seen as indented.</p></div>
+
+  <h4>c) Split blocks into sentences</h4>
+  <p>A word ends a sentence if it ends with <code>. ! ? …</code>, it is not an abbreviation (<code>Mr.</code>, <code>e.g.</code>, <code>p.</code> …) or an initial, and the next word starts with a capital letter, a digit or a quote.</p>
+  <div class="snip" data-file="web/tools/segment_text.py" data-from="def is_sentence_end(tok, nxt):"></div>
+
+  <h4>d) Split sentences into clauses</h4>
+  <p>A clause ends after <code>, ; :</code> or a dash. A new clause also starts before a linking word: <i>because, although, when, if, which, who…</i> (both sides at least 2 words), or <i>and, but, or, so</i> (both sides at least 4 words, so “Rutledge and Adam” is not split). One-word pieces like “However,” join the next clause.</p>
+  <div class="snip" data-file="web/tools/segment_text.py" data-from="def split_clauses(tokens, a, b):"></div>
+
+  <div class="demo" data-demo="seg">
+    <div class="demo-head"><span class="badge">Try it</span><b>Sentence and clause splitting (same rules, in JavaScript)</b></div>
+    <div class="demo-body">
+      <textarea aria-label="Text to split">His trip began in the Miami River. For the first hour there was a speed limit of 7 miles an hour because of the enforced no-wake zone in the river. Once the boat passed through Biscayne Bay and went under the Rickenbacker Bridge, he entered open water. Approximately 60 miles from the finish line, Rutledge was ahead of Adam and Tanner, but he had to stop for gas if he wanted to reach the finish line in Key West.
+Adam started off OK. However, after an hour, Adam decided that he was going too slowly. Mr. Smith arrived at 10 a.m. on the 3rd of May.</textarea>
+      <div class="demo-row" style="margin-top:10px">
+        <div class="seg"><button class="on" data-mode="sentence">Sentence</button><button data-mode="clause">Clause</button><button data-mode="word">Word</button></div>
+        <label class="f">Voice <select aria-label="Voice"></select></label>
+        <span class="muted counts"></span>
+      </div>
+      <p class="muted" style="font-size:14px">Point at the text to see the unit; click it to hear it. Yellow/blue = sentences, red underline = clauses.</p>
+      <div class="seg-out"></div>
+      <ol class="seg-list"></ol>
+    </div>
+  </div>
+
+  <h4>e) Save the result</h4>
+  <p>Each page becomes a compact JSON file. Words are arrays (smaller than objects); sentences, clauses and blocks are ranges. The same script also writes one search file per book.</p>
+  <div class="snip" data-file="web/tools/segment_text.py" data-from="def segment(raw):"></div>
+  <div class="example" data-key="text" data-title="web/data/text/BO-ff57d1a56e6bf/PA-74f1d4f6f1dd3.json (shortened)"></div>
+
+  <h3 id="step-video">Step 4 — Convert the videos</h3>
+  <p>The 38 FLV videos use VP6, which no browser can play. <code>convert_videos.py</code> uses ffmpeg (from the <code>imageio-ffmpeg</code> Python package, so nothing else has to be installed) to make MP4 files with H.264 video and AAC audio. <code>+faststart</code> puts the index at the start of the file so playback starts at once.</p>
+  <div class="snip" data-file="web/tools/convert_videos.py" data-from="cmd = [ffmpeg" data-to="tmp]"></div>
+  <p>Result: 38 MP4 files, 332 MB (the FLVs were 625 MB), none failed.</p>
+
+  <h3 id="step-data">Step 5 — Book index, hotspots and transcripts</h3>
+  <p><code>build_data.py</code> writes <code>web\data\books.json</code>: every book, every page in order, and every hotspot with its position in <b>image pixels</b>.</p>
+  <h4>Converting positions</h4>
+  <p>The old map units count y from the bottom. The image counts y from the top. So: <code>x = lon</code> and <code>y = 2496 − lat</code>.</p>
+  <div class="snip" data-file="web/tools/build_data.py" data-from="def convert_asset(a):"></div>
+  <div class="demo" data-demo="coords">
+    <div class="demo-head"><span class="badge">Try it</span><b>Hotspot position converter (Student Book p.25)</b></div>
+    <div class="demo-body">
+      <div class="demo-split">
+        <div class="page-demo" style="max-width:340px;cursor:crosshair"><img src="img:fig-page25-small" alt="Student Book page 25"></div>
+        <div class="side">
+          <p class="muted" style="font-size:14px">Click a coloured dot (the real hotspots of this page) or anywhere on the page, or type values.</p>
+          <div class="demo-row"><label class="f">lon <input type="number" name="lon" style="width:90px"></label><label class="f">lat <input type="number" name="lat" style="width:90px"></label></div>
+          <div class="out"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <h4>Transcripts</h4>
+  <p>Each audio/video XML script is turned into a short JSON list of <code>{t: milliseconds, x: text}</code>. HTML tags inside the old CDATA text are removed, and the <code>line_return</code> markers are skipped.</p>
+  <div class="snip" data-file="web/tools/build_data.py" data-from="def parse_script(xml_path):"></div>
+  <div class="example" data-key="script" data-title="web/data/scripts/AU-9f3c76ea280c3.json"></div>
+  <h4>Blank pages</h4>
+  <p>156 of the 226 Teacher's Book pages are not on the disc: their 256 tiles are plain white (about 270 bytes each). They are marked <code>"blank": true</code> so the app can say so.</p>
+  <div class="snip" data-file="web/tools/build_data.py" data-from="def is_blank("></div>
+  <div class="example" data-key="books" data-title="web/data/books.json (one page shown)"></div>
+
+  <h3 id="step-ruffle">Step 6 — The Flash emulator (Ruffle)</h3>
+  <p><a href="https://ruffle.rs">Ruffle</a> is an open-source Flash Player written in Rust and compiled to WebAssembly. The “self-hosted” package is downloaded from npm into <code>web\vendor\ruffle</code>, so it works offline. The build does this automatically:</p>
+  <div class="snip" data-file="web/tools/build_all.ps1" data-from="$ruffle = Join-Path" data-to="Remove-Item -Recurse -Force $tmp"></div>
+</section>
+
+<!-- ============================================================ FEATURES -->
+<section class="chapter">
+  <h2 id="features">6. App features — how each one works</h2>
+  <p>Each feature shows what it does, a screenshot, how it works, and the code. Click <b>Open full file</b> on any code block to see the whole file.</p>
+
+  <h3 id="f-server">6.1 The local server</h3>
+  <p><b>Why it is needed:</b> browsers do not let a page opened from <code>file://</code> load JSON files, Ruffle needs to load <code>.wasm</code> files with the right type, and audio/video <b>seeking</b> needs “Range requests” (asking for only part of a file). Python's built-in server does not support Range, so <code>server.py</code> adds it.</p>
+  <ul>
+    <li>Listens on <code>127.0.0.1</code> only — other computers cannot connect.</li>
+    <li>Serves the main folder, so <code>/web/…</code> (the app) and <code>/.shared/…</code> (original audio and answer keys) both work.</li>
+    <li>Tries ports 8765–8784 if one is busy, then opens the browser.</li>
+  </ul>
+  <div class="snip" data-file="web/server.py" data-from="extensions_map = {"></div>
+  <div class="snip" data-file="web/server.py" data-from="def do_GET(self):"></div>
+  <p>The server also stores <a href="#f-edit">text corrections</a>, <a href="#f-myaudio">My audio</a> MP3s and <a href="#f-translate">translations</a> through a small JSON API (only for this app: changes from other web sites are refused by checking the <code>Origin</code> header):</p>
+  <div class="table-wrap"><table>
+    <tr><th>Request</th><th>What it does</th></tr>
+    <tr><td><code>GET /api/text/&lt;book&gt;/&lt;page&gt;</code></td><td>The corrected page text if there is one (with <code>"edited": true</code>), else the OCR text</td></tr>
+    <tr><td><code>PUT /api/text/&lt;book&gt;/&lt;page&gt;</code></td><td>Checks and saves corrections to <code>web\edits\&lt;book&gt;\&lt;page&gt;.json</code></td></tr>
+    <tr><td><code>DELETE /api/text/&lt;book&gt;/&lt;page&gt;</code></td><td>Removes the corrections (back to the OCR text)</td></tr>
+    <tr><td><code>GET /api/search/&lt;book&gt;</code></td><td>The book's search file with corrected pages applied</td></tr>
+    <tr><td><code>GET /api/voices</code>, <code>/api/voice-sample</code></td><td>The Natural voices for My audio, and a short sample of one</td></tr>
+    <tr><td><code>POST /api/recordings</code>, <code>GET /api/jobs/&lt;id&gt;</code></td><td>Starts making an MP3, then reports its progress</td></tr>
+    <tr><td><code>GET /api/recordings</code>, <code>PUT</code> / <code>DELETE /api/recordings/&lt;id&gt;</code></td><td>Lists, renames and deletes My audio MP3s</td></tr>
+    <tr><td><code>GET /api/tr-languages</code></td><td>The 43 translation languages</td></tr>
+    <tr><td><code>POST /api/translate</code>, <code>/api/translate-word</code></td><td>Translations of a page's sentences (saved in <code>web\translations</code>), and of one word</td></tr>
+    <tr><td><code>GET /api/version</code>, <code>POST /api/quit</code></td><td>Lets the page notice an older server, and lets a new start of the app replace an old one</td></tr>
+  </table></div>
+  <div class="snip" data-file="web/server.py" data-from="def api_get(self, path):"></div>
+  <div class="snip" data-file="web/server.py" data-from="def do_PUT(self):"></div>
+  <div class="snip" data-file="web/server.py" data-from="def valid_doc(doc):"></div>
+  <div class="demo" data-demo="range">
+    <div class="demo-head"><span class="badge">Try it</span><b>What the server answers to a Range request</b></div>
+    <div class="demo-body">
+      <div class="demo-row">
+        <label class="f">File size <input type="number" name="size" value="918765" style="width:120px"></label>
+        <label class="f">Range header <input type="text" name="range" value="bytes=100-199" style="width:170px"></label>
+      </div>
+      <div class="demo-row"><button class="btn" data-range="bytes=0-">Whole file</button><button class="btn" data-range="bytes=500000-">Seek to the middle</button><button class="btn" data-range="bytes=-1000">Last 1000 bytes</button><button class="btn" data-range="bytes=999999-">Past the end</button></div>
+      <div class="out"></div>
+    </div>
+  </div>
+
+  <h3 id="f-page">6.2 The page view</h3>
+  <figure><img src="img:app-main" alt="The app showing Student Book page 25"><figcaption>The main screen: toolbar, the page with its hotspot buttons, and the side panel with the page text.</figcaption></figure>
+  <p>Each page is a stack of four layers in one box with the page's aspect ratio (1984 : 2496):</p>
+  <ol>
+    <li><b>Image</b> — the stitched WebP page.</li>
+    <li><b>SVG text layer</b> with <code>viewBox="0 0 1984 2496"</code>. Because the SVG uses the same pixel units as the OCR boxes, the boxes line up at any zoom with no maths.</li>
+    <li>Inside the SVG: highlight groups (<code>hl-active</code>, <code>hl-word</code>, <code>hl-flash</code>, <code>hl-hover</code>) and on top the invisible click targets (<code>hits</code>, one rectangle per word).</li>
+    <li><b>Hotspot buttons</b>, placed with percentages (<code>left: x/1984</code>, <code>top: y/2496</code>) and centred like the original icons.</li>
+  </ol>
+  <div class="snip" data-file="web/js/pageview.js" data-from="constructor(book, page, hooks) {"></div>
+  <div class="snip" data-file="web/js/pageview.js" data-from="renderHotspots() {"></div>
+  <p>Highlights use <code>mix-blend-mode: multiply</code>, so they look like a real highlighter pen on paper:</p>
+  <div class="snip" data-file="web/css/app.css" data-from=".text-layer { position" data-n="8"></div>
+
+  <h3 id="f-click">6.3 Clickable text: sentence, clause, word</h3>
+  <div class="fig-row">
+    <figure><img src="img:mode-sentence-hover" alt="Sentence mode"><figcaption>Sentence mode: pointing at a word outlines its whole sentence, on the page and in the side panel.</figcaption></figure>
+    <figure><img src="img:mode-clause" alt="Clause mode"><figcaption>Clause mode: only part of the sentence (“Rutledge increased the boat's speed to over 90 miles an hour”).</figcaption></figure>
+  </div>
+  <figure><img src="img:mode-word" alt="Word mode"><figcaption>Word mode: one word at a time — useful for vocabulary.</figcaption></figure>
+  <p><b>How it works:</b></p>
+  <ol>
+    <li>When a page loads, its text JSON becomes a <code>PageText</code> object. It builds two lookup tables: word → sentence and word → clause.</li>
+    <li>Each word gets an invisible rectangle, <b>widened to meet its neighbours</b>, so there are no dead gaps between words.</li>
+    <li>When the pointer moves over a rectangle, the app asks <code>unitAt(word, mode)</code> for the sentence/clause/word around it, and draws one rounded rectangle <b>per text line</b> of that unit.</li>
+    <li>A click sends the unit to the reader (<a href="#f-reader">6.5</a>): it reads from there to the end of the page; clicking the same unit again pauses or continues.</li>
+  </ol>
+  <div class="snip" data-file="web/js/pagetext.js" data-from="constructor(doc) {"></div>
+  <div class="snip" data-file="web/js/pagetext.js" data-from="unitAt(w, mode) {"></div>
+  <div class="snip" data-file="web/js/pagetext.js" data-from="hitRects() {"></div>
+  <div class="snip" data-file="web/js/pagetext.js" data-from="rects(a, b, pad = 0.18) {"></div>
+  <div class="snip" data-file="web/js/pageview.js" data-from="bindPointer() {"></div>
+  <p>The mode buttons set a class on <code>&lt;body&gt;</code>; with mode “Off” the click targets ignore the pointer, so the page behaves like a plain picture:</p>
+  <div class="snip" data-file="web/js/main.js" data-from="setMode(mode) {"></div>
+
+  <h3 id="f-speech">6.4 Text to speech (the “voice”)</h3>
+  <figure class="narrow"><img src="img:voice-settings" alt="Voice settings"><figcaption>The settings (sliders button), <b>Voice</b> tab: choose a voice, the speed, the pause between sentences, how many times each sentence is read (1–10 or ∞) and word highlighting. Edge also lists the online “Natural” voices. The <b>Translation</b> tab is described in <a href="#f-translate">6.19</a>.</figcaption></figure>
+  <p>The app uses the browser's <b>Web Speech API</b> (<code>speechSynthesis</code>). Nothing is installed: Edge and Chrome use the Windows voices (David, Zira, Mark — offline), and Edge adds high-quality online <b>Natural</b> voices.</p>
+  <ul>
+    <li><b>Choosing a voice:</b> English voices are ranked: “Natural” first, then US, then UK.</li>
+    <li><b>Ignoring old events:</b> every <code>speak()</code> increases a counter, so events from a cancelled sentence are ignored.</li>
+    <li><b>Offline fallback:</b> if an online voice fails (no internet), the same text is spoken again with an offline voice.</li>
+    <li><b>Word highlighting:</b> the browser fires a <code>boundary</code> event with a character position for each word. The app remembers where each word starts in the spoken text, so it can find the word and highlight it.</li>
+    <li><b>Clean speech text:</b> bullets are removed, <code>p.104</code> becomes “page 104”, dashes become pauses, and exercise numbers glued to words (<code>2was</code>) are removed.</li>
+  </ul>
+  <div class="snip" data-file="web/js/speech.js" data-from="function rank(v) {"></div>
+  <div class="snip" data-file="web/js/speech.js" data-from="speak(text, cb = {}, voiceOverride) {"></div>
+  <div class="snip" data-file="web/js/pagetext.js" data-from="speech(a, b) {"></div>
+  <div class="snip" data-file="web/js/pagetext.js" data-from="function speakable(t) {"></div>
+  <div class="demo" data-demo="tts">
+    <div class="demo-head"><span class="badge">Try it</span><b>Speak with word highlighting (works in Edge and Chrome)</b></div>
+    <div class="demo-body">
+      <textarea aria-label="Text to speak">Once the boat passed through Biscayne Bay and went under the Rickenbacker Bridge, he entered open water.</textarea>
+      <div class="demo-row" style="margin-top:10px">
+        <label class="f">Voice <select aria-label="Voice"></select></label>
+        <label class="f">Speed <input type="range" min="0.5" max="1.5" step="0.05" value="1"> <span class="rate">1.00×</span></label>
+        <button class="btn primary speak">Speak</button><button class="btn stop">Stop</button>
+      </div>
+      <div class="tts-text"></div>
+      <p class="muted note" style="font-size:13px;margin:8px 0 0"></p>
+    </div>
+  </div>
+
+  <h3 id="f-reader">6.5 Read aloud: click, pause, continue</h3>
+  <figure><img src="img:read-page-aloud" alt="Reading the page aloud"><figcaption>Reading goes on through the page: the sentence being read is yellow, the current word orange, and the Text list keeps it in the middle. The bar at the bottom shows the progress with Pause and Stop.</figcaption></figure>
+  <div class="table-wrap"><table>
+    <tr><th>You do</th><th>What happens</th></tr>
+    <tr><td>Click a sentence (or clause)</td><td>If one of your <a href="#f-myaudio">My audio</a> MP3s contains it, that MP3 plays from there. Otherwise reading starts there with the live voice and goes on to the end of the page (both pages in two-page view).</td></tr>
+    <tr><td>Click the sentence being read</td><td>Pause. Click it again: it continues from the word where it stopped.</td></tr>
+    <tr><td>Click another sentence</td><td>Reading starts again from that sentence.</td></tr>
+    <tr><td>Word mode: click a word</td><td>Only that word is read.</td></tr>
+    <tr><td><kbd>Space</kbd>, or Pause/Continue in the bar</td><td>Pause / continue. <kbd>Esc</kbd> or Stop ends reading.</td></tr>
+    <tr><td>Voice settings → <b>Pause between sentences</b></td><td>After each sentence (or clause) the app waits the chosen time — none up to 10 s — before reading the next one: time to repeat it aloud. The bar counts down (“Next sentence in 3 s”).</td></tr>
+  </table></div>
+  <p><b>How it works:</b> the <code>Reader</code> has a state (<code>idle</code>, <code>playing</code>, <code>paused</code>) and a <b>queue</b> of units from the clicked one to the end of the visible pages. When one unit ends, the next starts.</p>
+  <ul>
+    <li><b>Pause</b> stops the speech engine but remembers the last word reported by the <code>boundary</code> event. <b>Continue</b> speaks the same unit again from that word. This works with every voice, even ones where the browser's own <code>speechSynthesis.pause()</code> is unreliable.</li>
+    <li><b>Smooth flow:</b> every request to a voice takes a moment to start (the online Natural voices wait for Microsoft's server), so reading sentence by sentence left a gap after each one. <code>speakFrom</code> therefore gives the voice up to 10 sentences (1,500 characters) of the page in one request. The voice reports the position of each word; from it the app knows which sentence is being read and moves the highlight. One sentence at a time is used only when a pause between sentences is chosen, in word mode, and for voices that report no word positions.</li>
+    <li><b>Pause between sentences:</b> when a unit ends, <code>finished()</code> waits <code>settings.gap</code> seconds before the next one (<code>tickWait()</code> updates the countdown). The finished sentence stays highlighted. Pausing during the wait and continuing goes straight on to the next sentence.</li>
+    <li>Each new sentence is <b>centred in the Text list</b> (<code>centerPanel</code>) and kept visible on the page (<code>reveal</code>). A click on the page also switches the side panel to the Text tab.</li>
+  </ul>
+  <div class="snip" data-file="web/js/main.js" data-from="class Reader {"></div>
+  <div class="snip" data-file="web/js/main.js" data-from="centerPanel(view, unit) {" data-to="behavior: 'smooth' });"></div>
+
+  <h4>Repeat each sentence</h4>
+  <p>The <b>Voice</b> tab has <b>Repeat each sentence</b>: once (normal), 2 to 10 times, or <b>∞</b> (the slider's last step) — the same sentence again and again until you click another one, pause or stop. The reader keeps a counter (<code>round</code>): when a sentence ends, <code>finished()</code> reads it again until the count is reached, then goes on; the pause between sentences is also made between the repeats, and the bar shows “2nd time of 3” or “6th time, ∞”. Repeats are read one sentence per request (not in the 10-sentence pieces). With a <a href="#f-myaudio">My audio</a> MP3 the same setting works by jumping back: when the MP3 reaches the next sentence by itself, it goes back to the start of the one being repeated (<code>follow</code>; the last sentence on the <code>ended</code> event); in Word mode the word is played again after a short silence.</p>
+  <p>Quicker than the slider: the <b>repeat</b> button in the top bar, next to the translate button (or <kbd>R</kbd>). Each click goes 2 → 3 → 4 → 5 → ∞ → once; a small badge on the button shows the number (none for once). It changes the same setting as the slider, so both always agree (<code>cycleRepeat</code>, <code>showRepeat</code>).</p>
+  <div class="snip" data-file="web/js/main.js" data-from="  finished() {" data-to="this.tickWait();"></div>
+  <div class="snip" data-file="web/js/main.js" data-from="this.cycleRepeat = () => {"></div>
+  <div class="snip" data-file="web/js/recordings.js" data-from="replay(at, ms) {"></div>
+
+<h3 id="f-text">6.6 Text extraction: the Text panel</h3>
+  <p>The side panel shows the page text by paragraph, with <b>every sentence numbered and on a line of its own</b> (<code>&lt;span class="sline"&gt;</code> with <code>display: block</code>); a translation goes under its sentence. Each word is a <code>&lt;span&gt;</code> <b>with its trailing space</b>, so highlights have no gaps. Pointing and clicking in the panel works exactly like on the page, and both stay in sync (<code>markPanel</code>). You can also select text with the mouse to copy part of it.</p>
+  <ul>
+    <li><b>Translation button</b> (next to the pencil): shows or hides the translations in the list (same as <kbd>L</kbd>); the one at the top does the same for the popup on the page.</li>
+    <li><b>Numbers</b>: each sentence has its number on the left (the same numbers as in correction mode); when the pointer is over a sentence its number turns into the dots to drag it.</li>
+    <li><b>Drag</b> a sentence by the dots that appear on its left to move it, and <b>double-click</b> a sentence to correct it right there — no need to open correction mode (see <a href="#f-edit">6.17</a>).</li>
+    <li>A single click waits 0.28 s before reading, so that a double click is not also taken as “read”.</li>
+  </ul>
+  <ul>
+    <li><b>Copy</b> uses the Clipboard API, with an old <code>execCommand('copy')</code> fallback.</li>
+    <li><b>Save .txt</b> makes a file in the browser with a <code>Blob</code> (Windows line endings).</li>
+    <li><b>Save the whole book</b> reuses the search file, which already has every page's text.</li>
+  </ul>
+  <div class="snip" data-file="web/js/main.js" data-from="renderPanelText() {"></div>
+  <div class="snip" data-file="web/js/main.js" data-from="markPanel(cls, view, unit) {"></div>
+  <div class="snip" data-file="web/js/main.js" data-from="async copyText() {"></div>
+  <div class="snip" data-file="web/js/util.js" data-from="export function downloadText("></div>
+  <div class="snip" data-file="web/js/main.js" data-from="$('#save-book-text')"></div>
+
+  <h3 id="f-audio">6.7 Audio with a script that follows</h3>
+  <figure><img src="img:audio-transcript" alt="Audio player and script"><figcaption>The player bar at the bottom, the playing hotspot pulses, and the current script line is highlighted. Clicking a line jumps there.</figcaption></figure>
+  <p>Clicking a headphones button plays the original MP3 (straight from <code>.shared</code>) in an HTML5 <code>&lt;audio&gt;</code> element. On every <code>timeupdate</code> event, the transcript finds the last line whose start time has passed and highlights it. Clicking a line sets <code>currentTime</code>, which works because the server supports Range requests.</p>
+  <div class="snip" data-file="web/js/media.js" data-from="update(ms) {"></div>
+  <div class="snip" data-file="web/js/media.js" data-from="async play(asset) {"></div>
+  <div class="demo" data-demo="sync">
+    <div class="demo-head"><span class="badge">Try it</span><b>Transcript sync (CD 2 Track 09 — no sound, just the timing)</b></div>
+    <div class="demo-body">
+      <div class="demo-row"><button class="btn primary play">Play</button><input type="range" min="0" value="0" style="flex:1;min-width:160px" aria-label="Time"><span class="time muted" style="font-variant-numeric:tabular-nums"></span></div>
+      <ul class="cues"></ul>
+    </div>
+  </div>
+
+  <h3 id="f-video">6.8 Video</h3>
+  <figure><img src="img:video" alt="Video dialog"><figcaption>Videos open in a dialog with the converted MP4 and its timed script.</figcaption></figure>
+  <p>The same <code>Transcript</code> class is reused with a <code>&lt;video&gt;</code> element inside a native <code>&lt;dialog&gt;</code>. Closing the dialog stops and unloads the video.</p>
+  <div class="snip" data-file="web/js/media.js" data-from="export async function openVideo(app, asset) {"></div>
+
+  <h3 id="f-keys">6.9 Answer keys (Flash through Ruffle)</h3>
+  <figure><img src="img:answer-key" alt="Answer key dialog"><figcaption>An original Flash answer key, played by Ruffle inside the browser.</figcaption></figure>
+  <p>Ruffle is loaded only the first time an answer key is opened. Its settings turn off the splash screen, the right-click menu and opening links. The small answer keys (often 150–450 px wide) are shown up to 2.2× larger.</p>
+  <div class="snip" data-file="web/js/media.js" data-from="function loadRuffle() {"></div>
+  <div class="snip" data-file="web/js/media.js" data-from="export async function openSwf(app, asset) {"></div>
+
+  <h3 id="f-search">6.10 Search</h3>
+  <figure><img src="img:search" alt="Search results"><figcaption>Searching “seaplane”: 7 matches on 4 pages; clicking a result opens the page and flashes the sentence.</figcaption></figure>
+  <p>Each book has one search file (all page texts, about 300 KB). Text and query are “folded” (lower case, curly quotes and dashes made plain) <b>without changing the length</b>, so a match position in the folded text is also correct in the original text for the snippet.</p>
+  <div class="snip" data-file="web/js/search.js" data-from="function fold(s) {"></div>
+  <div class="snip" data-file="web/js/search.js" data-from="async run(openFirst = false) {"></div>
+
+  <h3 id="f-nav">6.11 Page navigation and page links</h3>
+  <figure><img src="img:page-link-back" alt="After following a page link"><figcaption>After clicking the blue “p.104” button: page 104 is open and the back arrow (left of the page arrows) returns to page 25.</figcaption></figure>
+  <p>The address bar holds the place: <code>#/1705/25</code> means book 1705 (Student Book), page 25. Every page change only changes this “hash”; the app listens for <code>hashchange</code> and shows that page. So the browser's own Back/Forward buttons and bookmarks work too. Page-link buttons also push the current page onto a small back stack.</p>
+  <div class="snip" data-file="web/js/main.js" data-from="parseHash() {"></div>
+  <div class="snip" data-file="web/js/main.js" data-from="go(bookId, pageN, opts = {}) {"></div>
+  <div class="snip" data-file="web/js/main.js" data-from="hotspot(view, a) {"></div>
+  <div class="snip" data-file="web/js/main.js" data-from="bindKeys() {"></div>
+
+  <h3 id="f-view">6.12 Two-page view and zoom</h3>
+  <figure><img src="img:spread-pages" alt="Two-page view with the page grid"><figcaption>Two-page view (pages 24–25) with the page grid open on the left.</figcaption></figure>
+  <p><b>Two pages:</b> like a printed book, page 1 is alone and then pages are shown in pairs 2–3, 4–5, …</p>
+  <div class="snip" data-file="web/js/main.js" data-from="groupFor(book, idx) {"></div>
+  <div class="demo" data-demo="spread">
+    <div class="demo-head"><span class="badge">Try it</span><b>Which pages are shown together?</b></div>
+    <div class="demo-body">
+      <div class="demo-row"><label class="f">Page <input type="number" min="1" max="168" value="25" style="width:90px"></label></div>
+      <div class="out"></div>
+    </div>
+  </div>
+  <p><b>Zoom:</b> one CSS variable, <code>--page-w</code>, sets the page width. “Fit page” and “Fit width” calculate it from the free space; zoom buttons and <kbd>Ctrl</kbd> + mouse wheel multiply it and keep the same point in the centre. A <code>ResizeObserver</code> recalculates it when the window or panels change size.</p>
+  <div class="snip" data-file="web/js/main.js" data-from="applyZoom() {"></div>
+  <div class="snip" data-file="web/js/main.js" data-from="zoomBy(f) {"></div>
+
+  <h3 id="f-drawer">6.13 All pages and resources</h3>
+  <figure><img src="img:resources" alt="Resources tab"><figcaption>The Resources tab lists the 67 PDF and PowerPoint files from the disc (grammar, songs, communicative activities, maps…).</figcaption></figure>
+  <p>The page grid uses the small thumbnails from step 1 with <code>loading="lazy"</code>, so only visible thumbnails are loaded. PDFs open in the browser's PDF viewer; PowerPoint files are downloaded.</p>
+  <div class="snip" data-file="web/js/main.js" data-from="renderThumbs() {"></div>
+
+  <h3 id="f-settings">6.14 Remembered settings</h3>
+  <p>The app remembers the last book and page, the page in each book, the click mode, voice, speed, two-page view, zoom and panel. They are kept in the browser's <code>localStorage</code> with an <code>aef3.</code> prefix. Every access is inside <code>try/catch</code>, so the app still works if storage is blocked.</p>
+  <div class="snip" data-file="web/js/util.js" data-from="export const store = {"></div>
+
+  <h3 id="f-theme">6.15 Look and dark mode</h3>
+  <figure><img src="img:dark-mode" alt="Dark mode"><figcaption>Dark mode (Teacher's Book p.150): it follows the Windows setting automatically.</figcaption></figure>
+  <p>All colours are CSS variables on <code>:root</code>. A <code>prefers-color-scheme: dark</code> block changes them, so no component needs its own dark code. The page itself stays white like paper.</p>
+  <div class="snip" data-file="web/css/app.css" data-from="@media (prefers-color-scheme: dark) {"></div>
+
+  <h3 id="f-blank">6.16 Workbook, Teacher's Book and blank pages</h3>
+  <div class="fig-row">
+    <figure><img src="img:workbook" alt="Workbook page 10"><figcaption>Workbook p.10: dialogues are split by speaker.</figcaption></figure>
+    <figure><img src="img:teachers-book-blank" alt="A blank Teacher's Book page"><figcaption>A Teacher's Book page that is not on the disc says so. The book opens at p.142, the first page with content.</figcaption></figure>
+  </div>
+  <div class="snip" data-file="web/js/pageview.js" data-from="if (page.blank) {"></div>
+
+  <h3 id="f-edit">6.17 Text corrections</h3>
+  <figure><img src="img:editor" alt="Correction mode"><figcaption>Correction mode (pencil button or <kbd>E</kbd>): every sentence of the page is listed as it is, by paragraph. The selected sentence (clicked here or on the page) is highlighted and centred; the tools for it are in the bar at the top. Buttons that do not fit it (here: none) are greyed out.</figcaption></figure>
+  <figure><img src="img:editor-text" alt="Changing the text of a sentence"><figcaption>Changing the text: <kbd>Enter</kbd>, a double click or the pencil in the bar turns the selected sentence into a box. <kbd>Enter</kbd> saves, <kbd>Esc</kbd> leaves it as it was.</figcaption></figure>
+  <p>OCR is never perfect, so the text can be corrected inside the app. The corrections are used everywhere: reading aloud, clicking on the page, copying, saving and search.</p>
+  <h4>Quick corrections in the Text list</h4>
+  <figure><img src="img:list-edit" alt="Correcting a sentence in the Text list"><figcaption>Double-click a sentence in the normal Text list: it turns into a box. <kbd>Enter</kbd> saves, <kbd>Esc</kbd> cancels, <b>More tools</b> opens correction mode on that sentence. The dots on the left of a sentence drag it to another place.</figcaption></figure>
+  <p>The two most common fixes need no special mode: <b>double-click</b> a sentence to change its text, <b>drag</b> it by its dots to move it. <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes them. They use the same corrections (<code>OPS.text</code>, <code>OPS.moveTo</code>), undo history and saving as correction mode; afterwards the list is drawn again and the sentence stays highlighted in the middle (<code>textChanged</code>).</p>
+  <h4>Correction mode: all the tools</h4>
+  <div class="table-wrap"><table>
+    <tr><th>Button (bar at the top)</th><th>What it does to the selected sentence</th></tr>
+    <tr><td>Pencil · <kbd>Enter</kbd> · double click</td><td>Change the sentence text — fix a word, a capital letter, punctuation… (<kbd>Enter</kbd> saves, <kbd>Esc</kbd> cancels)</td></tr>
+    <tr><td>Split</td><td>Shows the words as buttons; click the word that starts the new sentence.</td></tr>
+    <tr><td>Merge ↑ / Merge ↓</td><td>Join with the sentence before / after. If that sentence is in another paragraph, the two paragraphs are joined (for a sentence that OCR cut in the middle).</td></tr>
+    <tr><td>Drag and drop</td><td>Drag a sentence by the dots on its left; a blue line shows where it will go — between two sentences, at the end of a paragraph or the start of the next. The list scrolls by itself near its edges.</td></tr>
+    <tr><td>Move up / Move down</td><td>Swap places with the sentence before / after, also across paragraphs.</td></tr>
+    <tr><td>New paragraph / Join paragraph</td><td>Start a new paragraph with this sentence, or (for the first sentence of a paragraph) join it to the paragraph above.</td></tr>
+    <tr><td>Add after / + Add at the end</td><td>Type a missing sentence. It has no place on the page yet (“not on page”).</td></tr>
+    <tr><td>Mark on page</td><td>Drag a box around the sentence on the page image; its words are laid out inside the box so it can be clicked and highlighted there.</td></tr>
+    <tr><td>Delete</td><td>Remove the sentence.</td></tr>
+    <tr><td>Undo · Restore</td><td>Undo the last change (<kbd>Ctrl</kbd>+<kbd>Z</kbd>, up to 80 steps, it also goes back to the sentence that was selected) · go back to the original OCR text of the page.</td></tr>
+  </table></div>
+  <figure><img src="img:editor-drag" alt="Dragging a sentence"><figcaption>Drag and drop: the sentence follows the pointer and the blue line shows where it will be dropped.</figcaption></figure>
+  <div class="fig-row">
+    <figure><img src="img:editor-split" alt="Splitting a sentence"><figcaption>Split: click the word that starts the new sentence.</figcaption></figure>
+    <figure><img src="img:editor-mark" alt="Marking a sentence on the page"><figcaption>Mark on page: drag a box around the sentence on the image.</figcaption></figure>
+  </div>
+
+  <h4>How it works</h4>
+  <ol>
+    <li><b>Editable model.</b> The flat page format (words + ranges) is turned into nested lists: paragraphs → sentences → words. Every correction is a small function that changes these lists. Then the model is turned back into the flat format, and <b>clauses are recalculated</b> with the same rules as the build (<code>segment.js</code>). Converting all 472 pages to the model and back gives exactly the build's files — this was checked.</li>
+    <li><b>Keeping the boxes.</b> When a sentence's text changes, the new words are matched to the old words (longest common subsequence). Unchanged words keep their box. A changed word takes the box of the word it replaces; a split word (“Doyou” → “Do you”) shares the old box by character length; joined words get the union of the boxes. New words have no box.</li>
+    <li><b>Staying on the same sentence.</b> The app remembers the sentence you are on (being read, last read, clicked or corrected — <code>currentFocus</code>). Correction mode opens with it selected and centred; <b>Done</b> goes back to reading with the same sentence highlighted and centred (<code>setFocus</code>).</li>
+    <li><b>Drag and drop.</b> Built with pointer events rather than the browser's HTML drag and drop (which in testing sometimes ended without a drop), so it works the same with a mouse, pen or finger. Only the handle starts a drag (so text can still be selected), after the pointer moves 5 px; <kbd>Esc</kbd> cancels. While dragging, <code>dropTarget</code> finds the gap under the pointer; in the gap between two paragraphs, the upper half means “end of the paragraph above” and the lower half “start of the paragraph below”. The drop runs the <code>moveTo</code> correction, so Undo works as usual.</li>
+    <li><b>Saving.</b> After each change the whole page is sent to the server (<code>PUT /api/text/…</code>) 0.4 s later. Saves of the same page run one at a time, so the newest version always wins. The server checks the data and writes <code>web\edits\&lt;book&gt;\&lt;page&gt;.json</code>. Pages without corrections still come from <code>web\data\text</code>.</li>
+  </ol>
+  <div class="snip" data-file="web/js/editor.js" data-from="export function toModel(doc) {"></div>
+  <div class="snip" data-file="web/js/editor.js" data-from="export function toDoc(model) {"></div>
+  <div class="snip" data-file="web/js/editor.js" data-from="export function alignWords(old, tokens) {"></div>
+  <div class="snip" data-file="web/js/editor.js" data-from="export const OPS = {"></div>
+  <div class="snip" data-file="web/js/editor.js" data-from="function layoutInBox(words, rect, lineH, firstLine) {"></div>
+  <div class="snip" data-file="web/js/editor.js" data-from="run(op, arg, sel = this.sel) {"></div>
+  <div class="snip" data-file="web/js/editor.js" data-from="bindDrag() {"></div>
+  <div class="snip" data-file="web/js/editor.js" data-from="dropTarget(y) {"></div>
+  <div class="snip" data-file="web/js/main.js" data-from="currentFocus() {"></div>
+  <div class="snip" data-file="web/js/editor.js" data-from="start() {" data-to="this.showSelection(false, false);"></div>
+  <div class="snip" data-file="web/js/editor.js" data-from="async save(view, closing = false) {"></div>
+  <div class="snip" data-file="web/js/pageview.js" data-from="startMarking(done) {"></div>
+  <div class="snip" data-file="web/js/segment.js" data-from="export function clauseRanges(tokens) {"></div>
+  <div class="snip" data-file="web/js/editor.js" data-from="updateTools() {"></div>
+  <div class="snip" data-file="web/js/editor.js" data-from="editInline(view, bi, si) {"></div>
+  <div class="snip" data-file="web/js/main.js" data-from="textChanged(view, unit) {"></div>
+  <div class="snip" data-file="web/js/main.js" data-from="let pending = null;" data-to="this.editor.editInline(this.views[Number(line.dataset.v)]"></div>
+
+  <h3 id="f-myaudio">6.18 My audio: MP3s with a natural voice</h3>
+  <p>Any paragraphs or sentences of a page can be turned into <b>one MP3</b> read by a Microsoft <b>Natural</b> voice. An icon next to the paragraph plays it, the text is highlighted sentence by sentence and word by word while it plays, and the <b>My audio</b> tab keeps all of them (play, download, rename, delete, filter, search).</p>
+  <div class="fig-row">
+    <figure><img src="img:rec-pick" alt="Choosing sentences"><figcaption>1 · <b>New audio</b>: click the first and the last sentence (everything in between is chosen), tick a whole paragraph, or Ctrl+click single sentences — in the list or on the page. Chosen sentences are blue.</figcaption></figure>
+    <figure><img src="img:rec-dialog" alt="The New audio dialog"><figcaption>2 · Title, voice (47 English Natural voices, with <b>Try</b>), speed and pause between sentences.</figcaption></figure>
+  </div>
+  <div class="fig-row">
+    <figure><img src="img:rec-playing" alt="Playing a recording"><figcaption>3 · The orange icon left of the paragraph plays it; the sentence and the word being read are highlighted and centred.</figcaption></figure>
+    <figure><img src="img:rec-list" alt="The My audio list"><figcaption>4 · The <b>My audio</b> tab: This page / This book / All, search, play, download, rename, delete.</figcaption></figure>
+  </div>
+  <h4>How it works</h4>
+  <ol>
+    <li><b>Why the server makes the MP3.</b> The browser's speech engine can only speak; it cannot save what it says. So the local server (<code>web/tts.py</code>) uses <b>edge-tts</b>, a Python package that talks to the same online Natural voices Microsoft Edge uses for Read Aloud. Creating needs the internet; the MP3 then plays offline. (edge-tts uses Edge's service without an official licence for other apps, so Microsoft could change it — the official alternative is Azure Speech with a key.)</li>
+    <li><b>Pieces of up to 10 sentences.</b> The chosen sentences are spoken in pieces of up to 10 (four requests at a time), so they flow like normal reading. The voice reports the time of every word (<code>WordBoundary</code>).</li>
+    <li><b>Cutting and joining.</b> ffmpeg decodes each piece to raw sound. From the word times, each sentence's part is cut out with 0.25 s of silence on each side — the voice itself pauses about 0.85 s at every full stop, so this gives an even 0.5 s between sentences (measured: every cut falls in silence). The chosen pause is added between sentences, and ffmpeg encodes one 64 kbit/s MP3 (with the title as MP3 tag). A file <code>&lt;id&gt;.json</code> next to it keeps the title, voice and the start/end of every sentence and word.</li>
+    <li><b>Matching words.</b> The words the voice reports (“page”, “104”) are matched to the page words (“p.104”); words it does not report get times shared out by length (<code>_word_times</code>).</li>
+    <li><b>Clicking a sentence plays the MP3 first.</b> Before reading a clicked sentence with the live voice, the app looks for an MP3 of this page that contains it (<code>locate</code>: the one in the player first, then the newest). If there is one, the MP3 plays from that sentence — no internet needed; clicking the same sentence pauses, another one jumps. Clause mode starts at the clause's first word, word mode plays just that word. Only sentences without an MP3 use the live voice, and without internet the live voice switches to an offline Windows voice at once.</li>
+    <li><b>Subtitles.</b> Every MP3 gets <code>&lt;id&gt;.srt</code> and <code>&lt;id&gt;.vtt</code> with the time of each sentence (made from the JSON timing, also for MP3s made earlier); <b>CC</b> in the list downloads the .srt.</li>
+    <li><b>Playing.</b> The normal audio player plays the MP3. Every frame it reports the time; the app finds the sentence and word at that time and highlights them on the page and in the text (<code>follow</code>). If the text was corrected after the MP3 was made, each sentence is found again by its text.</li>
+  </ol>
+  <div class="snip" data-file="web/tts.py" data-from="async def _create(jid, job):" data-to="'words': _word_times(s['words'], bounds, start, end)})"></div>
+  <div class="snip" data-file="web/tts.py" data-from="def _word_times(words, bounds, start, end):"></div>
+  <div class="snip" data-file="web/js/main.js" data-from="async unitClick(view, unit, fromPage) {"></div>
+  <div class="snip" data-file="web/js/recordings.js" data-from="async locate(view, unit) {"></div>
+  <div class="snip" data-file="web/tts.py" data-from="def _write_subtitles(meta):"></div>
+  <div class="snip" data-file="web/js/recordings.js" data-from="follow(rec, ms) {"></div>
+  <div class="snip" data-file="web/js/recordings.js" data-from="async create(body, progress) {"></div>
+  <div class="snip" data-file="web/js/recordings.js" data-from="renderSpots() {"></div>
+  <h3 id="f-translate">6.19 Translation</h3>
+  <p>Every sentence can be shown with its translation in one of <b>43 languages</b> (Arabic, Persian, Turkish, Spanish, Chinese…). The language is chosen in the <b>Translation</b> tab of the settings (sliders button). The translation is shown in two places, each with its own on/off button: <b>under each sentence in the Text list</b> (the translate button in the Text tab, or <kbd>L</kbd>) and <b>in a popup on the page</b> (the translate button at the top).</p>
+  <div class="fig-row">
+    <figure><img src="img:tr-menu" alt="The translation menu"><figcaption>1 · Settings, <b>Translation</b> tab: the language, where to show it (Text list, page), and <b>Translate the whole book now</b> (for offline use). The first click on a translate button opens it when no language is chosen yet.</figcaption></figure>
+    <figure><img src="img:tr-panel" alt="Translations in the Text list and on the page"><figcaption>2 · Each sentence has its translation under it (right to left for Arabic); pointing at a sentence on the page shows it in a box. The sentence being read is highlighted with its translation.</figcaption></figure>
+  </div>
+  <div class="table-wrap"><table>
+    <tr><th>Where</th><th>What you get</th></tr>
+    <tr><td>Text tab</td><td>The translation under every sentence; paragraphs are kept</td></tr>
+    <tr><td>On the page</td><td>Point at a sentence (or clause): its translation in a box under the line. In Word mode the box also shows “word → translation”.</td></tr>
+    <tr><td>While reading</td><td>The translation of the sentence being read is highlighted and kept in view</td></tr>
+    <tr><td>Copy / Save</td><td>Each sentence's translation is written after it</td></tr>
+    <tr><td>Whole book</td><td><b>Translate the whole book now</b> goes through every page (can be stopped and continued), so everything works offline</td></tr>
+  </table></div>
+  <h4>How it works</h4>
+  <ol>
+    <li><b>Which translator.</b> The local server (<code>web/translate.py</code>) uses Google's free translators — no account or key. First the address Chrome uses for “Translate this page” (<code>translate-pa.googleapis.com/v1/translateHtml</code>); if it fails, the older address (<code>translate.googleapis.com/translate_a/single?client=gtx</code>). Microsoft's free address, the first idea, no longer answers (404). These are not official APIs for other apps, so they could change one day; the official alternative is the Google Cloud or Azure Translator API with a key.</li>
+    <li><b>Whole paragraphs, but every sentence comes back on its own.</b> A sentence translated alone loses its context (“he”, “it”, tenses). So each paragraph is sent as one piece with its sentences marked: <code>&lt;a i=0&gt;First sentence.&lt;/a&gt; &lt;a i=1&gt;Second one.&lt;/a&gt;</code>. Google translates the paragraph as a whole and keeps the marks, so each sentence's translation is found by its number. A normal page is one request (about 1 s). If Google ever moves a sentence into another one, those sentences are sent again one by one.</li>
+    <li><b>The backup address.</b> It answers in pieces <code>[translation, original]</code>. The originals, put together, are exactly the text sent, so each piece's position shows which sentence it belongs to (<code>_align</code>).</li>
+    <li><b>Not too fast.</b> Google blocks a computer for a while when it gets many requests in a row (it then sends every request to its “unusual traffic” page). So requests to the same address are at least 0.4 s apart, <b>Translate the whole book</b> waits 1.5 s after each page that really needed the translator, and an address that answers “too many requests” is left alone for 2 minutes (4, 8… up to 30 if it happens again) instead of being asked again at once. The server tells the page how long to wait (HTTP 429 with <code>wait</code>); the book translation shows a countdown and goes on by itself, and the Text list tries again by itself.</li>
+    <li><b>Saved once, offline after.</b> The result is saved in <code>web\translations\&lt;language&gt;\&lt;book&gt;\&lt;page&gt;.json</code>, keyed by the English sentence. Opening the page again reads the file (no internet). A sentence that was <a href="#f-edit">corrected</a> is new text, so only its paragraph is sent again. Single words (Word mode) are saved in <code>&lt;language&gt;\words.json</code>.</li>
+    <li><b>In the page.</b> <code>translation.js</code> asks for the page's translations once per page version and language, then puts a <code>&lt;span class="tr"&gt;</code> after the last word of each sentence in the Text list, with <code>dir="rtl"</code> for Arabic, Persian, Urdu, Kurdish and Hebrew. The box on the page shows the sentence translation at once and adds the word when it arrives. It is placed under the <b>whole</b> sentence (all its lines), above it if there is no room, else beside it, and it moves with the page when you scroll — so it never covers the sentence you are reading.</li>
+  </ol>
+  <div class="snip" data-file="web/translate.py" data-from="def _call(engine, req):"></div>
+  <div class="snip" data-file="web/translate.py" data-from="def _by_chrome(lang, paragraphs):"></div>
+  <div class="snip" data-file="web/translate.py" data-from="def _translate_paragraphs(lang, paragraphs, found):"></div>
+  <div class="snip" data-file="web/translate.py" data-from="def translate_page(lang, book, page, paragraphs):"></div>
+  <div class="snip" data-file="web/js/translation.js" data-from="forView(view) {"></div>
+  <div class="snip" data-file="web/js/translation.js" data-from="async decoratePanel() {"></div>
+  <div class="snip" data-file="web/js/translation.js" data-from="placeTip(view, area) {"></div>
+  <div class="snip" data-file="web/js/translation.js" data-from="async translateBook() {"></div>
+  <h3 id="f-phone">6.20 Phones and tablets</h3>
+  <p>The same app works on Android and iPhone; below 700 px of width the layout changes (one place in <code>app.css</code>, <code>@media (max-width: 700px)</code>), and touches replace the mouse. Nothing is installed: the phone opens the app's address in its browser, and <b>Add to Home screen</b> gives it an icon and a full screen (<code>manifest.webmanifest</code>, icons from <code>make_icons.py</code>).</p>
+  <div class="fig-row">
+    <figure class="narrow"><img src="img:phone" alt="The app on a phone"><figcaption>iPhone size: the top bar in two rows, the page at the width of the screen, the panel at the bottom (drag its bar). A tapped sentence is read and highlighted.</figcaption></figure>
+    <figure class="narrow"><img src="img:phone-page" alt="Translation popup on a phone"><figcaption>The panel closed (only its tabs): more page. A tap shows the translation of the sentence too.</figcaption></figure>
+  </div>
+  <div class="table-wrap"><table>
+    <tr><th>On the computer</th><th>On the phone</th></tr>
+    <tr><td>Point at a sentence (highlight, translation popup)</td><td>Tap it: it is read, and its translation shows (a touch screen cannot point)</td></tr>
+    <tr><td>← / → keys, page buttons</td><td>Swipe left or right on the page (when the page is not wider than the screen, or at its edge)</td></tr>
+    <tr><td>Zoom buttons</td><td>Pinch with two fingers; near the width of the screen it snaps back to “fit width”</td></tr>
+    <tr><td>Side panel on the right</td><td>A sheet at the bottom: a tab opens it, the open tab closes it, its bar drags it</td></tr>
+    <tr><td>Double click, drag the dots</td><td>Double tap (taps are timed too, phones do not always report a double click), drag the sentence number</td></tr>
+  </table></div>
+  <h4>How it works</h4>
+  <ol>
+    <li><b>Layout.</b> The top bar wraps into two rows (an empty full-width item is the line break); the panel moves from the right column to a second row of the layout grid, so the page simply gets the space above it and “fit width” keeps working. Boxes and dialogs take the whole width; text fields use 16 px so iPhones do not zoom into them; <code>env(safe-area-inset-bottom)</code> keeps clear of the iPhone's home bar.</li>
+    <li><b>Touch.</b> <code>touch-action: pan-x pan-y</code> on the page lets the browser scroll but leaves pinching to the app: two fingers on <code>touchmove</code> set the zoom so that the point between the fingers stays put; one quick sideways move turns the page. The page ignores <code>pointermove</code> from fingers (no hover), so a tap is just a click.</li>
+    <li><b>Tests.</b> The phone checks run the app at iPhone size with real touch events sent through the browser's DevTools protocol (tap, swipe, two-finger pinch, double tap, dragging the sheet).</li>
+  </ol>
+  <div class="snip" data-file="web/js/main.js" data-from="  bindTouch() {"></div>
+  <div class="snip" data-file="web/js/main.js" data-from="  bindSheet() {"></div>
+
+  <h3 id="f-host">6.21 Login, GitHub and your own website</h3>
+  <p>As long as the app runs on this computer only (127.0.0.1) it needs no password. As soon as other devices can reach it, it does: <b>Start for phones (home Wi-Fi).bat</b> (<code>server.py --lan</code>, a 6-digit PIN made on first use) or a web host (<code>server.py --proxy</code>, the password in <code>AEF_PASSWORD</code>). Without one, the server refuses to start on the network.</p>
+  <ul>
+    <li><b>Login</b> (<code>auth.py</code>): the right password gives a cookie “valid until <i>time</i>”, signed with HMAC-SHA256 with a key made from the password — nothing is stored on the server, logins survive restarts, and a new password logs everybody out. The cookie is <code>HttpOnly</code>, <code>SameSite=Lax</code>, and <code>Secure</code> behind HTTPS. After 8 wrong tries from one address it waits 15 minutes.</li>
+    <li><b>Every request</b> goes through <code>gate()</code>: without a login only <code>login.html</code>, the manifest and the icons open; pages are sent to the login page, the API answers 401 (the app then goes to the login page itself). Only <code>/web/</code> and <code>/.shared/</code> are served as files, never Python files, tools, tests, saved data or <code>server-config.json</code>.</li>
+    <li><b>GitHub</b> gets the code only (<code>.gitignore</code> lists what goes in, about 0.6 MB): not the book content (Oxford University Press's, about 1 GB), not your data.</li>
+    <li><b>The host</b> is a small Ubuntu VPS (not shared hosting: the Python helper must run all the time). <code>deploy/setup-server.sh</code> installs Python and <b>Caddy</b>, which gets the HTTPS certificate by itself and passes every request to the app; the code comes from GitHub with a read-only deploy key; the app runs as a systemd service. <code>deploy/upload-content.ps1</code> copies the content and your data once; <code>deploy/update.sh</code> takes the newest code later. The steps: <code>deploy/README.md</code>.</li>
+  </ul>
+  <div class="snip" data-file="web/server.py" data-from="    def gate(self, path):"></div>
+  <div class="snip" data-file="web/auth.py" data-from="    def valid(self, token):"></div>
+  <div class="snip" data-file="deploy/setup-server.sh" data-from="echo &quot;== The app as a service&quot;" data-to="systemctl enable --now aef3"></div>
+</section>
+
+<!-- ============================================================ TESTING -->
+<section class="chapter">
+  <h2 id="testing">7. Testing</h2>
+  <p>The tests drive a real Microsoft Edge (or Chrome) without a window, using <b>Puppeteer</b>. They start the server by themselves, click through every feature like a person would, and check the result.</p>
+  <script type="text/plain" class="codeblock" data-lang="ps1" data-title="PowerShell — run the tests">
+cd web\tests
+npm install          # once: installs puppeteer-core (uses your installed Edge, no browser download)
+node ui-test.mjs     # 125 checks, prints PASS/FAIL (ONLY=phone or ONLY=login: just those)
+node capture-screenshots.mjs   # re-takes the screenshots used in this guide
+</script>
+  <div class="table-wrap"><table>
+    <tr><th>Area</th><th>What is checked</th></tr>
+    <tr><td>Page</td><td>Clickable words exist (561 on p.25), 7 hotspots, text panel filled</td></tr>
+    <tr><td>Click modes</td><td>Hover highlights the exact sentence; clause mode gives the exact clause; word mode gives one word</td></tr>
+    <tr><td>Reading</td><td>Click reads on to the end of the page (“1 of 52”); same sentence pauses / continues; another sentence restarts there and is centred in the Text list (0 px off); Space pauses</td></tr>
+    <tr><td>Text corrections</td><td>Tools in the bar at the top, the selected sentence stays plain text; Enter / double click opens its text box, Enter saves, Esc cancels; buttons that do not fit are greyed out; every sentence listed; page click selects and centres; edit, split, merge, move up/down, add, mark on page, delete, undo, new/join paragraph; saved and still there after reloading; search finds the correction; restore brings back the OCR text</td></tr>
+    <tr><td>My audio</td><td>Range picking (first + last click); clicking a sentence in an MP3 plays the MP3 there, pauses and jumps; subtitles (.srt/.vtt) have every sentence</td></tr>
+    <tr><td>Text list</td><td>Every sentence numbered and on a line of its own (55 lines, 55 sentences); translation button shows/hides; drag by the dots moves a sentence and saves the new order; Ctrl+Z undoes it; double-click opens a box (no reading starts), Enter saves, Esc cancels, More tools opens correction mode on it; a single click still reads</td></tr>
+    <tr><td>Translation</td><td>Settings are a tab of the settings box; the top button switches only the page popup, the Text-tab button and L only the list; every sentence translated (55 of 55, Arabic, right to left); page popup; word popup; highlighted while reading; copy includes it; L hides/shows (second time from the saved file, 70 ms); the popup never covers the sentence (below, or above when there is no room); Google busy: the Text list and the whole-book translation wait and go on by themselves</td></tr>
+    <tr><td>Repeat</td><td>3 times: the same sentence is spoken 3 times (“1st/3rd time of 3”), then the next one; ∞ keeps reading it (“6th time, ∞”); an MP3 jumps back to the start of the sentence once, then goes on; the repeat button (and R) goes 2, 3, 4, 5, ∞, once, in step with the slider</td></tr>
+    <tr><td>Audio</td><td>Plays; 7 script lines; clicking line 4 jumps to 15.7 s</td></tr>
+    <tr><td>Answer key</td><td>Ruffle player loads with no error</td></tr>
+    <tr><td>Search, links</td><td>“seaplane” finds 4 pages; p.104 link works; back button appears</td></tr>
+    <tr><td>Video</td><td>MP4 plays (640 px), script shown</td></tr>
+    <tr><td>Views and books</td><td>Two-page view shows 24–25; Workbook and Teacher's Book load; blank page message</td></tr>
+    <tr><td>Phone (iPhone size, touch only)</td><td>Fits the screen (two-row top bar, nothing overlaps, page buttons inside); a tap reads a sentence and shows its translation; swipe turns the page; pinch zooms in and back to the screen width; the panel at the bottom opens, closes and is dragged taller; double tap opens a sentence for correcting; the settings fit</td></tr>
+    <tr><td>Login</td><td>Without it only the login page opens (API: 401); wrong password refused, right one gives an HttpOnly cookie for 30 days; a made-up cookie is refused; server files, the password file and saved data are never served; the app cannot be stopped through the web; login page → app → Log out in the browser; no start on the network without a password</td></tr>
+    <tr><td>Errors</td><td>No JavaScript errors and no failed requests</td></tr>
+  </table></div>
+  <div class="snip" data-file="web/tests/harness.mjs" data-from="export async function startServer() {"></div>
+  <div class="snip" data-file="web/tests/ui-test.mjs" data-from="// Sentence mode: hover + click" data-to="await page.click('#reading-stop');"></div>
+  <script type="text/plain" class="codeblock" data-lang="txt" data-title="Last result">
+PASS  page 25 shows clickable words  (561 words)
+PASS  hotspot buttons are shown  (7 buttons)
+PASS  hovering a word highlights its sentence  (Once the boat passed through Biscayne Bay and went under the Rickenbacker Bridge, he entered open water.)
+PASS  clause mode highlights part of a sentence  (Rutledge increased the boat's speed to over 90 miles an hour)
+PASS  clicking a script line jumps to it  (15.7 s)
+PASS  reading goes on to the end of the page  (Reading page 25 · 1 of 52)
+PASS  clicking the same sentence pauses  (Paused · page 25 · 1 of 52)
+PASS  clicking another sentence reads from there, centred in the text list  (0px from the middle)
+PASS  answer key opens in Ruffle
+PASS  video plays  (640px wide)
+PASS  move down swaps it with the next sentence  (position 38 → 39)
+PASS  corrections are still there after reloading
+PASS  restore brings back the original OCR text
+PASS  Translation: every sentence gets its translation under it  (55 of 55, Arabic)
+PASS  …shown right to left for Arabic
+PASS  in Word mode the popup also translates the word  (Rickenbacker → ريكنباكر)
+PASS  L switches translations off and on; the second time they come from the saved file  (70 ms)
+...
+125 passed, 0 failed
+</script>
+</section>
+
+<!-- ============================================================ REBUILD -->
+<section class="chapter">
+  <h2 id="rebuild">8. Rebuild from zero — checklist</h2>
+  <p>Tick each step as you go (your ticks are saved in this browser). <span class="muted" id="check-count"></span></p>
+  <div class="progress" id="check-progress"><div></div></div>
+  <ul class="checklist">
+    <li data-check="disc"><input type="checkbox" aria-label="Done"><div><b>Have the original disc folder.</b> It must contain <code>.shared\books</code>, <code>.shared\assets</code> and <code>.shared\content</code>. The kit does not include any book content.</div></li>
+    <li data-check="python"><input type="checkbox" aria-label="Done"><div><b>Install Python 3</b> from python.org (tick “Add python.exe to PATH”). Check:
+      <script type="text/plain" class="codeblock" data-lang="ps1">python --version</script></div></li>
+    <li data-check="node"><input type="checkbox" aria-label="Done"><div><b>Install Node.js</b> (LTS) from nodejs.org. Needed to download Ruffle and to run the tests.</div></li>
+    <li data-check="ocr"><input type="checkbox" aria-label="Done"><div><b>Check the Windows OCR language.</b> The list must contain <code>en-US</code>. If not: Settings → Time &amp; language → Language → add “English (United States)”.
+      <script type="text/plain" class="codeblock" data-lang="ps1">[void][Windows.Media.Ocr.OcrEngine,Windows.Foundation,ContentType=WindowsRuntime]
+[Windows.Media.Ocr.OcrEngine]::AvailableRecognizerLanguages | ForEach-Object LanguageTag</script></div></li>
+    <li data-check="copy"><input type="checkbox" aria-label="Done"><div><b>Copy the kit into the disc folder</b>: the <code>web</code> folder and <code>Start American English File.bat</code> go next to <code>.shared</code>.</div></li>
+    <li data-check="build"><input type="checkbox" aria-label="Done"><div><b>Run the build</b> (25–30 minutes; it can be stopped and run again).
+      <script type="text/plain" class="codeblock" data-lang="ps1">powershell -ExecutionPolicy Bypass -File web\tools\build_all.ps1</script></div></li>
+    <li data-check="check"><input type="checkbox" aria-label="Done"><div><b>Check the output</b> (sizes from this build):
+      <div class="table-wrap"><table>
+        <tr><th>Folder</th><th>Contents</th><th class="num">Size</th></tr>
+        <tr><td><code>web\data\pages</code></td><td>472 page images (WebP)</td><td class="num"><span data-stat="mb.pages">129</span> MB</td></tr>
+        <tr><td><code>web\data\thumbs</code></td><td>472 thumbnails</td><td class="num"><span data-stat="mb.thumbs">5</span> MB</td></tr>
+        <tr><td><code>web\data\text</code></td><td>472 text files (words, sentences, clauses)</td><td class="num"><span data-stat="mb.text">6</span> MB</td></tr>
+        <tr><td><code>web\data\search</code></td><td>3 search files</td><td class="num"><span data-stat="mb.search">1</span> MB</td></tr>
+        <tr><td><code>web\data\scripts</code></td><td><span data-stat="scripts">115</span> transcripts</td><td class="num"><span data-stat="mb.scripts">0.2</span> MB</td></tr>
+        <tr><td><code>web\data\video</code></td><td>38 MP4 videos</td><td class="num"><span data-stat="mb.video">332</span> MB</td></tr>
+        <tr><td><code>web\vendor\ruffle</code></td><td>Ruffle Flash emulator</td><td class="num"><span data-stat="mb.ruffle">29</span> MB</td></tr>
+      </table></div></div></li>
+    <li data-check="start"><input type="checkbox" aria-label="Done"><div><b>Start the app</b> with <code>Start American English File.bat</code> and open Student Book p.25.</div></li>
+    <li data-check="test"><input type="checkbox" aria-label="Done"><div><b>Run the tests</b> (optional): <code>cd web\tests</code>, <code>npm install</code>, <code>node ui-test.mjs</code> → “44 passed, 0 failed”.</div></li>
+    <li data-check="edits"><input type="checkbox" aria-label="Done"><div><b>Moving to another computer?</b> Copy your <code>web\edits</code> folder too — it holds your text corrections.</div></li>
+  </ul>
+  <div class="callout tip"><b class="tag">Faster changes</b><p>To change only how sentences/clauses are split, edit <code>segment_text.py</code> and run just that step — the OCR results in <code>web\_build\ocr_raw</code> are kept:
+    <code>python web\tools\segment_text.py</code> (a few seconds).</p></div>
+</section>
+
+<!-- ============================================================ FORMATS -->
+<section class="chapter">
+  <h2 id="formats">9. Data formats</h2>
+
+  <h3 id="fmt-books">books.json</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Field</th><th>Meaning</th></tr>
+    <tr><td><code>page.w</code>, <code>page.h</code></td><td>Page size in pixels: 1984 × 2496</td></tr>
+    <tr><td><code>books[].id</code></td><td>Book id used in the address: 1705 Student Book, 1706 Workbook, 1707 Teacher's Book</td></tr>
+    <tr><td><code>books[].slug</code></td><td>Folder name of the book in <code>.shared\books</code> and <code>web\data</code></td></tr>
+    <tr><td><code>pages[].n</code>, <code>.path</code></td><td>Page number and page folder name</td></tr>
+    <tr><td><code>pages[].a[]</code></td><td>Hotspots: <code>t</code> (audio / video / swf / link), <code>x</code>, <code>y</code> (image pixels), <code>title</code>, <code>src</code>, <code>script</code>, <code>w</code>/<code>h</code> (answer key size), <code>page</code>/<code>book</code> (link target)</td></tr>
+    <tr><td><code>pages[].blank</code></td><td>Present and <code>true</code> when the page is not on the disc</td></tr>
+    <tr><td><code>resources[]</code></td><td>PDF/PPT files: <code>title</code>, <code>kind</code>, <code>src</code></td></tr>
+  </table></div>
+
+  <h3 id="fmt-text">Page text (text/&lt;book&gt;/&lt;page&gt;.json)</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Field</th><th>Meaning</th></tr>
+    <tr><td><code>words[i]</code></td><td><code>[x, y, width, height, text, line number, space after (1/0)]</code> — in reading order</td></tr>
+    <tr><td><code>sent[i]</code></td><td><code>[first word, end word]</code> — the end is not included</td></tr>
+    <tr><td><code>clause[i]</code></td><td>Same, for clauses (every clause is inside one sentence)</td></tr>
+    <tr><td><code>blocks[i]</code></td><td><code>[first sentence, end sentence]</code> — a paragraph, heading or list item</td></tr>
+  </table></div>
+
+  <h3 id="fmt-edits">Text corrections (edits/&lt;book&gt;/&lt;page&gt;.json)</h3>
+  <p>Exactly the same format as the page text. A word with width and height 0 (<code>[0, 0, 0, 0, "text", -1, 1]</code>) has no place on the page image yet (added by hand, not marked). The folder <code>web\edits</code> is never touched by the build — back it up to keep your corrections.</p>
+
+  <h3 id="fmt-other">Other files</h3>
+  <div class="table-wrap"><table>
+    <tr><th>File</th><th>Format</th></tr>
+    <tr><td><code>scripts/&lt;asset id&gt;.json</code></td><td><code>[{"t": start ms, "x": "text"}, …]</code></td></tr>
+    <tr><td><code>web\translations\&lt;language&gt;\&lt;book&gt;\&lt;page&gt;.json</code></td><td><code>{"English sentence": "translation", …}</code>; <code>&lt;language&gt;\words.json</code> is the same for single words</td></tr>
+    <tr><td><code>search/&lt;book&gt;.json</code></td><td><code>[{"p": "page number", "t": "page text"}, …]</code> — paragraphs separated by new lines</td></tr>
+    <tr><td><code>_build/ocr_raw/&lt;book&gt;__&lt;page&gt;.json</code></td><td>Raw OCR: <code>{w, h, angle, lines: [{words: [{t, x, y, w, h}]}]}</code></td></tr>
+  </table></div>
+  <div class="example" data-key="search" data-title="web/data/search/BO-ff57d1a56e6bf.json (first page, shortened)"></div>
+</section>
+
+<!-- ============================================================ TROUBLESHOOTING -->
+<section class="chapter">
+  <h2 id="troubleshooting">10. Troubleshooting</h2>
+  <details><summary>The app says “The book data could not be loaded”</summary><div><p>The page was opened directly as a file. Start it with <b>Start American English File.bat</b> instead (see <a href="#f-server">6.1</a>).</p></div></details>
+  <details><summary>The black window says “Python is not installed”</summary><div><p>Install Python 3 from python.org and tick “Add python.exe to PATH”, then start again.</p></div></details>
+  <details><summary>Nothing is spoken / “This browser cannot read text aloud”</summary><div><p>Use Microsoft Edge or Google Chrome. Check that Windows has voices: Settings → Time &amp; language → Speech. Try the “Test voice” button in the voice settings.</p></div></details>
+  <details><summary>A “Natural” voice stops working</summary><div><p>These voices need internet. The app switches to an offline Windows voice by itself and shows a message. You can also choose David or Zira in the voice settings.</p></div></details>
+  <details><summary>An answer key shows “could not be shown”</summary><div><p>Ruffle is missing. Run <code>build_all.ps1</code> again — it downloads Ruffle into <code>web\vendor\ruffle</code> when it is not there.</p></div></details>
+  <details><summary>A video does not play</summary><div><p>Check that <code>web\data\video</code> has the MP4 files. Run <code>python web\tools\convert_videos.py</code> again; it only converts missing ones.</p></div></details>
+  <details><summary>OCR says “English OCR language is not installed”</summary><div><p>Add “English (United States)” in Windows language settings, then run the build again.</p></div></details>
+  <details><summary>Some text is wrong or a sentence is split badly</summary><div><p>OCR is very good on normal text but can be wrong on small labels on pictures. Splitting rules are in <code>segment_text.py</code>; after a change, run only <code>python web\tools\segment_text.py</code>. You can also correct a word by hand in the page's JSON file in <code>web\data\text</code>.</p></div></details>
+  <details><summary>Correction mode says “Not saved”</summary><div><p>The app could not reach its server. Check that the black window is still open (or start the app again with the .bat file), then make any small change again — the whole page is saved each time.</p></div></details>
+  <details><summary>Translation says “The translation failed” or “busy”, or does not appear</summary><div><p>“Busy” means Google got too many requests from this computer in a short time: the app waits the time shown and goes on by itself. Otherwise: the first translation of a page needs the internet. Check the connection and open the page again (or switch translations off and on with <b>L</b>). Pages translated before work offline. If it says the server is an older version, close the black window and start the app again.</p></div></details>
+  <details><summary>The port is already in use</summary><div><p>The server tries the next 19 ports by itself. The black window shows the address it used.</p></div></details>
+</section>
+
+<!-- ============================================================ LIMITS -->
+<section class="chapter">
+  <h2 id="limits">11. Known limits</h2>
+  <ul>
+    <li><b>OCR text</b> can contain small mistakes, mostly in labels on pictures and maps, and some exercise numbers stick to words.</li>
+    <li><b>156 Teacher's Book pages</b> are not on the original disc, so they cannot be shown.</li>
+    <li><b>Natural voices</b> need Edge and an internet connection; offline voices are more robotic.</li>
+    <li><b>Ruffle</b> plays the answer keys well; other old Flash parts of the disc (interactive exercises not linked from the pages) were not used.</li>
+    <li><b>Translations</b> are machine translations (Google Translate): good for understanding, not always perfect. The free addresses are not official APIs and could change, and Google limits how fast they may be used.</li>
+    <li><b>Python</b> must be installed to run the small server.</li>
+    <li>The rebuilt app is for use on your own computer. The book content belongs to Oxford University Press.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ SOURCE -->
+<section class="chapter" id="source-code-section">
+  <h2 id="source-code">12. Source code</h2>
+  <p>Every code file of the app, the build tools and the tests. Choose a file on the left. You can copy or download each one.</p>
+  <div class="srcb">
+    <div class="srcb-list" id="srcb-list"></div>
+    <div class="srcb-view" id="srcb-view"></div>
+  </div>
+</section>
+
+</main>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<!--DATA-->
+<!--SCRIPT-->
+</body>
+</html>

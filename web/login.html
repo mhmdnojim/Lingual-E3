@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#c4122f">
+<title>Log in · American English File 3</title>
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+  :root { --bg: #f4f5f7; --surface: #fff; --text: #1c1f26; --muted: #60677a; --line: #dfe2e8; --accent: #c4122f; --accent-ink: #fff; --focus: #2563eb; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #14161b; --surface: #1d2027; --text: #e8eaef; --muted: #9aa1b2; --line: #2e323c; --focus: #6b9bff; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100dvh; display: grid; place-items: center; padding: 16px; background: var(--bg); color: var(--text);
+    font: 15px/1.5 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif; }
+  form { width: min(360px, 100%); background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 26px 24px 22px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, .08); }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; font-weight: 600; font-size: 17px; }
+  .mark { background: var(--accent); color: var(--accent-ink); border-radius: 6px; padding: 3px 7px; font-size: 13px; font-weight: 800; letter-spacing: .03em; }
+  label { display: block; color: var(--muted); font-size: 13px; margin-bottom: 6px; }
+  input { width: 100%; height: 46px; padding: 0 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); font-size: 17px; }
+  input:focus { outline: 2px solid var(--focus); outline-offset: 0; border-color: transparent; }
+  button { width: 100%; height: 46px; margin-top: 14px; border: 0; border-radius: 9px; background: var(--accent); color: var(--accent-ink); font: inherit; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .6; }
+  .msg { min-height: 22px; margin: 10px 0 0; color: var(--accent); font-size: 13.5px; }
+  .note { margin: 14px 0 0; color: var(--muted); font-size: 12.5px; }
+</style>
+</head>
+<body>
+<form id="login">
+  <div class="brand"><span class="mark">AEF</span>American English File 3</div>
+  <label for="pw">Password</label>
+  <input id="pw" type="password" autocomplete="current-password" required autofocus>
+  <button id="go">Log in</button>
+  <p class="msg" id="msg" role="alert"></p>
+  <p class="note">You stay logged in on this device for 30 days.</p>
+</form>
+<script>
+  const form = document.getElementById('login'), msg = document.getElementById('msg'), go = document.getElementById('go');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    go.disabled = true;
+    msg.textContent = '';
+    try {
+      const r = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: document.getElementById('pw').value }) });
+      if (r.ok) {
+        const next = new URLSearchParams(location.search).get('next') || '';
+        location.href = next.startsWith('/web/') ? next : '/web/';
+        return;
+      }
+      msg.textContent = r.status === 429 ? 'Too many wrong tries. Wait 15 minutes, then try again.' : 'Wrong password.';
+    } catch {
+      msg.textContent = 'The app could not be reached.';
+    }
+    go.disabled = false;
+  });
+</script>
+</body>
+</html>
