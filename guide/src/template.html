@@ -555,8 +555,13 @@ Adam started off OK. However, after an hour, Adam decided that he was going too 
 
   <h3 id="f-audio">6.7 Audio with a script that follows</h3>
   <figure><img src="img:audio-transcript" alt="Audio player and script"><figcaption>The player bar at the bottom, the playing hotspot pulses, and the current script line is highlighted. Clicking a line jumps there.</figcaption></figure>
-  <p>Clicking a headphones button plays the original MP3 (straight from <code>.shared</code>) in an HTML5 <code>&lt;audio&gt;</code> element. On every <code>timeupdate</code> event, the transcript finds the last line whose start time has passed and highlights it. Clicking a line sets <code>currentTime</code>, which works because the server supports Range requests.</p>
+  <p>Clicking a headphones button plays the original MP3 (straight from <code>.shared</code>) in an HTML5 <code>&lt;audio&gt;</code> element and opens the side panel on the <b>Script</b> tab (also when the panel was closed). On every <code>timeupdate</code> event, the transcript finds the last line whose start time has passed and highlights it. Clicking a line sets <code>currentTime</code>, which works because the server supports Range requests; clicking the line being played pauses, and a second click plays again.</p>
+  <ul>
+    <li><b>Over the script</b>: the two translation buttons and the language (the same <code>ScriptTranslation</code> as for <a href="#f-video">videos</a>; the box when pointing is beside the panel, over the page), and a <b>repeat</b> button.</li>
+    <li><b>Repeat each line.</b> The repeat buttons (top bar, Script tab, video window) and the slider in the Voice tab are one setting. While a recording plays, the transcript looks every frame (<code>requestAnimationFrame</code>, not the 4-a-second <code>timeupdate</code>, so the next line is not heard) whether the next line is about to start; if the line must be heard again, it goes back to its start (<code>checkRepeat</code>; the last line on <code>ended</code>). Its time shows “2/3”. A jump made by the person (a click on a line, the seek bar) starts counting again; <code>seeking</code> events of its own jumps are told apart. My audio MP3s keep their own repeat (with the pause between sentences, <code>recordings.js</code>).</li>
+  </ul>
   <div class="snip" data-file="web/js/media.js" data-from="update(ms) {"></div>
+  <div class="snip" data-file="web/js/media.js" data-from="  checkRepeat() {"></div>
   <div class="snip" data-file="web/js/media.js" data-from="async play(asset, {"></div>
   <div class="demo" data-demo="sync">
     <div class="demo-head"><span class="badge">Try it</span><b>Transcript sync (CD 2 Track 09 — no sound, just the timing)</b></div>
@@ -568,7 +573,7 @@ Adam started off OK. However, after an hour, Adam decided that he was going too 
 
   <h3 id="f-video">6.8 Video</h3>
   <figure><img src="img:video" alt="Video dialog"><figcaption>Videos open in a dialog with the converted MP4 and its timed script.</figcaption></figure>
-  <p>The same <code>Transcript</code> class is reused with a <code>&lt;video&gt;</code> element inside a native <code>&lt;dialog&gt;</code>. Closing the dialog stops and unloads the video.</p>
+  <p>The same <code>Transcript</code> class is reused with a <code>&lt;video&gt;</code> element inside a native <code>&lt;dialog&gt;</code>: a click on a line plays it, on the line being played pauses and plays, and each line is repeated as set (a repeat button is over the script). Closing the dialog stops and unloads the video.</p>
   <p><b>Translating the script.</b> Over the script are two buttons and the language (<code>ScriptTranslation</code> in <code>translation.js</code>): the first puts the translation <b>under every line</b>, the second shows it in a box <b>while pointing at a line</b> — beside the script, over the video; on a phone a tap shows it under the line, and the box moves with its line when the script scrolls. The language list is there because the settings box cannot open over the video window (a modal dialog); choosing a language there does not switch on the page's translations. The script goes to the same <code>/api/translate</code> as a page, six lines per paragraph for context, with the script's id (<code>VI-…</code>, <code>AU-…</code>) instead of the page's, so it is saved as <code>web\translations\&lt;language&gt;\&lt;book&gt;\&lt;script id&gt;.json</code> and translated only once. Lines without letters (track numbers like “4.49”) are not sent.</p>
   <div class="snip" data-file="web/js/media.js" data-from="export async function openVideo(app, asset, book) {"></div>
   <div class="snip" data-file="web/js/translation.js" data-from="  async refresh(clicked = false) {"></div>
@@ -850,7 +855,7 @@ bash setup-server.sh books.dolingual.com https://github.com/mhmdnojim/Lingual-E3
   <script type="text/plain" class="codeblock" data-lang="ps1" data-title="PowerShell — run the tests">
 cd web\tests
 npm install          # once: installs puppeteer-core (uses your installed Edge, no browser download)
-node ui-test.mjs     # 153 checks, prints PASS/FAIL (ONLY=phone, ONLY=library or ONLY=website: just those)
+node ui-test.mjs     # 158 checks, prints PASS/FAIL (ONLY=phone, ONLY=library or ONLY=website: just those)
 node capture-screenshots.mjs   # re-takes the screenshots used in this guide
 </script>
   <div class="table-wrap"><table>
@@ -863,10 +868,10 @@ node capture-screenshots.mjs   # re-takes the screenshots used in this guide
     <tr><td>Text list</td><td>Every sentence numbered and on a line of its own (55 lines, 55 sentences); translation button shows/hides; drag by the dots moves a sentence and saves the new order; Ctrl+Z undoes it; double-click opens a box (no reading starts), Enter saves, Esc cancels, More tools opens correction mode on it; a single click still reads</td></tr>
     <tr><td>Translation</td><td>Settings are a tab of the settings box; the top button switches only the page popup, the Text-tab button and L only the list; every sentence translated (55 of 55, Arabic, right to left); page popup; word popup; highlighted while reading; copy includes it; L hides/shows (second time from the saved file, 70 ms); the popup never covers the sentence (below, or above when there is no room); Google busy: the Text list and the whole-book translation wait and go on by themselves</td></tr>
     <tr><td>Repeat</td><td>3 times: the same sentence is spoken 3 times (“1st/3rd time of 3”), then the next one; ∞ keeps reading it (“6th time, ∞”); an MP3 jumps back to the start of the sentence once, then goes on; the repeat button (and R) goes 2, 3, 4, 5, ∞, once, in step with the slider</td></tr>
-    <tr><td>Audio</td><td>Plays; 7 script lines; clicking line 4 jumps to 15.7 s</td></tr>
+    <tr><td>Audio</td><td>Plays; the Script tab opens (also with the panel closed); 7 script lines; clicking line 4 jumps to 15.7 s, clicking it again pauses, again plays; its translation under every line and when pointing; repeat 2 times: at the end of the line back to its start once (“2/2”), then on; the repeat button here and in the top bar show the same</td></tr>
     <tr><td>Answer key</td><td>Ruffle player loads with no error</td></tr>
     <tr><td>Search, links</td><td>“seaplane” finds 4 pages; p.104 link works; back button appears</td></tr>
-    <tr><td>Video</td><td>MP4 plays (640 px), script shown; its two translation buttons: no language yet asks for one; under every line (and not the page's translations switched on); off again; the box while pointing at a line, next to it, not covering it, gone when pointing elsewhere</td></tr>
+    <tr><td>Video</td><td>MP4 plays (640 px), script shown; clicking the line being played pauses, again plays; a repeat button; its two translation buttons: no language yet asks for one; under every line (and not the page's translations switched on); off again; the box while pointing at a line, next to it, not covering it, gone when pointing elsewhere</td></tr>
     <tr><td>Views and books</td><td>Two-page view shows 24–25; Workbook and Teacher's Book load; blank page message</td></tr>
     <tr><td>Phone (iPhone size, touch only)</td><td>Fits the screen (two-row top bar, nothing overlaps, page buttons inside); a tap reads a sentence and shows its translation; swipe turns the page; pinch zooms in and back to the screen width; the panel at the bottom opens, closes and is dragged taller; double tap opens a sentence for correcting; the settings fit</td></tr>
     <tr><td>Following</td><td>The sentence being read in the middle of the page (also the next one); scrolling away keeps the page there; the word being read shows at the top middle, word by word, with an arrow down to it, and a click brings the reading back; after the wait it follows by itself; the button in the reading bar and F switch it off and on; “Near the top”; on a phone (above the panel), a swipe pauses it</td></tr>
@@ -896,7 +901,7 @@ PASS  …shown right to left for Arabic
 PASS  in Word mode the popup also translates the word  (Rickenbacker → ريكنباكر)
 PASS  L switches translations off and on; the second time they come from the saved file  (70 ms)
 ...
-153 passed, 0 failed
+158 passed, 0 failed
 </script>
 </section>
 
@@ -928,7 +933,7 @@ PASS  L switches translations off and on; the second time they come from the sav
         <tr><td><code>web\vendor\ruffle</code></td><td>Ruffle Flash emulator</td><td class="num"><span data-stat="mb.ruffle">29</span> MB</td></tr>
       </table></div></div></li>
     <li data-check="start"><input type="checkbox" aria-label="Done"><div><b>Start the app</b> with <code>Start Lingua Books.bat</code> and open Student Book p.25.</div></li>
-    <li data-check="test"><input type="checkbox" aria-label="Done"><div><b>Run the tests</b> (optional): <code>cd web\tests</code>, <code>npm install</code>, <code>node ui-test.mjs</code> → “153 passed, 0 failed”.</div></li>
+    <li data-check="test"><input type="checkbox" aria-label="Done"><div><b>Run the tests</b> (optional): <code>cd web\tests</code>, <code>npm install</code>, <code>node ui-test.mjs</code> → “158 passed, 0 failed”.</div></li>
     <li data-check="edits"><input type="checkbox" aria-label="Done"><div><b>Moving to another computer?</b> Copy your <code>web\edits</code> folder too — it holds your text corrections.</div></li>
   </ul>
   <div class="callout tip"><b class="tag">Faster changes</b><p>To change only how sentences/clauses are split, edit <code>segment_text.py</code> and run just that step — the OCR results in <code>web\_build\ocr_raw</code> are kept:

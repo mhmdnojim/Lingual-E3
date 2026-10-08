@@ -314,29 +314,28 @@ export class Translator {
 }
 
 /**
- * The translation of a video's script (the lines next to the video): two buttons over the
- * lines — the translation under every line, and in a box when pointing at a line — and the
- * language. The script is translated once, a few lines at a time (for context), and saved by
- * the server like a page (the script's id instead of the page's).
+ * The translation of a script (the timed lines of a recording on the Script tab, or next to a
+ * video): two buttons over the lines — the translation under every line, and in a box when
+ * pointing at a line — and the language. A script is translated once, a few lines at a time (for
+ * context), and saved by the server like a page (the script's id instead of the page's).
+ * tipHost: where the box goes (inside the video window, which is above everything else).
  */
 export class ScriptTranslation {
-  constructor(translator, transcript, book, id) {
+  constructor(translator, transcript, tipHost = document.body) {
     this.tr = translator;
     this.transcript = transcript;
-    this.book = book;
-    this.id = id;
+    this.book = this.id = null;
     this.under = store.get('cueTrUnder', false);
     this.point = store.get('cueTrPoint', false);
     this.byLang = new Map(); // lang -> Promise of one translation per line
     this.gen = 0;
-    this.underBtn = el('button', { class: 'icon-btn small', type: 'button', id: 'cue-tr-under', html: icon('tr-under') });
-    this.pointBtn = el('button', { class: 'icon-btn small', type: 'button', id: 'cue-tr-point', html: icon('tr-point') });
-    this.lang = el('select', { class: 'cue-lang', id: 'cue-tr-lang', 'aria-label': 'Translate into', title: 'Translate into' },
-      el('option', { value: '' }, 'Translate into…'), ...translator.langs.map((l) => el('option', { value: l.code }, l.name)));
-    this.lang.value = translator.lang;
+    this.underBtn = el('button', { class: 'icon-btn small cue-tr-under', type: 'button', html: icon('tr-under') });
+    this.pointBtn = el('button', { class: 'icon-btn small cue-tr-point', type: 'button', html: icon('tr-point') });
+    this.lang = el('select', { class: 'cue-lang', 'aria-label': 'Translate into', title: 'Translate into' },
+      el('option', { value: '' }, 'Translate into…'));
     this.note = el('div', { class: 'cue-note', hidden: true });
     this.tip = el('div', { class: 'tr-tip', hidden: true, role: 'tooltip' });
-    this.el = el('div', { class: 'cue-tr' }, el('div', { class: 'cue-tools' }, this.underBtn, this.pointBtn, this.lang), this.note, this.tip);
+    tipHost.append(this.tip);
 
     this.underBtn.addEventListener('click', () => { this.under = !this.under; store.set('cueTrUnder', this.under); this.refresh(true); });
     this.pointBtn.addEventListener('click', () => {
@@ -353,6 +352,21 @@ export class ScriptTranslation {
     list.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'mouse') this.showTip(e.target.closest('.cue')); });
     list.addEventListener('scroll', () => this.placeTip(), { passive: true }); // the box moves with its line
     this.updateButtons();
+    this.setScript(null, null);
+  }
+
+  /** The script now shown: its book and id (null: a script that cannot be translated, e.g. My audio). */
+  setScript(book, id) {
+    this.book = book;
+    this.id = id;
+    this.byLang = new Map();
+    this.hideTip();
+    for (const e of [this.underBtn, this.pointBtn, this.lang]) e.hidden = !id;
+    if (this.lang.options.length < 2) { // the languages arrive from the server after the app starts
+      this.lang.append(...this.tr.langs.map((l) => el('option', { value: l.code }, l.name)));
+    }
+    this.lang.value = this.tr.lang;
+    this.refresh();
   }
 
   updateButtons() {
@@ -370,8 +384,8 @@ export class ScriptTranslation {
     const gen = ++this.gen;
     this.updateButtons();
     this.say('');
-    if (!this.under) this.transcript.setTranslations(null);
-    if (!this.under && !this.point) return;
+    if (!this.under || !this.id) this.transcript.setTranslations(null);
+    if ((!this.under && !this.point) || !this.id) return;
     if (!this.tr.lang) {
       if (clicked) { this.say('Choose the language to translate into.'); this.lang.focus(); }
       return;
@@ -385,9 +399,9 @@ export class ScriptTranslation {
       if (gen !== this.gen) return;
       if (!err.busy) { this.say(err.message, true); return; }
       // Google asks to slow down: try again by itself when it may be asked again.
-      await this.tr.countdown(err.wait, () => gen !== this.gen || !this.el.isConnected,
+      await this.tr.countdown(err.wait, () => gen !== this.gen || !this.lang.isConnected,
         (t) => this.say(`${err.message} Trying again in ${t}…`, true));
-      if (gen === this.gen && this.el.isConnected) this.refresh();
+      if (gen === this.gen && this.lang.isConnected) this.refresh();
       return;
     }
     if (gen !== this.gen) return;
@@ -420,7 +434,7 @@ export class ScriptTranslation {
   }
 
   async showTip(li) {
-    if (!this.point || !li || !this.tr.lang) { this.hideTip(); return; }
+    if (!this.point || !li || !this.tr.lang || !this.id) { this.hideTip(); return; }
     if (this.tipFor === li) return;
     this.tipFor = li;
     const i = this.transcript.items.indexOf(li);
@@ -436,6 +450,7 @@ export class ScriptTranslation {
     const li = this.tipFor;
     if (!li || !this.tip.firstChild) return;
     const r = li.getBoundingClientRect(), side = this.transcript.list.getBoundingClientRect();
+    if (!li.isConnected || !side.width) { this.hideTip(); return; } // the script was closed or hidden
     this.tip.hidden = r.bottom < side.top || r.top > side.bottom; // its line is scrolled out of sight
     if (this.tip.hidden) return;
     const m = 8, tw = this.tip.offsetWidth, th = this.tip.offsetHeight;

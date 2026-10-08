@@ -740,7 +740,7 @@ class App {
   // ---------- Hotspots ----------
 
   hotspot(view, a) {
-    if (a.t === 'audio') this.audio.play(a);
+    if (a.t === 'audio') this.audio.play(a, { book: view.book.slug });
     else if (a.t === 'video') openVideo(this, a, view.book.slug);
     else if (a.t === 'swf') openSwf(this, a);
     else if (a.t === 'link') {
@@ -1167,23 +1167,28 @@ class App {
     gap.value = settings.gap;
     showGap();
     gap.addEventListener('input', () => { speech.setGap(Number(gap.value)); showGap(); });
-    // Repeat each sentence: the slider here (1-10, ∞) and the repeat button in the top bar
-    // (each click: 2, 3, 4, 5 times, ∞, then once again) change the same setting.
-    const rp = $('#repeat-input'), rpOut = $('#repeat-out'), rpBtn = $('#btn-repeat'), rpBadge = $('#repeat-badge');
+    // Repeat each sentence: the slider here (1-10, ∞) and the repeat buttons — in the top bar, on
+    // the Script tab and next to a video (each click: 2, 3, 4, 5 times, ∞, then once again) —
+    // change the same setting.
+    const rp = $('#repeat-input'), rpOut = $('#repeat-out');
     const repeatNow = () => (Number(settings.repeat) === 0 ? 0 : Math.max(1, Math.min(10, Number(settings.repeat) || 1))); // 0 = ∞
-    const showRepeat = () => {
+    const showRepeat = (extra = null) => {
       const n = repeatNow();
       const text = n === 0 ? '∞ until you stop' : n === 1 ? 'once' : `${n} times`;
+      const next = n === 0 ? 'once' : n >= 5 ? '∞' : `${n + 1} times`;
       rp.value = n === 0 ? 11 : n;
       rpOut.textContent = text;
-      rpBadge.hidden = n === 1;
-      rpBadge.textContent = n === 0 ? '∞' : String(n);
-      rpBadge.classList.toggle('inf', n === 0);
-      rpBtn.setAttribute('aria-pressed', String(n !== 1));
-      rpBtn.setAttribute('aria-label', `Repeat each sentence: ${text}`);
-      const next = n === 0 ? 'once' : n >= 5 ? '∞' : `${n + 1} times`;
-      rpBtn.title = `Repeat each sentence: ${text}. Click for ${next} (R)`;
+      for (const btn of new Set([...$$('.repeat-btn'), ...(extra ? [extra] : [])])) {
+        const badge = btn.querySelector('.count-badge');
+        badge.hidden = n === 1;
+        badge.textContent = n === 0 ? '∞' : String(n);
+        badge.classList.toggle('inf', n === 0);
+        btn.setAttribute('aria-pressed', String(n !== 1));
+        btn.setAttribute('aria-label', `Repeat each sentence: ${text}`);
+        btn.title = `Repeat each sentence: ${text}. Click for ${next} (R)`;
+      }
     };
+    this.showRepeat = showRepeat;
     this.setRepeat = (n) => { speech.setRepeat(n); showRepeat(); };
     /** The repeat button (or R): once → 2 → 3 → 4 → 5 → ∞ → once. */
     this.cycleRepeat = () => {
@@ -1194,7 +1199,7 @@ class App {
     };
     showRepeat();
     rp.addEventListener('input', () => this.setRepeat(Number(rp.value) >= 11 ? 0 : Number(rp.value)));
-    rpBtn.addEventListener('click', () => this.cycleRepeat());
+    $('#btn-repeat').addEventListener('click', () => this.cycleRepeat());
     $('#voice-test').addEventListener('click', () => {
       this.reader.stop();
       speech.speak('Hello! This is how I will read the book to you.');

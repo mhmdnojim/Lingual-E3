@@ -35,14 +35,18 @@ export async function startServer({ port = PORT, args = [], env: extraEnv = {} }
     if (await ping(`http://127.0.0.1:${port}/web/`) && proc.exitCode === null) return proc;
     await sleep(200);
   }
-  stopServer(proc);
+  await stopServer(proc);
   throw new Error('The server did not start.');
 }
 
+/** Stop a test server; resolves when its temporary folder is gone (it can only go once the server has stopped). */
 export function stopServer(proc) {
-  if (!proc) return;
+  if (!proc) return Promise.resolve();
+  const remove = () => { try { rmSync(proc.data, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* still in use */ } };
+  if (proc.exitCode !== null || proc.signalCode !== null) { remove(); return Promise.resolve(); }
+  const stopped = new Promise((resolve) => { proc.once('exit', () => { remove(); resolve(); }); });
   proc.kill();
-  try { rmSync(proc.data, { recursive: true, force: true }); } catch { /* still in use */ }
+  return Promise.race([stopped, sleep(5000)]);
 }
 
 async function ping(url = BASE) {

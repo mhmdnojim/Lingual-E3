@@ -398,7 +398,7 @@ async function websiteChecks(browser, problems) {
     await adminCtx.close();
     await page.close();
   } finally {
-    stopServer(srv);
+    await stopServer(srv);
     rmSync(tmp, { recursive: true, force: true });
   }
   // Reachable from other devices without a login: it does not start.
@@ -957,6 +957,76 @@ async function audioChecks(page) {
     !(await page.$(`.rec-spot`)) && gone === 404 && (await page.$eval('#player', (p) => p.hidden)));
 }
 
+/** A made-up French translation of a script ("[fr] " + each line), saved where the server keeps it. Returns the lines with words. */
+function saveScriptTranslation(book, id, lines) {
+  const said = lines.filter((x) => /\p{L}/u.test(x));
+  const dir = path.join(server.data, 'translations', 'fr', book);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(dir, `${id}.json`), JSON.stringify(Object.fromEntries(said.map((x) => [x.trim(), `[fr] ${x.trim()}`]))));
+  return said;
+}
+
+/** A recording plays, its script is on the Script tab: translating it, and repeating each line. */
+async function scriptTabChecks(page) {
+  const tab = '.tab-body[data-tab="listen"]';
+  const { book, id, lines, starts } = await page.evaluate(() => {
+    const a = window.aef.audio;
+    return { book: window.aef.views[0].book.slug, id: a.asset.script.match(/([A-Z]{2}-[0-9a-f]+)\.json$/)[1],
+      lines: a.transcript.cues.map((c) => c.x), starts: a.transcript.cues.map((c) => c.t) };
+  });
+  const said = saveScriptTranslation(book, id, lines);
+  const tools = await page.evaluate((tab) => ['.cue-tr-under', '.cue-tr-point', '.repeat-btn', '.cue-lang']
+    .every((q) => document.querySelector(`${tab} ${q}`)?.offsetWidth > 0), tab);
+  await page.select(`${tab} .cue-lang`, 'fr');
+  await page.click(`${tab} .cue-tr-under`);
+  const under = await page.waitForFunction((n) => document.querySelectorAll('#cue-list .cue .tr').length === n, { timeout: 10000 }, said.length)
+    .then(() => true, () => false);
+  check('Script tab: the two translation buttons (under every line, when pointing), a repeat button and the language; the translation under every line',
+    tools && under, `${said.length} lines`);
+  await page.click(`${tab} .cue-tr-under`); // off again
+  await page.click(`${tab} .cue-tr-point`);
+  const k = lines.findIndex((x, i) => i >= 2 && /\p{L}/u.test(x));
+  await page.hover(`#cue-list .cue:nth-child(${k + 1}) span:not(.tr)`);
+  const tip = await page.waitForFunction(() => !window.aef.audio.scriptTr.tip.hidden, { timeout: 5000 })
+    .then(() => page.evaluate((k) => {
+      const a = window.aef.audio.scriptTr.tip.getBoundingClientRect(), b = document.querySelectorAll('#cue-list .cue')[k].getBoundingClientRect();
+      return { text: window.aef.audio.scriptTr.tip.textContent, covers: a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top };
+    }, k), () => null);
+  check('…pointing at a line of the audio script shows its translation in a box beside it',
+    tip && tip.text === `[fr] ${lines[k].trim()}` && !tip.covers, tip?.text);
+  await page.click(`${tab} .cue-tr-point`); // off again
+  await page.evaluate(() => window.aef.translator.setLang(''));
+
+  // Repeat each line 2 times: the button here and the one in the top bar are the same setting.
+  await page.click(`${tab} .repeat-btn`);
+  const synced = await page.evaluate((tab) => ['#repeat-badge', `${tab} .repeat-btn .count-badge`]
+    .every((q) => { const b = document.querySelector(q); return !b.hidden && b.textContent === '2'; }), tab);
+  const t3 = starts[3] / 1000, t4 = starts[4] / 1000;
+  const run = await page.evaluate(async (t4) => {
+    const a = document.querySelector('#audio');
+    a.playbackRate = 2;
+    a.currentTime = t4 - 0.6; // near the end of line 4 (index 3)
+    await a.play().catch(() => {});
+    const jumps = [];
+    let last = a.currentTime;
+    const rounds = new Set();
+    const until = Date.now() + 25000;
+    while (Date.now() < until && a.currentTime < t4 + 0.5) {
+      await new Promise((r) => { requestAnimationFrame(r); });
+      if (a.currentTime < last - 1) jumps.push(Number(a.currentTime.toFixed(1)));
+      last = a.currentTime;
+      const r = document.querySelector('#cue-list time[data-round]');
+      if (r) rounds.add(r.dataset.round);
+    }
+    a.playbackRate = 1;
+    return { jumps, rounds: [...rounds].join(' → '), end: Number(a.currentTime.toFixed(1)) };
+  }, t4);
+  check('Repeat each sentence (2 times) in a script: at the end of a line it plays the line again (2/2), then goes on',
+    synced && run.jumps.length === 1 && Math.abs(run.jumps[0] - t3) < 0.6 && run.rounds === '1/2 → 2/2' && run.end >= t4 + 0.5,
+    `back to ${run.jumps.join(', ')} s (line from ${t3.toFixed(1)} s), ${run.rounds}`);
+  await page.evaluate(() => window.aef.setRepeat(1));
+}
+
 /** The video window is open: the translation of its script (under every line, and when pointing at a line). */
 async function videoTranslationChecks(page) {
   // The translations come from the server's saved file (made here), so no translator is needed.
@@ -966,21 +1036,27 @@ async function videoTranslationChecks(page) {
     return { book: v.book.slug, id: a.script.match(/([A-Z]{2}-[0-9a-f]+)\.json$/)[1],
       lines: [...document.querySelectorAll('#md-body .cue span:not(.tr)')].map((e) => e.textContent) };
   });
-  const said = lines.filter((x) => /\p{L}/u.test(x));
-  const dir = path.join(server.data, 'translations', 'fr', book);
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(path.join(dir, `${id}.json`), JSON.stringify(Object.fromEntries(said.map((x) => [x.trim(), `[fr] ${x.trim()}`]))));
+  const said = saveScriptTranslation(book, id, lines);
 
-  const bar = await page.evaluate(() => ['#cue-tr-under', '#cue-tr-point', '#cue-tr-lang'].every((q) => document.querySelector(`#md-body ${q}`)));
-  await page.click('#cue-tr-under'); // no language yet: it asks for one
+  const active = await page.$('#md-body .cue.active');
+  await active?.click(); // the line being played: pause
+  await sleep(250);
+  const vPaused = await page.$eval('#md-body video', (v) => v.paused);
+  await active?.click();
+  await sleep(300);
+  const vPlays = await page.$eval('#md-body video', (v) => !v.paused);
+  check('Video: a click on the line being played pauses the video, another click plays it again', !!active && vPaused && vPlays);
+
+  const bar = await page.evaluate(() => ['.cue-tr-under', '.cue-tr-point', '.repeat-btn', '.cue-lang'].every((q) => document.querySelector(`#md-body ${q}`)));
+  await page.click('#md-body .cue-tr-under'); // no language yet: it asks for one
   await sleep(200);
   const asks = await page.$eval('#md-body .cue-note', (n) => !n.hidden && /Choose the language/.test(n.textContent));
-  check('Video: two translation buttons over the script (under every line, when pointing) and the language; no language yet: it asks',
+  check('Video: two translation buttons over the script (under every line, when pointing), a repeat button and the language; no language yet: it asks',
     bar && asks);
 
   const shown = () => page.evaluate(() => [window.aef.translator.listOn, window.aef.translator.pageOn].join());
   const before = await shown();
-  await page.select('#cue-tr-lang', 'fr');
+  await page.select('#md-body .cue-lang', 'fr');
   const under = await page.waitForFunction((n) => document.querySelectorAll('#md-body .cue .tr').length === n, { timeout: 10000 }, said.length)
     .then(() => page.evaluate(() => [...document.querySelectorAll('#md-body .cue')].every((li) => {
       const t = li.querySelector('.tr'), x = li.querySelector('span:not(.tr)').textContent.trim();
@@ -988,11 +1064,11 @@ async function videoTranslationChecks(page) {
     })), () => false);
   const pageStill = (await shown()) === before; // the language chosen here does not switch on the book's translations
   check('Video: the first button shows the translation under every line of the script', under && pageStill, `${said.length} lines`);
-  await page.click('#cue-tr-under');
+  await page.click('#md-body .cue-tr-under');
   await sleep(150);
   check('…and hides it again', (await page.$$('#md-body .cue .tr')).length === 0);
 
-  await page.click('#cue-tr-point');
+  await page.click('#md-body .cue-tr-point');
   const k = Math.min(3, lines.length - 1);
   await page.hover(`#md-body .cue:nth-child(${k + 1}) span:not(.tr)`);
   const tip = await page.waitForFunction(() => !document.querySelector('#md-body .tr-tip').hidden, { timeout: 5000 })
@@ -1007,7 +1083,7 @@ async function videoTranslationChecks(page) {
   const gone = await page.$eval('#md-body .tr-tip', (t) => t.hidden);
   check('Video: the second button shows the translation of a line in a box while pointing at it (not covering it)',
     tip && tip.text === `[fr] ${lines[k].trim()}` && !tip.covers && tip.inside && gone, tip?.text);
-  await page.click('#cue-tr-point');
+  await page.click('#md-body .cue-tr-point');
   await page.evaluate(() => window.aef.translator.setLang('')); // the translation checks start without a language
 }
 
@@ -1330,18 +1406,30 @@ async function desktopChecks(browser, page, problems) {
   check('word mode highlights one word', (await page.$$eval('#text-view .w.hover', (s) => s.length)) === 1);
   await page.click('#mode-seg [data-mode="sentence"]');
 
-  // Audio + transcript
+  // Audio + transcript (the panel closed first: the audio button opens it on the Script tab)
+  await page.evaluate(() => window.aef.setPanelOpen(false));
   await page.click('.hs.hs-audio');
   await page.waitForFunction(() => !document.querySelector('#player').hidden, { timeout: 5000 });
   await sleep(1500);
   const playing = await page.$eval('#audio', (a) => !a.paused && a.currentTime > 0);
   check('audio button plays the recording', playing);
+  const tabOpen = await page.evaluate(() => !document.body.classList.contains('panel-closed')
+    && document.querySelector('.panel [role=tab][data-tab="listen"]').getAttribute('aria-selected') === 'true');
   const cues = await page.$$('#cue-list .cue');
-  check('audio script is shown', cues.length === 7, `${cues.length} lines`);
+  check('audio script is shown: the audio button opens the Script tab (also when the panel was closed)', cues.length === 7 && tabOpen,
+    `${cues.length} lines`);
   await cues[3].click();
   await sleep(600);
   const t = await page.$eval('#audio', (a) => a.currentTime);
   check('clicking a script line jumps to it', t > 15 && t < 17, `${t.toFixed(1)} s`);
+  await cues[3].click(); // the line being played: pause
+  await sleep(250);
+  const pausedNow = await page.$eval('#audio', (a) => a.paused);
+  await cues[3].click(); // and play again
+  await sleep(300);
+  const playsAgain = await page.$eval('#audio', (a) => !a.paused && a.currentTime > 15);
+  check('…a click on the line being played pauses it, another click plays it again', pausedNow && playsAgain);
+  await scriptTabChecks(page);
   await page.click('#pl-close');
 
   // Answer key (Flash via Ruffle)
@@ -1426,7 +1514,7 @@ try {
   check('no errors in the browser', problems.length === 0, problems.slice(0, 5).join(' | '));
 } finally {
   await browser.close();
-  stopServer(server);
+  await stopServer(server);
 }
 
 const failed = results.filter((r) => !r).length;

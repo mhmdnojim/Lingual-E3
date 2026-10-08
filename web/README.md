@@ -84,12 +84,12 @@ whether Python may use the network: allow it for **private networks**. (The PIN 
 | Choose the voice and speed | Click the sliders button next to **Off** (the settings), **Voice** tab. |
 | Pause between sentences | In the same place, **Pause between sentences** adds silence after each sentence (from none up to 10 seconds) before the next one is read — time to repeat it aloud. The bar at the bottom counts down. |
 | Follow the reading | The sentence being read stays **in the middle of the page** (and of the Text list) while the app reads or an MP3 plays. When you scroll, swipe or zoom the page yourself, it stays where you put it, and after a few seconds it follows again by itself. While the word being read is off the screen, it is shown **at the top middle of the page, word by word**, with an arrow up or down to where it is: tap it to go back to the reading. The button with the target in the reading bar (or **F**) switches following off and on. Settings → **Follow**: on/off, where on the page (middle, near the top, or only when the sentence leaves the screen), scrolling speed, how long to wait after you scroll, and the Text list. |
-| Repeat each sentence | In the same place, **Repeat each sentence**: once, 2 … 10 times, or **∞** (again and again until you click another sentence, pause or stop). The bar at the bottom shows “2nd time of 3”. The pause between sentences is also made between the repeats. It works for your My audio MP3s too. Quicker: the **repeat** button at the top (next to the translate button) — each click goes 2, 3, 4, 5 times, ∞, then back to once; the number shows on the button. **R** does the same. |
+| Repeat each sentence | In the same place, **Repeat each sentence**: once, 2 … 10 times, or **∞** (again and again until you click another sentence, pause or stop). The bar at the bottom shows “2nd time of 3”. The pause between sentences is also made between the repeats. It works for your My audio MP3s, the recordings and the videos too (each line of their script; “2/3” under its time). Quicker: the **repeat** button at the top (next to the translate button), on the Script tab or next to a video — each click goes 2, 3, 4, 5 times, ∞, then back to once; the number shows on the button. **R** does the same. |
 | Copy or save the page text | Use the copy and save buttons in the **Text** tab. You can also save a whole book's text. |
-| Listen to recordings | Click a red **headphones** button on the page. The audio script appears in the **Script** tab and follows the recording. Click a line to jump to it. |
+| Listen to recordings | Click a red **headphones** button on the page. The **Script** tab opens (also when the panel was closed) with the audio script, which follows the recording. Click a line to play it; click the line being played to **pause**, and again to **play**. Over the script: the two **translate** buttons (under every line, or when you point at a line), the **repeat** button and the language. |
 | Make your own MP3 | **My audio** tab → **New audio** (see below). |
 | Translate the text | Settings (sliders button) → **Translation** tab to choose the language. Then the **translate** button at the top shows or hides the translation on the page, and the one in the **Text** tab the translations in the list (see below). |
-| Watch videos | Click a purple **video** button. The script is shown next to the video. Over the script, two buttons translate it: **under every line**, or in a box **when you point at a line** (tap it on a phone); the language is chosen next to them. |
+| Watch videos | Click a purple **video** button. The script is shown next to the video: click a line to play it, the line being played to pause and play. Over the script: two buttons translate it (**under every line**, or in a box **when you point at a line** — tap it on a phone), the **repeat** button, and the language. |
 | See answer keys | Click a green **key** button. |
 | Go to another page | Blue **p.104** buttons jump to that page. Use the back arrow to return. |
 | Search | Type in the search box (top right). Tick **Search all three books** to search everywhere. |
@@ -210,11 +210,11 @@ Then:
 - While the app reads aloud, the translation of the sentence being read is highlighted too.
 - **Copy** and **Save** in the Text tab include the translations, each under its sentence.
 
-**Videos** have their own two buttons, over the script next to the video: the first shows the
-translation **under every line** of the script, the second shows it in a box **when you point at
-a line** (on a phone: tap the line). The language list is next to them (the same language as for
-the pages; choosing it there does not switch on the translations of the page). Each video's
-script is translated once and saved, like a page.
+**Recordings and videos** have their own two buttons, over the script (on the **Script** tab, or
+next to the video): the first shows the translation **under every line** of the script, the second
+shows it in a box **when you point at a line** (on a phone: tap the line). The language list is
+next to them (the same language as for the pages; choosing it there does not switch on the
+translations of the page). Each script is translated once and saved, like a page.
 
 The translations come from **Google Translate** (free, no account needed) and are made one
 page at a time. Each page is translated only once: it is saved in `web\translations` and

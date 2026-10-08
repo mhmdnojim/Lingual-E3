@@ -254,5 +254,5 @@ try {
   await shot('phone-page');
 } finally {
   await browser.close();
-  stopServer(server);
+  await stopServer(server);
 }

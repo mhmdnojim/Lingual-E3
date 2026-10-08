@@ -130,7 +130,7 @@ button { cursor: pointer; }
 .icon-btn:disabled { opacity: .35; cursor: default; background: transparent; }
 .icon-btn.small { width: 28px; height: 28px; }
 /* The repeat button shows how many times each sentence is read (2-10 or ∞). */
-#btn-repeat { position: relative; }
+.repeat-btn { position: relative; }
 .count-badge {
   position: absolute; right: 1px; bottom: 1px; min-width: 15px; height: 15px; padding: 0 3px;
   border-radius: 999px; background: var(--accent); color: var(--accent-ink);
@@ -587,6 +587,10 @@ body.marking .stage { box-shadow: inset 0 0 0 3px #2563eb; }
   font: 14.5px/1.5 var(--font-read);
 }
 .cue time { color: var(--muted); font-size: 12px; padding-top: 2px; font-variant-numeric: tabular-nums; }
+.cue time[data-round]::after { content: attr(data-round); display: block; margin-top: 2px; font-weight: 700; color: var(--accent); }
+/* The Script tab: its buttons stay on top, the lines scroll under them. */
+.tab-body[data-tab="listen"] { overflow: hidden; }
+.tab-body[data-tab="listen"] .cue-list { flex: 1; min-height: 0; overflow: auto; padding-top: 6px; }
 .cue:hover { background: var(--surface-3); }
 .cue.active { background: var(--accent-soft); }
 .cue.active time { color: var(--accent); font-weight: 600; }
