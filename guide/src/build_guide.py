@@ -48,7 +48,7 @@ CODE_FILES = [
     ('web/js/follow.js', 'Following the reading: the sentence being read stays in view, unless the person scrolls away.'),
     ('web/js/library.js', 'The library (home screen): books, adding a book, settings and sharing, reports, accounts, the admin page.'),
     ('web/js/util.js', 'Helpers: element creation, saved settings, JSON loading, downloads, messages.'),
-    ('web/server.py', 'Local web server (127.0.0.1): files with HTTP Range support, and the API for text corrections and My audio.'),
+    ('web/server.py', 'The web server (this computer, home Wi-Fi or a website): files with HTTP Range support, and the API of the library, accounts, corrections, translations and My audio.'),
     ('web/library.py', 'Lingua Books: the library — books from a text, a PDF or photos of pages; who may see and change them; reports.'),
     ('web/accounts.py', 'Accounts on a website: sign up, log in, scrypt password hashes, the signed login cookie, admins.'),
     ('web/db.py', 'The library database (SQLite): users, books, reports.'),
@@ -73,8 +73,9 @@ CODE_FILES = [
     ('web/tests/harness.mjs', 'Test setup: starts the server, finds Edge/Chrome, helpers.'),
     ('web/tests/ui-test.mjs', 'End-to-end test of every feature, at desktop and phone size, and the login (149 checks).'),
     ('web/tests/capture-screenshots.mjs', 'Takes the screenshots used in this guide.'),
+    ('web/tests/load-test.py', 'How many readers the server can serve at once (one core, like the smallest VPS).'),
     ('web/tests/package.json', 'Test dependencies (puppeteer-core).'),
-    ('deploy/README.md', 'Putting Lingua Books online: a VPS, the domain, HTTPS, updates, backups.'),
+    ('deploy/README.md', 'Putting Lingua Books online: a VPS, books.dolingual.com, HTTPS, updates, backups.'),
     ('deploy/setup-server.sh', 'Sets up a new Ubuntu server: Python, Tesseract, Caddy (HTTPS), the code from GitHub, the admin, the service.'),
     ('deploy/update.sh', 'On the server: the newest code from GitHub, then a restart.'),
     ('deploy/backup.sh', 'On the server: everything people added, in one file.'),
@@ -135,7 +136,7 @@ TREE = [
         {'name': 'tests', 'kind': 'dir', 'desc': 'browser tests (Puppeteer)', 'children': [
             {'name': n, 'kind': 'code', 'path': f'web/tests/{n}', 'desc': d} for n, d in [
                 ('ui-test.mjs', '149 feature checks'), ('capture-screenshots.mjs', 'guide screenshots'),
-                ('harness.mjs', 'shared test setup'), ('package.json', 'dependencies')]]},
+                ('harness.mjs', 'shared test setup'), ('load-test.py', 'readers at once'), ('package.json', 'dependencies')]]},
         {'name': 'data', 'kind': 'gen', 'desc': 'everything the app reads (made by the build)', 'children': [
             {'name': 'books.json', 'kind': 'gen', 'desc': 'books, pages, hotspots, resources'},
             {'name': 'pages', 'kind': 'gen', 'desc': '472 page images (WebP, 1984×2496)', 'children': []},
@@ -303,13 +304,17 @@ rebuilt by the scripts:
   1. Unzip this kit into the original disc folder (next to the .shared folder).
   2. Install Python 3 and Node.js.
   3. Run:  powershell -ExecutionPolicy Bypass -File web\\tools\\build_all.ps1
-  4. Start: double-click "Start American English File.bat"
+  4. Start: double-click "Start Lingua Books.bat"
 
 Contents
   AEF3 Rebuild Guide.html            the interactive guide (one file)
-  Start American English File.bat    launcher
+  Start Lingua Books.bat             launcher (this computer)
+  Start for phones (home Wi-Fi).bat  launcher (phones on the home Wi-Fi too, with a PIN)
   web/                               the app, build tools and tests
+  deploy/                            your own website (VPS + domain, e.g. books.dolingual.com)
   guide/src/                         sources of the guide (to rebuild it)
+
+Code on GitHub: https://github.com/mhmdnojim/Lingual-E3
 """
 
 
@@ -322,7 +327,7 @@ def build_zip():
     include += [p.replace(os.sep, '/') for p in
                 glob.glob('web/*.py', root_dir=ROOT) + glob.glob('web/js/*.js', root_dir=ROOT) + glob.glob('web/tools/*.py', root_dir=ROOT) +
                 glob.glob('web/tools/*.ps1', root_dir=ROOT) + glob.glob('web/tests/*.mjs', root_dir=ROOT) +
-                ['web/tests/package.json'] +
+                glob.glob('web/tests/*.py', root_dir=ROOT) + ['web/tests/package.json'] +
                 glob.glob('guide/src/*.*', root_dir=ROOT) + glob.glob('guide/src/images/*.png', root_dir=ROOT)]
     with zipfile.ZipFile(OUT_ZIP, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         z.write(OUT_HTML, os.path.basename(OUT_HTML))

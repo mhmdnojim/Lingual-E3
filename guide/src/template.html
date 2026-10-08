@@ -115,11 +115,11 @@
 
   <h3 id="start">Start the app</h3>
   <ol class="steps">
-    <li>Double-click <b>Start American English File.bat</b> in the main folder.</li>
+    <li>Double-click <b>Start Lingua Books.bat</b> in the main folder.</li>
     <li>A black window opens and says <code>American English File 3 is running at http://127.0.0.1:8765/web/</code>. The browser opens by itself.</li>
     <li>Keep the black window open while you use the app. Close it to stop the app.</li>
   </ol>
-  <div class="snip" data-file="Start American English File.bat"></div>
+  <div class="snip" data-file="Start Lingua Books.bat"></div>
   <div class="callout warn"><b class="tag">Note</b><p>Do not open <code>web\index.html</code> by double-clicking it. Browsers block data loading from <code>file://</code> pages, so the app needs the small server. <a href="#f-server">Why the server is needed</a></p></div>
 
   <h3 id="shortcuts">Keyboard shortcuts</h3>
@@ -359,7 +359,7 @@ Adam started off OK. However, after an hour, Adam decided that he was going too 
 
   <h4>e) Save the result</h4>
   <p>Each page becomes a compact JSON file. Words are arrays (smaller than objects); sentences, clauses and blocks are ranges. The same script also writes one search file per book.</p>
-  <div class="snip" data-file="web/tools/segment_text.py" data-from="def segment(raw):"></div>
+  <div class="snip" data-file="web/tools/segment_text.py" data-from="def segment(raw, ocr=True):"></div>
   <div class="example" data-key="text" data-title="web/data/text/BO-ff57d1a56e6bf/PA-74f1d4f6f1dd3.json (shortened)"></div>
 
   <h3 id="step-video">Step 4 — Convert the videos</h3>
@@ -524,7 +524,8 @@ Adam started off OK. However, after an hour, Adam decided that he was going too 
     <li>Each new sentence is <b>centred in the Text list</b> (<code>centerPanel</code>) and kept visible on the page (<code>reveal</code>). A click on the page also switches the side panel to the Text tab.</li>
   </ul>
   <div class="snip" data-file="web/js/main.js" data-from="class Reader {"></div>
-  <div class="snip" data-file="web/js/main.js" data-from="centerPanel(view, unit) {" data-to="behavior: 'smooth' });"></div>
+  <div class="snip" data-file="web/js/main.js" data-from="  centerPanel(view, unit, smooth = true) {"></div>
+  <div class="snip" data-file="web/js/main.js" data-from="  centerInPanel(first, last = first, smooth = true) {"></div>
 
   <h4>Repeat each sentence</h4>
   <p>The <b>Voice</b> tab has <b>Repeat each sentence</b>: once (normal), 2 to 10 times, or <b>∞</b> (the slider's last step) — the same sentence again and again until you click another one, pause or stop. The reader keeps a counter (<code>round</code>): when a sentence ends, <code>finished()</code> reads it again until the count is reached, then goes on; the pause between sentences is also made between the repeats, and the bar shows “2nd time of 3” or “6th time, ∞”. Repeats are read one sentence per request (not in the 10-sentence pieces). With a <a href="#f-myaudio">My audio</a> MP3 the same setting works by jumping back: when the MP3 reaches the next sentence by itself, it goes back to the start of the one being repeated (<code>follow</code>; the last sentence on the <code>ended</code> event); in Word mode the word is played again after a short silence.</p>
@@ -556,7 +557,7 @@ Adam started off OK. However, after an hour, Adam decided that he was going too 
   <figure><img src="img:audio-transcript" alt="Audio player and script"><figcaption>The player bar at the bottom, the playing hotspot pulses, and the current script line is highlighted. Clicking a line jumps there.</figcaption></figure>
   <p>Clicking a headphones button plays the original MP3 (straight from <code>.shared</code>) in an HTML5 <code>&lt;audio&gt;</code> element. On every <code>timeupdate</code> event, the transcript finds the last line whose start time has passed and highlights it. Clicking a line sets <code>currentTime</code>, which works because the server supports Range requests.</p>
   <div class="snip" data-file="web/js/media.js" data-from="update(ms) {"></div>
-  <div class="snip" data-file="web/js/media.js" data-from="async play(asset) {"></div>
+  <div class="snip" data-file="web/js/media.js" data-from="async play(asset, {"></div>
   <div class="demo" data-demo="sync">
     <div class="demo-head"><span class="badge">Try it</span><b>Transcript sync (CD 2 Track 09 — no sound, just the timing)</b></div>
     <div class="demo-body">
@@ -677,7 +678,7 @@ Adam started off OK. However, after an hour, Adam decided that he was going too 
   <div class="snip" data-file="web/js/editor.js" data-from="updateTools() {"></div>
   <div class="snip" data-file="web/js/editor.js" data-from="editInline(view, bi, si) {"></div>
   <div class="snip" data-file="web/js/main.js" data-from="textChanged(view, unit) {"></div>
-  <div class="snip" data-file="web/js/main.js" data-from="let pending = null;" data-to="this.editor.editInline(this.views[Number(line.dataset.v)]"></div>
+  <div class="snip" data-file="web/js/main.js" data-from="let pending = null, tapLine = null, tapAt = 0;" data-to="this.editor.editInline(this.views[Number(line.dataset.v)]"></div>
 
   <h3 id="f-myaudio">6.18 My audio: MP3s with a natural voice</h3>
   <p>Any paragraphs or sentences of a page can be turned into <b>one MP3</b> read by a Microsoft <b>Natural</b> voice. An icon next to the paragraph plays it, the text is highlighted sentence by sentence and word by word while it plays, and the <b>My audio</b> tab keeps all of them (play, download, rename, delete, filter, search).</p>
@@ -699,11 +700,11 @@ Adam started off OK. However, after an hour, Adam decided that he was going too 
     <li><b>Subtitles.</b> Every MP3 gets <code>&lt;id&gt;.srt</code> and <code>&lt;id&gt;.vtt</code> with the time of each sentence (made from the JSON timing, also for MP3s made earlier); <b>CC</b> in the list downloads the .srt.</li>
     <li><b>Playing.</b> The normal audio player plays the MP3. Every frame it reports the time; the app finds the sentence and word at that time and highlights them on the page and in the text (<code>follow</code>). If the text was corrected after the MP3 was made, each sentence is found again by its text.</li>
   </ol>
-  <div class="snip" data-file="web/tts.py" data-from="async def _create(jid, job):" data-to="'words': _word_times(s['words'], bounds, start, end)})"></div>
+  <div class="snip" data-file="web/tts.py" data-from="async def _create(jid, job):" data-to="'start': round(start, 3), 'end': round(now(), 3), 'words': word_times}"></div>
   <div class="snip" data-file="web/tts.py" data-from="def _word_times(words, bounds, start, end):"></div>
   <div class="snip" data-file="web/js/main.js" data-from="async unitClick(view, unit, fromPage) {"></div>
   <div class="snip" data-file="web/js/recordings.js" data-from="async locate(view, unit) {"></div>
-  <div class="snip" data-file="web/tts.py" data-from="def _write_subtitles(meta):"></div>
+  <div class="snip" data-file="web/tts.py" data-from="def _write_subtitles(meta, folder):"></div>
   <div class="snip" data-file="web/js/recordings.js" data-from="follow(rec, ms) {"></div>
   <div class="snip" data-file="web/js/recordings.js" data-from="async create(body, progress) {"></div>
   <div class="snip" data-file="web/js/recordings.js" data-from="renderSpots() {"></div>
@@ -762,16 +763,46 @@ Adam started off OK. However, after an hour, Adam decided that he was going too 
   <div class="snip" data-file="web/js/main.js" data-from="  bindSheet() {"></div>
 
   <h3 id="f-host">6.21 Login, GitHub and your own website</h3>
-  <p>As long as the app runs on this computer only (127.0.0.1) it needs no password. As soon as other devices can reach it, it does: <b>Start for phones (home Wi-Fi).bat</b> (<code>server.py --lan</code>, a 6-digit PIN made on first use) or a web host (<code>server.py --proxy</code>, the password in <code>AEF_PASSWORD</code>). Without one, the server refuses to start on the network.</p>
+  <p>The same server runs in three ways. Without <code>--lan</code> or <code>--public</code> it refuses to listen on the network, so it is never open to others by mistake.</p>
+  <div class="table-wrap"><table>
+    <tr><th>Where</th><th>How it starts</th><th>Who can open it</th><th>Login</th></tr>
+    <tr><td>This computer</td><td><code>Start Lingua Books.bat</code> (<code>server.py</code>)</td><td>only this computer (127.0.0.1)</td><td>none: you are the admin</td></tr>
+    <tr><td>Home Wi-Fi</td><td><code>Start for phones (home Wi-Fi).bat</code> (<code>server.py --lan</code>)</td><td>phones and tablets on the same Wi-Fi</td><td>a 6-digit PIN, made on first use (<code>auth.py</code>, kept in <code>server-config.json</code>)</td></tr>
+    <tr><td>Website</td><td><code>server.py --public --proxy</code> on the VPS</td><td>everyone, through HTTPS</td><td>accounts (<a href="#f-library">6.22</a>)</td></tr>
+  </table></div>
   <ul>
-    <li><b>Login</b> (<code>auth.py</code>): the right password gives a cookie “valid until <i>time</i>”, signed with HMAC-SHA256 with a key made from the password — nothing is stored on the server, logins survive restarts, and a new password logs everybody out. The cookie is <code>HttpOnly</code>, <code>SameSite=Lax</code>, and <code>Secure</code> behind HTTPS. After 8 wrong tries from one address it waits 15 minutes.</li>
-    <li><b>Every request</b> goes through <code>gate()</code>: without a login only <code>login.html</code>, the manifest and the icons open; pages are sent to the login page, the API answers 401 (the app then goes to the login page itself). Only <code>/web/</code> and <code>/.shared/</code> are served as files, never Python files, tools, tests, saved data or <code>server-config.json</code>.</li>
-    <li><b>GitHub</b> gets the code only (<code>.gitignore</code> lists what goes in, about 0.6 MB): not the book content (Oxford University Press's, about 1 GB), not your data.</li>
-    <li><b>The host</b> is a small Ubuntu VPS (not shared hosting: the Python helper must run all the time). <code>deploy/setup-server.sh</code> installs Python and <b>Caddy</b>, which gets the HTTPS certificate by itself and passes every request to the app; the code comes from GitHub with a read-only deploy key; the app runs as a systemd service. <code>deploy/upload-content.ps1</code> copies the content and your data once; <code>deploy/update.sh</code> takes the newest code later. The steps: <code>deploy/README.md</code>.</li>
+    <li><b>Every request</b> goes through <code>gate()</code>: on the home Wi-Fi, without the PIN only <code>login.html</code>, the manifest and the icons open; pages are sent to the login page, the API answers 401 (the app then goes to the login page itself). Python files, tools, tests, the database, the keys and saved data are never served as files; on the website the disc's content (<code>/web/data</code>, <code>/web/vendor</code>, <code>/.shared</code>) is not served either.</li>
+    <li><b>GitHub</b>: <a href="https://github.com/mhmdnojim/Lingual-E3">github.com/mhmdnojim/Lingual-E3</a> (renamed from <i>American-English-File-2e-Level-3</i>; the old address still leads there). It gets the code only (<code>.gitignore</code> lists what goes in): not the disc's book content (Oxford University Press's), not your books, corrections or MP3s.</li>
+    <li><b>The host</b> is a small Ubuntu VPS — not shared hosting and not a page host, because the Python program must run all the time. <code>deploy/setup-server.sh</code> installs Python, Tesseract (OCR) and <b>Caddy</b>, which gets the HTTPS certificate by itself and passes every request to the app; the code comes from GitHub; the app runs as the systemd service <code>lingua-books</code> under its own user; what people add is kept in <code>/var/lib/lingua-books</code>, the settings in <code>/etc/lingua-books.env</code>. <code>deploy/update.sh</code> takes the newest code later, <code>deploy/backup.sh</code> makes one file with everything. The steps: <code>deploy/README.md</code>.</li>
+    <li><b>With dolingual.com.</b> dolingual.com is the Dolingual flashcards site, made and hosted with Lovable (finished pages only, behind Cloudflare; the domain's DNS is at Name.com). It cannot run this app's Python program, so the app gets a <b>subdomain</b> on its own server, and the Dolingual site stays as it is.</li>
   </ul>
+  <script type="text/plain" class="codeblock" data-lang="txt" data-title="Two sites, one domain">
+https://dolingual.com        → Lovable: the Dolingual site, unchanged
+https://books.dolingual.com  → the VPS: this app
+</script>
+  <p>At Name.com: My Domains → dolingual.com → <b>Manage DNS Records</b> → a new record: type <b>A</b>, host <b>books</b>, answer = the VPS's IP address (the records already there stay). Then, on the VPS:</p>
+  <script type="text/plain" class="codeblock" data-lang="txt" data-title="On the VPS, once (as root)">
+curl -O https://raw.githubusercontent.com/mhmdnojim/Lingual-E3/main/deploy/setup-server.sh
+bash setup-server.sh books.dolingual.com https://github.com/mhmdnojim/Lingual-E3.git
+</script>
+  <h4>How many people can use it at once?</h4>
+  <p><code>web/tests/load-test.py</code> measures it. It starts its own copy of the server (with its own empty data folder), held to one processor core like the smallest VPS, makes a text book (a page picture is about 135 KB), then lets 10, 50 and 200 “readers” ask for pages at the same moment, again and again. Measured on this laptop's processor:</p>
+  <div class="table-wrap"><table>
+    <tr><th>Asking at the same moment</th><th class="num">1 core: requests a second</th><th class="num">usual wait</th><th class="num">2 cores: requests a second</th><th class="num">usual wait</th></tr>
+    <tr><td>10</td><td class="num">about 620</td><td class="num">0.015 s</td><td class="num">about 860</td><td class="num">0.010 s</td></tr>
+    <tr><td>50</td><td class="num">about 670</td><td class="num">0.07 s</td><td class="num">about 970</td><td class="num">0.05 s</td></tr>
+    <tr><td>200</td><td class="num">about 670</td><td class="num">0.3 s</td><td class="num">about 925</td><td class="num">0.2 s</td></tr>
+  </table></div>
+  <ul>
+    <li><b>Reading costs little.</b> A person turns a page every 30–60 seconds, so 1,000 people reading at the same time ask for about 30–50 page pictures a second; one core serves more than 600. Reading aloud happens in each person's browser and costs the server nothing. Memory: about 50 MB (more while a PDF or photos are being made into pages).</li>
+    <li><b>Many at the same moment wait in line.</b> Python's server lets only 5 new connections wait by default: with 50–200 at once, some were turned away. <code>request_queue_size = 256</code> fixed it (no errors since).</li>
+    <li><b>What a bigger plan helps with.</b> Books are made one at a time in the background (PDF pages, OCR of photos), so many uploads at once wait in line; a second core keeps reading fast meanwhile. Disk: a big PDF book takes 50–150 MB. Translations use Google's free translator, which slows down a server that asks too often; every page is translated once and then saved.</li>
+    <li><b>Which VPS.</b> Hostinger KVM 1 (1 core, 4 GB memory, 50 GB disk, 4 TB traffic a month) is enough to start; KVM 2 (2 cores) when many people add books. Choose plain Ubuntu 24.04, without a control panel (it would take the ports Caddy needs).</li>
+  </ul>
+  <div class="snip" data-file="web/server.py" data-from="class Server(ThreadingHTTPServer):"></div>
   <div class="snip" data-file="web/server.py" data-from="    def gate(self, path):"></div>
-  <div class="snip" data-file="web/auth.py" data-from="    def valid(self, token):"></div>
-  <div class="snip" data-file="deploy/setup-server.sh" data-from="echo &quot;== The app as a service&quot;" data-to="systemctl enable --now aef3"></div>
+  <div class="snip" data-file="web/auth.py" data-from="def lan_pin():"></div>
+  <div class="snip" data-file="deploy/setup-server.sh" data-from="echo &quot;== The app as a service&quot;" data-to="systemctl enable --now lingua-books"></div>
   <h3 id="f-library">6.22 Lingua Books: the library, accounts, a public website</h3>
   <div class="fig-row">
     <figure><img src="img:library" alt="The library"><figcaption>The library (home screen). On this computer the disc's books are under <i>On this computer</i>; on a website, the public books and your own.</figcaption></figure>
@@ -840,8 +871,9 @@ node capture-screenshots.mjs   # re-takes the screenshots used in this guide
     <tr><td>Website</td><td>A second server with <code>--public</code>: sign up (admin by e-mail), short and wrong passwords refused; a PDF book (made by the test) read from the PDF; private books invisible to others; sharing needs licence + confirmation; anyone reads public books but cannot change them; the disc and server files never served; in the browser: a visitor reads, reports; sign up in the app; photos of a page read with OCR; sharing; the admin hides the reported book</td></tr>
     <tr><td>Errors</td><td>No JavaScript errors and no failed requests</td></tr>
   </table></div>
-  <div class="snip" data-file="web/tests/harness.mjs" data-from="export async function startServer() {"></div>
+  <div class="snip" data-file="web/tests/harness.mjs" data-from="export async function startServer({"></div>
   <div class="snip" data-file="web/tests/ui-test.mjs" data-from="// Sentence mode: hover + click" data-to="await page.click('#reading-stop');"></div>
+  <p><b>How many readers at once</b> (for a website): <code>python web\tests\load-test.py</code> (needs <code>pip install psutil</code>; <code>CORES=2</code> for two cores). The results are in <a href="#f-host">6.21</a>.</p>
   <script type="text/plain" class="codeblock" data-lang="txt" data-title="Last result">
 PASS  page 25 shows clickable words  (561 words)
 PASS  hotspot buttons are shown  (7 buttons)
@@ -878,7 +910,7 @@ PASS  L switches translations off and on; the second time they come from the sav
     <li data-check="ocr"><input type="checkbox" aria-label="Done"><div><b>Check the Windows OCR language.</b> The list must contain <code>en-US</code>. If not: Settings → Time &amp; language → Language → add “English (United States)”.
       <script type="text/plain" class="codeblock" data-lang="ps1">[void][Windows.Media.Ocr.OcrEngine,Windows.Foundation,ContentType=WindowsRuntime]
 [Windows.Media.Ocr.OcrEngine]::AvailableRecognizerLanguages | ForEach-Object LanguageTag</script></div></li>
-    <li data-check="copy"><input type="checkbox" aria-label="Done"><div><b>Copy the kit into the disc folder</b>: the <code>web</code> folder and <code>Start American English File.bat</code> go next to <code>.shared</code>.</div></li>
+    <li data-check="copy"><input type="checkbox" aria-label="Done"><div><b>Copy the kit into the disc folder</b>: the <code>web</code> folder and <code>Start Lingua Books.bat</code> go next to <code>.shared</code>.</div></li>
     <li data-check="build"><input type="checkbox" aria-label="Done"><div><b>Run the build</b> (25–30 minutes; it can be stopped and run again).
       <script type="text/plain" class="codeblock" data-lang="ps1">powershell -ExecutionPolicy Bypass -File web\tools\build_all.ps1</script></div></li>
     <li data-check="check"><input type="checkbox" aria-label="Done"><div><b>Check the output</b> (sizes from this build):
@@ -892,8 +924,8 @@ PASS  L switches translations off and on; the second time they come from the sav
         <tr><td><code>web\data\video</code></td><td>38 MP4 videos</td><td class="num"><span data-stat="mb.video">332</span> MB</td></tr>
         <tr><td><code>web\vendor\ruffle</code></td><td>Ruffle Flash emulator</td><td class="num"><span data-stat="mb.ruffle">29</span> MB</td></tr>
       </table></div></div></li>
-    <li data-check="start"><input type="checkbox" aria-label="Done"><div><b>Start the app</b> with <code>Start American English File.bat</code> and open Student Book p.25.</div></li>
-    <li data-check="test"><input type="checkbox" aria-label="Done"><div><b>Run the tests</b> (optional): <code>cd web\tests</code>, <code>npm install</code>, <code>node ui-test.mjs</code> → “44 passed, 0 failed”.</div></li>
+    <li data-check="start"><input type="checkbox" aria-label="Done"><div><b>Start the app</b> with <code>Start Lingua Books.bat</code> and open Student Book p.25.</div></li>
+    <li data-check="test"><input type="checkbox" aria-label="Done"><div><b>Run the tests</b> (optional): <code>cd web\tests</code>, <code>npm install</code>, <code>node ui-test.mjs</code> → “149 passed, 0 failed”.</div></li>
     <li data-check="edits"><input type="checkbox" aria-label="Done"><div><b>Moving to another computer?</b> Copy your <code>web\edits</code> folder too — it holds your text corrections.</div></li>
   </ul>
   <div class="callout tip"><b class="tag">Faster changes</b><p>To change only how sentences/clauses are split, edit <code>segment_text.py</code> and run just that step — the OCR results in <code>web\_build\ocr_raw</code> are kept:
@@ -942,7 +974,7 @@ PASS  L switches translations off and on; the second time they come from the sav
 <!-- ============================================================ TROUBLESHOOTING -->
 <section class="chapter">
   <h2 id="troubleshooting">10. Troubleshooting</h2>
-  <details><summary>The app says “The book data could not be loaded”</summary><div><p>The page was opened directly as a file. Start it with <b>Start American English File.bat</b> instead (see <a href="#f-server">6.1</a>).</p></div></details>
+  <details><summary>The app says “The book data could not be loaded”</summary><div><p>The page was opened directly as a file. Start it with <b>Start Lingua Books.bat</b> instead (see <a href="#f-server">6.1</a>).</p></div></details>
   <details><summary>The black window says “Python is not installed”</summary><div><p>Install Python 3 from python.org and tick “Add python.exe to PATH”, then start again.</p></div></details>
   <details><summary>Nothing is spoken / “This browser cannot read text aloud”</summary><div><p>Use Microsoft Edge or Google Chrome. Check that Windows has voices: Settings → Time &amp; language → Speech. Try the “Test voice” button in the voice settings.</p></div></details>
   <details><summary>A “Natural” voice stops working</summary><div><p>These voices need internet. The app switches to an offline Windows voice by itself and shows a message. You can also choose David or Zira in the voice settings.</p></div></details>
@@ -965,6 +997,7 @@ PASS  L switches translations off and on; the second time they come from the sav
     <li><b>Ruffle</b> plays the answer keys well; other old Flash parts of the disc (interactive exercises not linked from the pages) were not used.</li>
     <li><b>Translations</b> are machine translations (Google Translate): good for understanding, not always perfect. The free addresses are not official APIs and could change, and Google limits how fast they may be used.</li>
     <li><b>Python</b> must be installed to run the small server.</li>
+    <li><b>The website</b> serves many readers on one core (<a href="#f-host">6.21</a>), but makes books one at a time, and the free translator limits how fast it may be used.</li>
     <li>The rebuilt app is for use on your own computer. The book content belongs to Oxford University Press.</li>
   </ul>
 </section>

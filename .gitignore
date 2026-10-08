@@ -24,10 +24,10 @@
 /web/library/
 /web/server-config.json
 
-# The guide: only its sources. The built guide, the kit and the screenshots (they show book
+# The guide: only its sources. The built guide, the kit (and copies of them, e.g. _5th_v) and the screenshots (they show book
 # pages) are made again by guide/src/build_guide.py and web/tests/capture-screenshots.mjs.
-/guide/AEF3 Rebuild Guide.html
-/guide/AEF3 rebuild kit.zip
+/guide/*.html
+/guide/*.zip
 /guide/src/images/
 
 # Made by Python and npm
