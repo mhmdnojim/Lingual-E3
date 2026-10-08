@@ -267,10 +267,10 @@ def _save(path, new):
 
 
 def translate_page(lang, book, page, paragraphs):
-    """Translations for the paragraphs of a page (lists of sentences), same shape, and how many
-    sentences had to be translated now. Saved sentences come from the disk; only missing ones
-    go to the translator."""
-    if lang not in CODES or not ids.BOOK_RE.match(book) or not ids.PAGE_RE.match(page):
+    """Translations for the paragraphs of a page, or of a video's script (page: its id), as
+    lists of sentences: the same shape, and how many sentences had to be translated now.
+    Saved sentences come from the disk; only missing ones go to the translator."""
+    if lang not in CODES or not ids.BOOK_RE.match(book) or not (ids.PAGE_RE.match(page) or ids.SCRIPT_RE.match(page)):
         raise ValueError('bad language or page')
     if not (isinstance(paragraphs, list) and all(isinstance(p, list) and all(isinstance(s, str) and len(s) < 3000 for s in p) for p in paragraphs)):
         raise ValueError('bad text')

@@ -1,7 +1,7 @@
 // End-to-end test of every feature in headless Edge/Chrome.
 //   cd web\tests && npm install && node ui-test.mjs
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -87,7 +87,9 @@ async function editorChecks(page) {
   const fixed = await page.evaluate(() => window.aef.views[0].text.text(...window.aef.views[0].text.sent[window.aef.editor.flatIndex(window.aef.editor.sel)]));
   check('editing a sentence changes it and saves', fixed === 'This sentence was corrected by hand.', fixed);
 
-  const tool = async (op) => { await page.click(`#edit-tools [data-op="${op}"]`); await sleep(150); };
+  // The list glides the selected sentence to its middle (half a second): measure after it stopped.
+  const settled = () => page.waitForFunction(() => !window.aef.follower.list.animating, { timeout: 3000 }).catch(() => {});
+  const tool = async (op) => { await page.click(`#edit-tools [data-op="${op}"]`); await sleep(150); await settled(); };
   let n = await rows();
   await tool('split');
   await page.click('.esent.sel .chip[data-k="3"]');
@@ -128,6 +130,7 @@ async function editorChecks(page) {
 
   // Drag the sentence by its handle and drop it between two others (before the 3rd row below).
   const fixedText = 'This sentence was corrected by hand.';
+  await settled();
   const from = (await order()).indexOf(fixedText);
   const hb = await (await page.$('.esent.sel .handle')).boundingBox();
   const targetTop = await page.$$eval('#text-view .esent', (rs, k) => rs[k].getBoundingClientRect().top, from + 3);
@@ -167,6 +170,7 @@ async function editorChecks(page) {
   const blocks = await page.$$eval('#text-view .eblock', (b) => b.length);
   await page.click('#text-view .eblock .esent:not(:first-child)'); // a sentence inside a paragraph
   await sleep(150);
+  await settled();
   await tool('paragraph');
   check('new paragraph splits the paragraph', (await page.$$eval('#text-view .eblock', (b) => b.length)) === blocks + 1);
   await tool('paragraph');
@@ -322,7 +326,7 @@ async function websiteChecks(browser, problems) {
     await sleep(200);
     await page.type('.lib-form textarea', 'Copied from a course book.');
     await page.click('.lib-form button[type=submit]');
-    await sleep(500);
+    await page.waitForFunction(() => !document.querySelector('#media-dialog').open, { timeout: 8000 }).catch(() => {}); // sent
     const reports = (await boss('GET', '/api/admin/reports')).data;
     check('…its About tab shows its licence; “Report a problem” reaches the admins', /My own work/.test(about) && reports.some((x) => x.book === id && /course book/.test(x.note)));
 
@@ -953,6 +957,60 @@ async function audioChecks(page) {
     !(await page.$(`.rec-spot`)) && gone === 404 && (await page.$eval('#player', (p) => p.hidden)));
 }
 
+/** The video window is open: the translation of its script (under every line, and when pointing at a line). */
+async function videoTranslationChecks(page) {
+  // The translations come from the server's saved file (made here), so no translator is needed.
+  const { book, id, lines } = await page.evaluate(() => {
+    const v = window.aef.views.find((w) => (w.page.a || []).some((a) => a.t === 'video'));
+    const a = v.page.a.find((x) => x.t === 'video');
+    return { book: v.book.slug, id: a.script.match(/([A-Z]{2}-[0-9a-f]+)\.json$/)[1],
+      lines: [...document.querySelectorAll('#md-body .cue span:not(.tr)')].map((e) => e.textContent) };
+  });
+  const said = lines.filter((x) => /\p{L}/u.test(x));
+  const dir = path.join(server.data, 'translations', 'fr', book);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(dir, `${id}.json`), JSON.stringify(Object.fromEntries(said.map((x) => [x.trim(), `[fr] ${x.trim()}`]))));
+
+  const bar = await page.evaluate(() => ['#cue-tr-under', '#cue-tr-point', '#cue-tr-lang'].every((q) => document.querySelector(`#md-body ${q}`)));
+  await page.click('#cue-tr-under'); // no language yet: it asks for one
+  await sleep(200);
+  const asks = await page.$eval('#md-body .cue-note', (n) => !n.hidden && /Choose the language/.test(n.textContent));
+  check('Video: two translation buttons over the script (under every line, when pointing) and the language; no language yet: it asks',
+    bar && asks);
+
+  const shown = () => page.evaluate(() => [window.aef.translator.listOn, window.aef.translator.pageOn].join());
+  const before = await shown();
+  await page.select('#cue-tr-lang', 'fr');
+  const under = await page.waitForFunction((n) => document.querySelectorAll('#md-body .cue .tr').length === n, { timeout: 10000 }, said.length)
+    .then(() => page.evaluate(() => [...document.querySelectorAll('#md-body .cue')].every((li) => {
+      const t = li.querySelector('.tr'), x = li.querySelector('span:not(.tr)').textContent.trim();
+      return !t ? !/\p{L}/u.test(x) : t.textContent === `[fr] ${x}` && t.getBoundingClientRect().top >= li.querySelector('span').getBoundingClientRect().bottom - 1;
+    })), () => false);
+  const pageStill = (await shown()) === before; // the language chosen here does not switch on the book's translations
+  check('Video: the first button shows the translation under every line of the script', under && pageStill, `${said.length} lines`);
+  await page.click('#cue-tr-under');
+  await sleep(150);
+  check('…and hides it again', (await page.$$('#md-body .cue .tr')).length === 0);
+
+  await page.click('#cue-tr-point');
+  const k = Math.min(3, lines.length - 1);
+  await page.hover(`#md-body .cue:nth-child(${k + 1}) span:not(.tr)`);
+  const tip = await page.waitForFunction(() => !document.querySelector('#md-body .tr-tip').hidden, { timeout: 5000 })
+    .then(() => page.evaluate((k) => {
+      const t = document.querySelector('#md-body .tr-tip'), li = document.querySelectorAll('#md-body .cue')[k];
+      const a = t.getBoundingClientRect(), b = li.getBoundingClientRect();
+      const covers = a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+      return { text: t.textContent, covers, inside: a.left >= 0 && a.right <= innerWidth && a.top >= 0 && a.bottom <= innerHeight };
+    }, k), () => null);
+  await page.hover('#md-body video');
+  await sleep(150);
+  const gone = await page.$eval('#md-body .tr-tip', (t) => t.hidden);
+  check('Video: the second button shows the translation of a line in a box while pointing at it (not covering it)',
+    tip && tip.text === `[fr] ${lines[k].trim()}` && !tip.covers && tip.inside && gone, tip?.text);
+  await page.click('#cue-tr-point');
+  await page.evaluate(() => window.aef.translator.setLang('')); // the translation checks start without a language
+}
+
 async function translationChecks(page, problems) {
   await gotoPage(page, '#/1705/25');
   await page.click('#btn-translate'); // no language yet: the settings open on the Translation tab
@@ -1314,6 +1372,7 @@ async function desktopChecks(browser, page, problems) {
   const video = await page.$eval('#md-body video', (v) => ({ ready: v.readyState, err: v.error?.code || 0, w: v.videoWidth }));
   check('video plays', video.ready >= 2 && !video.err && video.w > 0, `${video.w}px wide`);
   check('video script is shown', (await page.$$eval('#md-body .cue', (c) => c.length)) > 5);
+  await videoTranslationChecks(page);
   await page.keyboard.press('Escape');
 
   // Two-page view

@@ -89,7 +89,7 @@ whether Python may use the network: allow it for **private networks**. (The PIN 
 | Listen to recordings | Click a red **headphones** button on the page. The audio script appears in the **Script** tab and follows the recording. Click a line to jump to it. |
 | Make your own MP3 | **My audio** tab → **New audio** (see below). |
 | Translate the text | Settings (sliders button) → **Translation** tab to choose the language. Then the **translate** button at the top shows or hides the translation on the page, and the one in the **Text** tab the translations in the list (see below). |
-| Watch videos | Click a purple **video** button. The script is shown next to the video. |
+| Watch videos | Click a purple **video** button. The script is shown next to the video. Over the script, two buttons translate it: **under every line**, or in a box **when you point at a line** (tap it on a phone); the language is chosen next to them. |
 | See answer keys | Click a green **key** button. |
 | Go to another page | Blue **p.104** buttons jump to that page. Use the back arrow to return. |
 | Search | Type in the search box (top right). Tick **Search all three books** to search everywhere. |
@@ -209,6 +209,12 @@ Then:
   mode the box also shows the translation of the word.
 - While the app reads aloud, the translation of the sentence being read is highlighted too.
 - **Copy** and **Save** in the Text tab include the translations, each under its sentence.
+
+**Videos** have their own two buttons, over the script next to the video: the first shows the
+translation **under every line** of the script, the second shows it in a box **when you point at
+a line** (on a phone: tap the line). The language list is next to them (the same language as for
+the pages; choosing it there does not switch on the translations of the page). Each video's
+script is translated once and saved, like a page.
 
 The translations come from **Google Translate** (free, no account needed) and are made one
 page at a time. Each page is translated only once: it is saved in `web\translations` and

@@ -67,7 +67,7 @@ import tts
 
 # Raise when the app needs new server features; web/js/main.js checks it (NEEDS_API) and asks
 # to restart the app if an older server is still running.
-API_VERSION = 6  # 1 files, 2 text corrections, 3 My audio, 4 translations, 5 translator busy status, 6 library and accounts
+API_VERSION = 7  # 1 files, 2 text corrections, 3 My audio, 4 translations, 5 translator busy status, 6 library and accounts, 7 video scripts translated
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 WEB = os.path.join(ROOT, 'web')

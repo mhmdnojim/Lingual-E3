@@ -11,3 +11,5 @@ PAGE = r'(?:PA-[0-9a-f]+|p[0-9]{1,4})'
 BOOK_RE = re.compile(f'^{BOOK}$')
 PAGE_RE = re.compile(f'^{PAGE}$')
 LIBRARY_BOOK_RE = re.compile(r'^L[0-9a-f]{10}$')
+# The timed script of a recording or video on the disc (web/data/scripts/<id>.json): translated like a page.
+SCRIPT_RE = re.compile(r'^(?:AU|VI)-[0-9a-f]+$')

@@ -71,7 +71,7 @@ CODE_FILES = [
     ('web/tools/build_all.ps1', 'Runs all build steps in order (and downloads Ruffle).'),
     ('web/tools/make_icons.py', 'Makes the app icons (home screen of phones, browser tab).'),
     ('web/tests/harness.mjs', 'Test setup: starts the server, finds Edge/Chrome, helpers.'),
-    ('web/tests/ui-test.mjs', 'End-to-end test of every feature, at desktop and phone size, and the login (149 checks).'),
+    ('web/tests/ui-test.mjs', 'End-to-end test of every feature, at desktop and phone size, and the login (153 checks).'),
     ('web/tests/capture-screenshots.mjs', 'Takes the screenshots used in this guide.'),
     ('web/tests/load-test.py', 'How many readers the server can serve at once (one core, like the smallest VPS).'),
     ('web/tests/package.json', 'Test dependencies (puppeteer-core).'),
@@ -135,7 +135,7 @@ TREE = [
                 ('make_icons.py', 'app icons')]]},
         {'name': 'tests', 'kind': 'dir', 'desc': 'browser tests (Puppeteer)', 'children': [
             {'name': n, 'kind': 'code', 'path': f'web/tests/{n}', 'desc': d} for n, d in [
-                ('ui-test.mjs', '149 feature checks'), ('capture-screenshots.mjs', 'guide screenshots'),
+                ('ui-test.mjs', '153 feature checks'), ('capture-screenshots.mjs', 'guide screenshots'),
                 ('harness.mjs', 'shared test setup'), ('load-test.py', 'readers at once'), ('package.json', 'dependencies')]]},
         {'name': 'data', 'kind': 'gen', 'desc': 'everything the app reads (made by the build)', 'children': [
             {'name': 'books.json', 'kind': 'gen', 'desc': 'books, pages, hotspots, resources'},

@@ -10,7 +10,7 @@ import { Library } from './library.js';
 import { Follower, followSettings, setFollow } from './follow.js';
 
 const RATIO = 1984 / 2496;
-const NEEDS_API = 6; // server features this page needs (API_VERSION in web/server.py)
+const NEEDS_API = 7; // server features this page needs (API_VERSION in web/server.py)
 const CHUNK_UNITS = 10; // sentences (or clauses) read in one go, for a smooth flow
 const CHUNK_CHARS = 1500;
 const MODES = ['sentence', 'clause', 'word', 'off'];
@@ -741,7 +741,7 @@ class App {
 
   hotspot(view, a) {
     if (a.t === 'audio') this.audio.play(a);
-    else if (a.t === 'video') openVideo(this, a);
+    else if (a.t === 'video') openVideo(this, a, view.book.slug);
     else if (a.t === 'swf') openSwf(this, a);
     else if (a.t === 'link') {
       this.go(a.book || this.book.id, a.page, { fromLink: true });

@@ -1,6 +1,7 @@
 // Audio player bar, video dialog and Flash answer-key dialog (via Ruffle),
 // with timed transcripts that follow the recording.
 import { $, el, escapeHtml, fmtTime, getJSON, icon } from './util.js';
+import { ScriptTranslation } from './translation.js';
 
 /** A clickable list of timed transcript lines that highlights the current line. */
 export class Transcript {
@@ -26,6 +27,14 @@ export class Transcript {
       return li;
     });
     this.list.replaceChildren(...this.items);
+  }
+
+  /** A translation under each line (null: none). */
+  setTranslations(trs, dir = 'ltr', lang = '') {
+    this.items.forEach((li, i) => {
+      li.querySelector('.tr')?.remove();
+      if (trs?.[i]) li.append(el('span', { class: 'tr', dir, lang }, trs[i]));
+    });
   }
 
   update(ms) {
@@ -208,21 +217,30 @@ export function initDialog() {
   d.addEventListener('click', (e) => { if (e.target === d) closeDialog(); }); // click on the backdrop
 }
 
-export async function openVideo(app, asset) {
+/** A video, with its script next to it (and the script's translation: ScriptTranslation). */
+export async function openVideo(app, asset, book) {
   app.reader.stop();
   app.audio.pause();
   const video = el('video', { controls: true, autoplay: true, playsinline: true, src: asset.src });
   const list = el('ol', { class: 'cue-list' });
   const transcript = new Transcript(list, (t) => { video.currentTime = t; video.play().catch(() => {}); });
-  const body = el('div', { class: 'dialog-body' }, el('div', { class: 'video-wrap' }, video), list);
+  const id = asset.script?.match(/([A-Z]{2}-[0-9a-f]+)\.json$/)?.[1];
+  const tr = id && book ? new ScriptTranslation(app.translator, transcript, book, id) : null;
+  const side = el('div', { class: 'cue-side' }, ...(tr ? [tr.el] : []), list);
+  const body = el('div', { class: 'dialog-body' }, el('div', { class: 'video-wrap' }, video), side);
   openDialog(asset.title.replace(/^Play /, ''), body);
   video.addEventListener('timeupdate', () => transcript.update(video.currentTime * 1000));
   video.addEventListener('error', () => app.toast('This video could not be played.'));
   cleanup = () => { video.pause(); video.removeAttribute('src'); video.load(); };
 
   const cues = asset.script ? await getJSON(asset.script) : null;
-  if (cues) transcript.render(cues);
-  else list.replaceChildren(el('li', { class: 'empty' }, 'This video has no script.'));
+  if (cues) {
+    transcript.render(cues);
+    tr?.refresh();
+  } else {
+    tr?.el.remove();
+    list.replaceChildren(el('li', { class: 'empty' }, 'This video has no script.'));
+  }
 }
 
 let ruffleLoading = null;

@@ -649,7 +649,21 @@ body.marking .stage { box-shadow: inset 0 0 0 3px #2563eb; }
 .dialog-body { display: flex; gap: 0; max-height: calc(94vh - 56px); }
 .video-wrap { background: #000; display: grid; place-items: center; }
 .video-wrap video { display: block; width: min(820px, 70vw); max-height: calc(94vh - 56px); }
-.dialog-body .cue-list { width: 340px; overflow: auto; padding-top: 8px; border-left: 1px solid var(--line); }
+.cue-side { width: 340px; display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line); }
+.cue-side .cue-list { flex: 1; min-height: 0; overflow: auto; padding-top: 8px; }
+/* The script's translation: two buttons and the language, over the lines. */
+.cue-tools { display: flex; align-items: center; gap: 4px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.cue-lang {
+  margin-left: auto; min-width: 0; max-width: 170px; height: 30px; padding: 0 6px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit; font-size: 13px;
+}
+.cue-note { padding: 6px 12px; font-size: 12.5px; color: var(--muted); border-bottom: 1px solid var(--line); }
+.cue-note.err { color: var(--accent); }
+.cue .tr {
+  grid-column: 2; display: block; padding: 0 0 0 8px; border-left: 3px solid var(--tr-edge);
+  color: var(--tr-text); font-size: 14px; line-height: 1.5; unicode-bidi: plaintext;
+}
+.cue .tr[dir="rtl"] { border-left: 0; border-right: 3px solid var(--tr-edge); padding: 0 8px 0 0; text-align: right; }
 .swf-wrap { padding: 16px; background: #fff; overflow: auto; }
 .swf-wrap ruffle-player { display: block; }
 .swf-note { padding: 18px; max-width: 420px; color: var(--muted); }
@@ -826,7 +840,8 @@ body { height: 100dvh; }
   .dialog { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; border: 0; }
   .dialog-body { flex-direction: column; max-height: calc(100dvh - 56px); }
   .video-wrap video { width: 100vw; max-height: 42dvh; }
-  .dialog-body .cue-list { width: auto; flex: 1; border-left: 0; border-top: 1px solid var(--line); }
+  .cue-side { width: auto; flex: 1; border-left: 0; border-top: 1px solid var(--line); }
+  .cue-lang { max-width: none; flex: 1; height: 36px; font-size: 16px; } /* 16px: iPhones do not zoom into it */
   .swf-wrap { padding: 6px; }
 
   /* The library on a phone: two books side by side, the tools below the tabs. */

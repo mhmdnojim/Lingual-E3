@@ -93,11 +93,13 @@ export class Translator {
     if (!on) this.hideTip();
   }
 
-  setLang(code) {
+  /** show: in the settings, choosing a language also switches the translations on (not in a video's bar). */
+  setLang(code, show = true) {
     const first = !this.lang;
     this.lang = code;
     store.set('trLang', code);
-    if (code && (first || (!this.listOn && !this.pageOn))) { // choosing a language means: show it (list and page)
+    $('#tr-lang').value = code;
+    if (show && code && (first || (!this.listOn && !this.pageOn))) { // choosing a language means: show it (list and page)
       this.listOn = this.pageOn = true;
       store.set('trOn', true);
       store.set('trPageOn', true);
@@ -308,5 +310,148 @@ export class Translator {
     status.textContent = error ? `Stopped: ${error} Click again to go on later (finished pages are skipped).`
       : job.stop ? `Stopped after ${done} of ${pages.length} pages. Click again to go on (finished pages are skipped).`
         : `Done: the ${book.type} is translated into ${this.name} and now works without internet.`;
+  }
+}
+
+/**
+ * The translation of a video's script (the lines next to the video): two buttons over the
+ * lines — the translation under every line, and in a box when pointing at a line — and the
+ * language. The script is translated once, a few lines at a time (for context), and saved by
+ * the server like a page (the script's id instead of the page's).
+ */
+export class ScriptTranslation {
+  constructor(translator, transcript, book, id) {
+    this.tr = translator;
+    this.transcript = transcript;
+    this.book = book;
+    this.id = id;
+    this.under = store.get('cueTrUnder', false);
+    this.point = store.get('cueTrPoint', false);
+    this.byLang = new Map(); // lang -> Promise of one translation per line
+    this.gen = 0;
+    this.underBtn = el('button', { class: 'icon-btn small', type: 'button', id: 'cue-tr-under', html: icon('tr-under') });
+    this.pointBtn = el('button', { class: 'icon-btn small', type: 'button', id: 'cue-tr-point', html: icon('tr-point') });
+    this.lang = el('select', { class: 'cue-lang', id: 'cue-tr-lang', 'aria-label': 'Translate into', title: 'Translate into' },
+      el('option', { value: '' }, 'Translate into…'), ...translator.langs.map((l) => el('option', { value: l.code }, l.name)));
+    this.lang.value = translator.lang;
+    this.note = el('div', { class: 'cue-note', hidden: true });
+    this.tip = el('div', { class: 'tr-tip', hidden: true, role: 'tooltip' });
+    this.el = el('div', { class: 'cue-tr' }, el('div', { class: 'cue-tools' }, this.underBtn, this.pointBtn, this.lang), this.note, this.tip);
+
+    this.underBtn.addEventListener('click', () => { this.under = !this.under; store.set('cueTrUnder', this.under); this.refresh(true); });
+    this.pointBtn.addEventListener('click', () => {
+      this.point = !this.point;
+      store.set('cueTrPoint', this.point);
+      if (!this.point) this.hideTip();
+      this.refresh(true);
+    });
+    this.lang.addEventListener('change', () => { this.tr.setLang(this.lang.value, false); this.hideTip(); this.refresh(); });
+    // Pointing at a line (a mouse), or tapping it (a finger: phones cannot point).
+    const list = transcript.list;
+    list.addEventListener('pointerover', (e) => { if (e.pointerType === 'mouse') this.showTip(e.target.closest('.cue')); });
+    list.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') this.hideTip(); }); // (a finger "leaves" when lifted)
+    list.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'mouse') this.showTip(e.target.closest('.cue')); });
+    list.addEventListener('scroll', () => this.placeTip(), { passive: true }); // the box moves with its line
+    this.updateButtons();
+  }
+
+  updateButtons() {
+    const set = (b, on, what) => {
+      b.setAttribute('aria-pressed', String(on));
+      b.title = `${what}: ${on ? 'on' : 'off'}`;
+      b.setAttribute('aria-label', what);
+    };
+    set(this.underBtn, this.under, 'Translation under every line');
+    set(this.pointBtn, this.point, 'Translation when pointing at a line');
+  }
+
+  /** The script is shown (or the settings changed): put the translations where they are wanted. */
+  async refresh(clicked = false) {
+    const gen = ++this.gen;
+    this.updateButtons();
+    this.say('');
+    if (!this.under) this.transcript.setTranslations(null);
+    if (!this.under && !this.point) return;
+    if (!this.tr.lang) {
+      if (clicked) { this.say('Choose the language to translate into.'); this.lang.focus(); }
+      return;
+    }
+    if (!this.transcript.cues.length) return;
+    let trs;
+    try {
+      this.say(`Translating into ${this.tr.name}…`, false, 400);
+      trs = await this.load();
+    } catch (err) {
+      if (gen !== this.gen) return;
+      if (!err.busy) { this.say(err.message, true); return; }
+      // Google asks to slow down: try again by itself when it may be asked again.
+      await this.tr.countdown(err.wait, () => gen !== this.gen || !this.el.isConnected,
+        (t) => this.say(`${err.message} Trying again in ${t}…`, true));
+      if (gen === this.gen && this.el.isConnected) this.refresh();
+      return;
+    }
+    if (gen !== this.gen) return;
+    this.say('');
+    if (this.under) this.transcript.setTranslations(trs, this.tr.rtl ? 'rtl' : 'ltr', this.tr.lang);
+  }
+
+  /** One translation per line, in the chosen language (Promise; asked for once). */
+  load() {
+    const lang = this.tr.lang;
+    if (!this.byLang.has(lang)) {
+      const lines = this.transcript.cues.map((c) => (/\p{L}/u.test(c.x) ? c.x : '')); // not the track numbers
+      const paragraphs = [];
+      for (let i = 0; i < lines.length; i += 6) paragraphs.push(lines.slice(i, i + 6));
+      const p = this.tr.request(this.book, this.id, paragraphs).then((d) => d.translations.flat());
+      p.catch(() => this.byLang.delete(lang)); // try again next time
+      this.byLang.set(lang, p);
+    }
+    return this.byLang.get(lang);
+  }
+
+  say(text, error = false, delay = 0) {
+    clearTimeout(this.sayTimer);
+    const show = () => {
+      this.note.textContent = text;
+      this.note.classList.toggle('err', error);
+      this.note.hidden = !text;
+    };
+    if (delay && text) this.sayTimer = setTimeout(show, delay); else show();
+  }
+
+  async showTip(li) {
+    if (!this.point || !li || !this.tr.lang) { this.hideTip(); return; }
+    if (this.tipFor === li) return;
+    this.tipFor = li;
+    const i = this.transcript.items.indexOf(li);
+    const trs = await this.load().catch(() => null);
+    if (this.tipFor !== li) return;
+    if (!trs?.[i]) { this.hideTip(); return; }
+    this.tip.replaceChildren(el('div', { class: 'ts', dir: this.tr.rtl ? 'rtl' : 'ltr', lang: this.tr.lang }, trs[i]));
+    this.placeTip();
+  }
+
+  /** Beside the lines (over the video); where there is no room (phones), under the line or above it. */
+  placeTip() {
+    const li = this.tipFor;
+    if (!li || !this.tip.firstChild) return;
+    const r = li.getBoundingClientRect(), side = this.transcript.list.getBoundingClientRect();
+    this.tip.hidden = r.bottom < side.top || r.top > side.bottom; // its line is scrolled out of sight
+    if (this.tip.hidden) return;
+    const m = 8, tw = this.tip.offsetWidth, th = this.tip.offsetHeight;
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, hi));
+    let x = side.left - tw - m, y = clamp(r.top, m, innerHeight - th - m);
+    if (x < m) {
+      x = clamp(r.left, m, innerWidth - tw - m);
+      y = r.bottom + 6 + th <= innerHeight - m ? r.bottom + 6 : Math.max(m, r.top - th - 6);
+    }
+    this.tip.style.left = `${x}px`;
+    this.tip.style.top = `${y}px`;
+  }
+
+  hideTip() {
+    this.tipFor = null;
+    this.tip.hidden = true;
+    this.tip.replaceChildren();
   }
 }

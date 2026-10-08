@@ -569,7 +569,10 @@ Adam started off OK. However, after an hour, Adam decided that he was going too 
   <h3 id="f-video">6.8 Video</h3>
   <figure><img src="img:video" alt="Video dialog"><figcaption>Videos open in a dialog with the converted MP4 and its timed script.</figcaption></figure>
   <p>The same <code>Transcript</code> class is reused with a <code>&lt;video&gt;</code> element inside a native <code>&lt;dialog&gt;</code>. Closing the dialog stops and unloads the video.</p>
-  <div class="snip" data-file="web/js/media.js" data-from="export async function openVideo(app, asset) {"></div>
+  <p><b>Translating the script.</b> Over the script are two buttons and the language (<code>ScriptTranslation</code> in <code>translation.js</code>): the first puts the translation <b>under every line</b>, the second shows it in a box <b>while pointing at a line</b> — beside the script, over the video; on a phone a tap shows it under the line, and the box moves with its line when the script scrolls. The language list is there because the settings box cannot open over the video window (a modal dialog); choosing a language there does not switch on the page's translations. The script goes to the same <code>/api/translate</code> as a page, six lines per paragraph for context, with the script's id (<code>VI-…</code>, <code>AU-…</code>) instead of the page's, so it is saved as <code>web\translations\&lt;language&gt;\&lt;book&gt;\&lt;script id&gt;.json</code> and translated only once. Lines without letters (track numbers like “4.49”) are not sent.</p>
+  <div class="snip" data-file="web/js/media.js" data-from="export async function openVideo(app, asset, book) {"></div>
+  <div class="snip" data-file="web/js/translation.js" data-from="  async refresh(clicked = false) {"></div>
+  <div class="snip" data-file="web/js/translation.js" data-from="  placeTip() {"></div>
 
   <h3 id="f-keys">6.9 Answer keys (Flash through Ruffle)</h3>
   <figure><img src="img:answer-key" alt="Answer key dialog"><figcaption>An original Flash answer key, played by Ruffle inside the browser.</figcaption></figure>
@@ -847,7 +850,7 @@ bash setup-server.sh books.dolingual.com https://github.com/mhmdnojim/Lingual-E3
   <script type="text/plain" class="codeblock" data-lang="ps1" data-title="PowerShell — run the tests">
 cd web\tests
 npm install          # once: installs puppeteer-core (uses your installed Edge, no browser download)
-node ui-test.mjs     # 149 checks, prints PASS/FAIL (ONLY=phone, ONLY=library or ONLY=website: just those)
+node ui-test.mjs     # 153 checks, prints PASS/FAIL (ONLY=phone, ONLY=library or ONLY=website: just those)
 node capture-screenshots.mjs   # re-takes the screenshots used in this guide
 </script>
   <div class="table-wrap"><table>
@@ -863,7 +866,7 @@ node capture-screenshots.mjs   # re-takes the screenshots used in this guide
     <tr><td>Audio</td><td>Plays; 7 script lines; clicking line 4 jumps to 15.7 s</td></tr>
     <tr><td>Answer key</td><td>Ruffle player loads with no error</td></tr>
     <tr><td>Search, links</td><td>“seaplane” finds 4 pages; p.104 link works; back button appears</td></tr>
-    <tr><td>Video</td><td>MP4 plays (640 px), script shown</td></tr>
+    <tr><td>Video</td><td>MP4 plays (640 px), script shown; its two translation buttons: no language yet asks for one; under every line (and not the page's translations switched on); off again; the box while pointing at a line, next to it, not covering it, gone when pointing elsewhere</td></tr>
     <tr><td>Views and books</td><td>Two-page view shows 24–25; Workbook and Teacher's Book load; blank page message</td></tr>
     <tr><td>Phone (iPhone size, touch only)</td><td>Fits the screen (two-row top bar, nothing overlaps, page buttons inside); a tap reads a sentence and shows its translation; swipe turns the page; pinch zooms in and back to the screen width; the panel at the bottom opens, closes and is dragged taller; double tap opens a sentence for correcting; the settings fit</td></tr>
     <tr><td>Following</td><td>The sentence being read in the middle of the page (also the next one); scrolling away keeps the page there; the word being read shows at the top middle, word by word, with an arrow down to it, and a click brings the reading back; after the wait it follows by itself; the button in the reading bar and F switch it off and on; “Near the top”; on a phone (above the panel), a swipe pauses it</td></tr>
@@ -893,7 +896,7 @@ PASS  …shown right to left for Arabic
 PASS  in Word mode the popup also translates the word  (Rickenbacker → ريكنباكر)
 PASS  L switches translations off and on; the second time they come from the saved file  (70 ms)
 ...
-149 passed, 0 failed
+153 passed, 0 failed
 </script>
 </section>
 
@@ -925,7 +928,7 @@ PASS  L switches translations off and on; the second time they come from the sav
         <tr><td><code>web\vendor\ruffle</code></td><td>Ruffle Flash emulator</td><td class="num"><span data-stat="mb.ruffle">29</span> MB</td></tr>
       </table></div></div></li>
     <li data-check="start"><input type="checkbox" aria-label="Done"><div><b>Start the app</b> with <code>Start Lingua Books.bat</code> and open Student Book p.25.</div></li>
-    <li data-check="test"><input type="checkbox" aria-label="Done"><div><b>Run the tests</b> (optional): <code>cd web\tests</code>, <code>npm install</code>, <code>node ui-test.mjs</code> → “149 passed, 0 failed”.</div></li>
+    <li data-check="test"><input type="checkbox" aria-label="Done"><div><b>Run the tests</b> (optional): <code>cd web\tests</code>, <code>npm install</code>, <code>node ui-test.mjs</code> → “153 passed, 0 failed”.</div></li>
     <li data-check="edits"><input type="checkbox" aria-label="Done"><div><b>Moving to another computer?</b> Copy your <code>web\edits</code> folder too — it holds your text corrections.</div></li>
   </ul>
   <div class="callout tip"><b class="tag">Faster changes</b><p>To change only how sentences/clauses are split, edit <code>segment_text.py</code> and run just that step — the OCR results in <code>web\_build\ocr_raw</code> are kept:
