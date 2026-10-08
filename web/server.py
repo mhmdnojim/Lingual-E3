@@ -745,6 +745,7 @@ class Server(ThreadingHTTPServer):
     servers share a port on Windows, and the browser may then keep talking to an old copy.)"""
     allow_reuse_address = False
     daemon_threads = True
+    request_queue_size = 256  # many readers at once wait in line, not get turned away (Python's default: 5)
 
     def server_bind(self):
         if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
