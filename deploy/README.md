@@ -17,10 +17,28 @@ your computer ── git push ──▶ GitHub ── update.sh ──▶ server
 - A **domain** (or a subdomain such as `books.your-domain.com`). In the domain's DNS settings,
   add an **A record** that points to the server's IP address.
 
+## With dolingual.com
+
+`dolingual.com` is now the Dolingual flashcards site, made and hosted with **Lovable**. Lovable
+only serves finished pages; it cannot run this app's Python program (accounts, PDFs, photos,
+translations, MP3s). So the app goes on its own server, under a **subdomain**, and the Dolingual
+site stays as it is:
+
+```
+https://dolingual.com        → Lovable (as now, nothing changes)
+https://books.dolingual.com  → your VPS (this app)
+```
+
+The domain's DNS is at **Name.com**: My Domains → dolingual.com → **Manage DNS Records** →
+add a record: Type **A**, Host **books**, Answer **the VPS's IP address**, TTL 300.
+Do not change the records that are already there (they keep the Dolingual site working).
+Then set up the server (step 2) with `books.dolingual.com`. A link to it can be added in the
+Dolingual site (in Lovable).
+
 ## 1. Code to GitHub
 
-Already done: https://github.com/mhmdnojim/American-English-File-2e-Level-3 (you can rename it
-on GitHub: Settings → General → Repository name; the old address keeps working). Later changes:
+Already done: https://github.com/mhmdnojim/Lingual-E3 (the old address,
+…/American-English-File-2e-Level-3, still leads there). Later changes:
 
 ```
 git add -A
@@ -33,8 +51,8 @@ git push
 Log in to the server (`ssh root@SERVER-IP`) and run:
 
 ```
-curl -O https://raw.githubusercontent.com/mhmdnojim/American-English-File-2e-Level-3/main/deploy/setup-server.sh
-bash setup-server.sh your-domain.com https://github.com/mhmdnojim/American-English-File-2e-Level-3.git
+curl -O https://raw.githubusercontent.com/mhmdnojim/Lingual-E3/main/deploy/setup-server.sh
+bash setup-server.sh books.dolingual.com https://github.com/mhmdnojim/Lingual-E3.git
 ```
 
 (For a **private** repository use the `git@github.com:…` address instead: the script then shows
@@ -43,7 +61,7 @@ a key to add on GitHub under Settings → Deploy keys.)
 It asks for **your e-mail address**: when you sign up on the website with it, you are the
 **admin** (you see the *Admin* tab: reports, hiding and deleting books).
 
-Open `https://your-domain.com`, **Sign up** with that e-mail, and add the first books.
+Open `https://books.dolingual.com`, **Sign up** with that e-mail, and add the first books.
 
 ## Updates
 
