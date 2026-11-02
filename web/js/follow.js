@@ -134,6 +134,7 @@ export class Follower {
     if (!this.current || view !== this.current.view || w < 0) return;
     this.wordIdx = w;
     this.scheduleBadge();
+    if (followSettings.on && !this.stage.busy()) this.app.followWord(view, w); // (zoomed to the word)
   }
 
   /** Reading (or playing) has ended. */
@@ -208,6 +209,7 @@ export class Follower {
 
   /** Scroll the page so the sentence is where the settings say (middle, near the top, or just in view). */
   placeOnPage(view, unit, force = false) {
+    if (['paragraph', 'sentence', 'word'].includes(this.app.zoom.mode) && this.app.followFit(view, unit)) return; // (fit button)
     const st = this.stage.el;
     const box = view.unitBox(unit);
     if (!box) return;

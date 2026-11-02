@@ -1,0 +1,11 @@
+{
+  "_about": "The levels whose books this app shows (On this computer), in this order. branch: the branch of the library their books are in, from the main branch down (made if it is not there yet; admins can move it in the app after). folder: where the level's disc is unpacked (.shared) and its books are built (web/data, by web/tools/build_all.ps1 -Root <folder>); relative to this app's folder. id: letters or digits, for the addresses of its files (/levels/<id>/...).",
+  "levels": [
+    {"id": "1", "name": "Level 1", "folder": "../American English File 2e Level 1",
+     "branch": ["Learning English Courses", "American English File 2e", "Level 1"]},
+    {"id": "2", "name": "Level 2", "folder": "../American English File 2e Level 2",
+     "branch": ["Learning English Courses", "American English File 2e", "Level 2"]},
+    {"id": "3", "name": "Level 3", "folder": ".",
+     "branch": ["Learning English Courses", "American English File 2e", "Level 3"]}
+  ]
+}

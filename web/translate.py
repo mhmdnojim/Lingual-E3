@@ -16,10 +16,18 @@ traffic" page for a while), it is left alone for 2 minutes, then 4, 8… up to 3
 again: asking again at once would only make the block last longer.
 
 Translations are saved per language and page in web/translations/<lang>/<book>/<page>.json as
-{"English sentence": "translation"}: each sentence is translated once and then works offline.
-A corrected sentence is simply a new English key.
+{"sentence": "translation"}: each sentence is translated once and then works offline. A corrected
+sentence is simply a new key.
+
+Every book is translated from its own language (the language of its pages: SOURCES): the disc's
+books and most others from English, a Chinese book from Chinese (into English first of all, the
+app's main language; or into the language the reader chooses). Translations from another
+language than English are saved apart (<lang>/<book>/from-<source>/<page>.json, and the words
+with the source in their key): the first versions sent every book as English, and what Google
+made of Chinese sent as English is not used.
 """
 import html
+import hashlib
 import http.client
 import json
 import os
@@ -36,7 +44,7 @@ WEB = os.path.dirname(os.path.abspath(__file__))
 TR_DIR = os.environ.get('AEF_TRANSLATIONS_DIR') or os.path.join(WEB, 'translations')  # tests use their own
 CHROME_URL = 'https://translate-pa.googleapis.com/v1/translateHtml'
 CHROME_KEY = 'AIzaSyATBXajvzQLTDHEQbcpq0Ihe0vWDHmO520'  # the public key of Chrome's page translator
-GTX_URL = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&dt=t&tl='
+GTX_URL = 'https://translate.googleapis.com/translate_a/single?client=gtx&dt=t&'
 MAX_CHARS = {'chrome': 5000, 'gtx': 2500}  # per request
 REST, MAX_REST = 120, 1800  # seconds an address is left alone after "too many requests"
 GAP = 0.4   # seconds at least between two requests to the same address
@@ -46,8 +54,10 @@ _resting = {}  # engine -> time until which it is not asked
 _last = {}     # engine -> time of the last request
 _strikes = {}  # engine -> "too many requests" answers in a row
 
-# (code, English name, own name, right-to-left)
+# The languages to translate into: (code, English name, own name, right-to-left). English first:
+# the main language (books in other languages, as Chinese ones, are translated into it).
 LANGUAGES = [
+    ('en', 'English', 'English', False),
     ('ar', 'Arabic', 'العربية', True), ('zh-CN', 'Chinese (Simplified)', '中文（简体）', False),
     ('zh-TW', 'Chinese (Traditional)', '中文（繁體）', False), ('fa', 'Persian', 'فارسی', True),
     ('ur', 'Urdu', 'اردو', True), ('tr', 'Turkish', 'Türkçe', False), ('ckb', 'Kurdish (Sorani)', 'کوردی', True),
@@ -65,6 +75,17 @@ LANGUAGES = [
     ('ne', 'Nepali', 'नेपाली', False), ('my', 'Burmese', 'မြန်မာ', False), ('km', 'Khmer', 'ខ្មែរ', False),
 ]
 CODES = {c for c, *_ in LANGUAGES}
+# The languages books are in (the languages of their pages: ocr.LANGUAGES) as the translator knows them.
+SOURCES = {'en': 'en', 'zh-Hans': 'zh-CN', 'zh-Hant': 'zh-TW', 'es': 'es', 'fr': 'fr', 'de': 'de',
+           'ja': 'ja', 'ko': 'ko', 'ar': 'ar'}
+
+
+def source(book_language):
+    """The translator's code of a book's language ('' or None: English, as the disc's books)."""
+    src = SOURCES.get(book_language or 'en')
+    if not src:
+        raise ValueError('bad book language')
+    return src
 
 
 class TranslateError(Exception):
@@ -121,9 +142,9 @@ def _clean(text):
     return re.sub(r'\s+', ' ', html.unescape(re.sub(r'<[^>]*>', '', text))).strip()
 
 
-def _chrome(lang, items):
-    """Chrome's page translator: a list of HTML snippets in, the same list translated out."""
-    req = urllib.request.Request(CHROME_URL, data=json.dumps([[items, 'en', lang], 'te_lib']).encode('utf-8'), headers={
+def _chrome(lang, items, src='en'):
+    """Chrome's page translator: a list of HTML snippets in (in the language src), the same list translated out."""
+    req = urllib.request.Request(CHROME_URL, data=json.dumps([[items, src, lang], 'te_lib']).encode('utf-8'), headers={
         'Content-Type': 'application/json+protobuf', 'X-Goog-API-Key': CHROME_KEY, 'User-Agent': 'Mozilla/5.0'})
     data = _call('chrome', req)
     out = data[0] if isinstance(data, list) and data and isinstance(data[0], list) else None
@@ -132,11 +153,11 @@ def _chrome(lang, items):
     return out
 
 
-def _by_chrome(lang, paragraphs):
+def _by_chrome(lang, paragraphs, src='en'):
     """{sentence: translation}; each paragraph is one item with its sentences marked."""
     items = [' '.join(f'<a i={i}>{html.escape(s, quote=False)}</a>' for i, s in enumerate(p)) for p in paragraphs]
     found, alone = {}, []
-    for para, t in zip(paragraphs, _chrome(lang, items)):
+    for para, t in zip(paragraphs, _chrome(lang, items, src)):
         parts = {int(i): _clean(x) for i, x in re.findall(r'<a i=(\d+)>(.*?)</a>', t, re.S)}
         if len(para) == 1 and not parts:
             parts = {0: _clean(t)}
@@ -145,14 +166,14 @@ def _by_chrome(lang, paragraphs):
         else:  # Google moved a sentence into another one: these are translated one by one
             alone += para
     if alone:
-        found.update(zip(alone, map(_clean, _chrome(lang, [html.escape(s, quote=False) for s in alone]))))
+        found.update(zip(alone, map(_clean, _chrome(lang, [html.escape(s, quote=False) for s in alone], src))))
     return found
 
 
-def _gtx(text, lang):
+def _gtx(text, lang, src='en'):
     """The older address: returns [(original piece, translation)] covering the whole text."""
     body = urllib.parse.urlencode({'q': text}).encode('utf-8')
-    req = urllib.request.Request(GTX_URL + urllib.parse.quote(lang), data=body, headers={
+    req = urllib.request.Request(GTX_URL + urllib.parse.urlencode({'sl': src, 'tl': lang}), data=body, headers={
         'User-Agent': 'Mozilla/5.0', 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8'})
     data = _call('gtx', req)
     return [(seg[1] or '', seg[0] or '') for seg in data[0] or [] if seg and seg[1] is not None]
@@ -187,10 +208,10 @@ def _align(lines, pieces):
     return [None if li in bad else [' '.join(t).strip() for t in sents] for li, sents in enumerate(out)]
 
 
-def _by_gtx(lang, paragraphs):
+def _by_gtx(lang, paragraphs, src='en'):
     """{sentence: translation}; one paragraph per line, matched back by position."""
     found, retry = {}, []
-    pieces = _gtx('\n'.join(' '.join(p) for p in paragraphs), lang)
+    pieces = _gtx('\n'.join(' '.join(p) for p in paragraphs), lang, src)
     for para, tr in zip(paragraphs, _align(paragraphs, pieces)):
         if tr is None:
             retry.append(para)
@@ -198,7 +219,7 @@ def _by_gtx(lang, paragraphs):
             found.update(zip(para, tr))
     if retry:  # one sentence per line: lines are hard borders for Google
         singles = [[s] for p in retry for s in p]
-        for line, tr in zip(singles, _align(singles, _gtx('\n'.join(s[0] for s in singles), lang))):
+        for line, tr in zip(singles, _align(singles, _gtx('\n'.join(s[0] for s in singles), lang, src))):
             found[line[0]] = (tr or [''])[0]
     return found
 
@@ -219,10 +240,28 @@ def _batches(lines, max_chars):
         yield batch
 
 
-def _translate_paragraphs(lang, paragraphs, found):
-    """Adds {sentence: translation} for the given paragraphs (lists of sentences) to found,
-    batch by batch, so what was translated is kept even if a later batch fails."""
-    todo = paragraphs
+def _writing(sentence):
+    """'latin' (only Latin letters), 'other' (letters of another writing: Chinese …), or None."""
+    if re.search(r'[^\W\d_A-Za-zÀ-ɏḀ-ỿ]', sentence):
+        return 'other'
+    return 'latin' if re.search('[A-Za-z]', sentence) else None
+
+
+def _apart(paragraphs):
+    """A paragraph with sentences in two writings (a Chinese sentence, then the book's English for
+    it) is sent one sentence at a time: together, the translator moves words of one into the
+    other ("…resolve issues" | "related to lost items.")."""
+    out = []
+    for p in paragraphs:
+        mixed = {'latin', 'other'} <= {_writing(s) for s in p}
+        out += [[s] for s in p] if mixed else [p]
+    return out
+
+
+def _translate_paragraphs(lang, paragraphs, found, src='en'):
+    """Adds {sentence: translation} for the given paragraphs (lists of sentences, in the language
+    src) to found, batch by batch, so what was translated is kept even if a later batch fails."""
+    todo = _apart(paragraphs)
     errors = []
     for name, engine in ENGINES:
         left = []
@@ -231,7 +270,7 @@ def _translate_paragraphs(lang, paragraphs, found):
                 left += batch
                 continue
             try:
-                found.update(engine(lang, batch))
+                found.update(engine(lang, batch, src))
             except TranslateError as e:
                 errors.append(e)
                 left += batch
@@ -243,8 +282,8 @@ def _translate_paragraphs(lang, paragraphs, found):
     raise next((e for e in errors if isinstance(e, Offline)), None) or (busy[0] if busy else errors[0])
 
 
-def _cache_path(lang, book, page):
-    return os.path.join(TR_DIR, lang, book, page + '.json')
+def _cache_path(lang, book, page, src='en'):
+    return os.path.join(TR_DIR, lang, book, *([] if src == 'en' else ['from-' + src]), page + '.json')
 
 
 def _load(path):
@@ -266,42 +305,173 @@ def _save(path, new):
         os.replace(tmp, path)
 
 
-def translate_page(lang, book, page, paragraphs):
+def _same(lang, src):
+    if lang == src:
+        raise ValueError('The book is in that language already: choose another language to translate into.')
+
+
+def translate_page(lang, book, page, paragraphs, cached_only=False, refresh=False, book_language='en'):
     """Translations for the paragraphs of a page, or of a video's script (page: its id), as
     lists of sentences: the same shape, and how many sentences had to be translated now.
-    Saved sentences come from the disk; only missing ones go to the translator."""
+    Saved sentences come from the disk; only missing ones go to the translator (refresh: all
+    of them again, replacing the saved ones; a sentence it cannot translate keeps its old one).
+    book_language: the language of the book's pages ('zh-Hans' …), which it is translated from."""
+    src = source(book_language)
     if lang not in CODES or not ids.BOOK_RE.match(book) or not (ids.PAGE_RE.match(page) or ids.SCRIPT_RE.match(page)):
         raise ValueError('bad language or page')
+    _same(lang, src)
     if not (isinstance(paragraphs, list) and all(isinstance(p, list) and all(isinstance(s, str) and len(s) < 3000 for s in p) for p in paragraphs)):
         raise ValueError('bad text')
     paragraphs = [[s.strip() for s in p] for p in paragraphs]
-    path = _cache_path(lang, book, page)
+    path = _cache_path(lang, book, page, src)
     cache = _load(path)
-    todo = [[s for s in p if s] for p in paragraphs if any(s and s not in cache for s in p)]
+    todo = [[s for s in p if s] for p in paragraphs if any(s and (refresh or s not in cache) for s in p)]
     found = {}
-    if todo:
+    if todo and not cached_only:
         try:
-            _translate_paragraphs(lang, todo, found)
+            _translate_paragraphs(lang, todo, found, src)
+        except Offline:
+            # Preserve access to any saved sentences when the connection is unavailable.
+            pass
         finally:
             if found:
                 _save(path, found)
         cache.update(found)
-    return [[cache.get(s, '') if s else '' for s in p] for p in paragraphs], len(found)
+    result = [[cache.get(s, '') if s else '' for s in p] for p in paragraphs]
+    missing = sum(1 for p in paragraphs for s in p if s and not cache.get(s))
+    return result, len(found), missing
 
 
-def translate_word(lang, word):
-    """One word (Word mode), saved in web/translations/<lang>/words.json."""
-    word = word.strip()[:60]
-    if lang not in CODES or not word:
-        raise ValueError('bad word')
-    path = os.path.join(TR_DIR, lang, 'words.json')
+def sentences_without_translation(lang, book, page, paragraphs, book_language='en'):
+    """Which sentences of these paragraphs (their numbers, counted through all paragraphs) the
+    translator was asked for and gave nothing: saved blank, they are not asked for again (only
+    with refresh). Prepare counts them as done."""
+    cache = _load(_cache_path(lang, book, page, source(book_language)))
+    flat = [s.strip() for p in paragraphs for s in p]
+    return [i for i, s in enumerate(flat) if s and s in cache and not cache[s]]
+
+
+def _word_key(word, context, offset, src='en'):
+    offset_key = str(offset) if isinstance(offset, int) else ''
+    from_key = '' if src == 'en' else '\0' + src  # (English: the keys of the first versions)
+    return hashlib.sha256((word.casefold() + '\0' + context.casefold() + '\0' + offset_key + from_key).encode('utf-8')).hexdigest()
+
+
+def _word_marked(word, context, offset):
+    if not context:
+        # A direct word lookup must carry the same marker as a contextual lookup;
+        # otherwise its successful translation can never be extracted or saved.
+        return '<a i=0>' + html.escape(word, quote=False) + '</a>'
+    if context and isinstance(offset, int) and 0 <= offset < len(context):
+        at = offset
+        if context[at:at + len(word)].casefold() != word.casefold():
+            at = context.casefold().find(word.casefold())
+    elif context:
+        at = context.casefold().find(word.casefold())
+    else:
+        at = -1
+    if at < 0:
+        return html.escape(word, quote=False)
+    return (html.escape(context[:at], quote=False) + '<a i=0>'
+            + html.escape(context[at:at + len(word)], quote=False) + '</a>'
+            + html.escape(context[at + len(word):], quote=False))
+
+
+def _marked_word_gloss(value):
+    """Extract a marked word even if Chrome quotes or rewrites the marker HTML."""
+    # Some translator responses entity-escape the markup. Decode it before looking for the
+    # marker; the translated word itself is still cleaned/unescaped below.
+    for _ in range(2):
+        decoded = html.unescape(value)
+        if decoded == value:
+            break
+        value = decoded
+    match = re.search(
+        r'<(?:a|span)\b[^>]*\b(?:i|data-i)\s*=\s*["\']?0["\']?[^>]*>(.*?)</(?:a|span)>',
+        value, re.S | re.I)
+    return _clean(match.group(1)) if match else ''
+
+
+def _none_path(lang):
+    # Words the translator was asked for and gave no meaning for (names, numbers...): when.
+    return os.path.join(TR_DIR, lang, 'words-none.json')
+
+
+def _word_entries(lang, items, src='en'):
+    if lang not in CODES or not isinstance(items, list) or len(items) > 2000:
+        raise ValueError('bad word list')
+    _same(lang, src)
+    entries = []
+    for item in items:
+        if not isinstance(item, dict):
+            raise ValueError('bad word')
+        word = str(item.get('word', '')).strip()[:60]
+        context = str(item.get('context', '')).strip()[:1200]
+        offset = item.get('contextOffset')
+        if offset is not None and (not isinstance(offset, int) or not 0 <= offset <= len(context)):
+            offset = None
+        if not word:
+            raise ValueError('bad word')
+        entries.append((word, context, offset, _word_key(word, context, offset, src)))
+    return entries
+
+
+def translate_words(lang, items, cached_only=False, refresh=False, book_language='en'):
+    """Translate/cache multiple word occurrences with their sentence context, in few requests
+    (refresh: the saved ones again too)."""
+    src = source(book_language)
+    entries = _word_entries(lang, items, src)
+    path = os.path.join(TR_DIR, lang, 'words-context.json')
     cache = _load(path)
-    key = word.lower()
-    if key not in cache:
+    pending = {}
+    for word, context, offset, key in entries:
+        if refresh or not cache.get(key):
+            pending.setdefault(key, (word, context, offset))
+    found, none = {}, {}
+    if pending and not cached_only:
+        batches, batch, size = [], [], 0
+        for key, (word, context, offset) in pending.items():
+            marked = _word_marked(word, context, offset)
+            if batch and (size + len(marked) > 4500 or len(batch) >= 80):
+                batches.append(batch)
+                batch, size = [], 0
+            batch.append((key, word, marked))
+            size += len(marked)
+        if batch: batches.append(batch)
         try:
-            text = _clean(_chrome(lang, [html.escape(word, quote=False)])[0])
-        except TranslateError:
-            text = ''.join(t for _, t in _gtx(word, lang)).strip()
-        cache[key] = text
-        _save(path, {key: text})
-    return cache[key]
+            for batch in batches:
+                try:
+                    translated = _chrome(lang, [x[2] for x in batch], src)
+                except Offline:
+                    break
+                for (key, _word, _), html_text in zip(batch, translated):
+                    gloss = _marked_word_gloss(html_text)
+                    if gloss:
+                        found[key] = gloss
+                    else:  # answered, but without a meaning for the word
+                        none[key] = int(time.time())
+        finally:
+            if found:
+                _save(path, found)
+                cache.update(found)
+            if none:
+                _save(_none_path(lang), none)
+    result = [cache.get(key, '') for _word, _context, _offset, key in entries]
+    missing = sum(not text for text in result)
+    return result, len(found), missing
+
+
+def words_without_meaning(lang, items, book_language='en'):
+    """Which of these words (their numbers) the translator was asked for and gave no meaning
+    for, and have none saved. Prepare counts them as done; reading asks for them again."""
+    entries = _word_entries(lang, items, source(book_language))
+    cache, none = _load(os.path.join(TR_DIR, lang, 'words-context.json')), _load(_none_path(lang))
+    return [i for i, (_w, _c, _o, key) in enumerate(entries) if key in none and not cache.get(key)]
+
+
+def translate_word(lang, word, context='', context_offset=None, cached_only=False, book_language='en'):
+    """One contextual word gloss; the same cache used by whole-page/book preparation."""
+    result, _fetched, _missing = translate_words(lang, [{
+        'word': word, 'context': context, 'contextOffset': context_offset,
+    }], cached_only, book_language=book_language)
+    return result[0]

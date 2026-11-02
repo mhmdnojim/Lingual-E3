@@ -5,6 +5,8 @@
   "description": "Browser tests and guide screenshots for the American English File 3 browser version.",
   "scripts": {
     "test": "node ui-test.mjs",
+    "test:migration": "node migration-test.mjs",
+    "test:offline": "node offline-page-test.mjs",
     "screenshots": "node capture-screenshots.mjs"
   },
   "dependencies": {

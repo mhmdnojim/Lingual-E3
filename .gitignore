@@ -9,6 +9,8 @@
 !/README.md
 !/Start Lingua Books.bat
 !/Start for phones (home Wi-Fi).bat
+!/Setup transcription.bat
+!/Setup speaker detection.bat
 !/web/
 !/guide/
 !/deploy/
@@ -17,18 +19,28 @@
 /web/data/
 /web/_build/
 /web/vendor/
+# (and the scripts made by speech recognition from the disc's recordings: tools/transcribe_all.py)
+/web/transcripts/
 # ... and not your own data (back these folders up; upload them to the host once)
 /web/edits/
 /web/recordings/
+/web/words/
 /web/translations/
 /web/library/
 /web/server-config.json
+# (the HSK 2 demo's pages and recordings: from the book)
+/web/hsk2-demo/assets/
+# (VS Code's workspace: the folders of this computer)
+/web/*.code-workspace
 
 # The guide: only its sources. The built guide, the kit (and copies of them, e.g. _5th_v) and the screenshots (they show book
 # pages) are made again by guide/src/build_guide.py and web/tests/capture-screenshots.mjs.
 /guide/*.html
 /guide/*.zip
+/guide/*.md
 /guide/src/images/
+# (the sample book of the React kit: made again by guide/src/make_fixtures.py)
+/guide/src/fixtures/
 
 # Made by Python and npm
 __pycache__/

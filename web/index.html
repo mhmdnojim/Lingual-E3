@@ -13,6 +13,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Lingua Books">
+<!-- Phone, tablet or computer (automatic or chosen), before the page is drawn: js/device.js. -->
+<script src="js/device.js"></script>
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
@@ -24,6 +26,9 @@
     <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
     <symbol id="i-zoom-in" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></symbol>
     <symbol id="i-zoom-out" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M8 11h6"/></symbol>
+    <symbol id="i-collect" viewBox="0 0 24 24"><path d="M19 13v8l-7-4-7 4V5a2 2 0 0 1 2-2h6"/><path d="M18 2v8"/><path d="M14 6h8"/></symbol>
+    <symbol id="i-breakdown" viewBox="0 0 24 24"><path d="M3 5h18"/><path d="M3 12h5"/><path d="M11 12h4"/><path d="M18 12h3"/><path d="M3 19h3"/><path d="M9 19h3"/><path d="M15 19h2"/><path d="M20 19h1"/></symbol>
+    <symbol id="i-cards" viewBox="0 0 24 24"><rect x="2" y="7" width="15" height="14" rx="2"/><path d="M7 3h13a2 2 0 0 1 2 2v11"/></symbol>
     <symbol id="i-fit" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
     <symbol id="i-spread" viewBox="0 0 24 24"><path d="M2 4h7a3 3 0 0 1 3 3v13a2.5 2.5 0 0 0-2.5-2.5H2z"/><path d="M22 4h-7a3 3 0 0 0-3 3v13a2.5 2.5 0 0 1 2.5-2.5H22z"/></symbol>
     <symbol id="i-headphones" viewBox="0 0 24 24"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/></symbol>
@@ -35,17 +40,25 @@
     <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
     <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
     <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></symbol>
+    <symbol id="i-paste" viewBox="0 0 24 24"><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
     <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></symbol>
+    <symbol id="i-transcribe" viewBox="0 0 24 24"><rect x="4" y="2" width="6" height="11" rx="3"/><path d="M1 10v1a6 6 0 0 0 12 0v-1M7 17v5M4 22h6M16 7h6M16 12h6M16 17h6"/></symbol>
     <symbol id="i-repeat" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></symbol>
+    <symbol id="i-repeat-fill" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M7 4.5h9.5V1l7.5 5-7.5 5V7.5H7A4.5 4.5 0 0 0 2.5 12H0a7 7 0 0 1 7-7.5ZM17 19.5H7.5V23L0 18l7.5-5v3.5H17a4.5 4.5 0 0 0 4.5-4.5H24a7 7 0 0 1-7 7.5Z"/></symbol>
     <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M21 4h-7"/><path d="M10 4H3"/><path d="M21 12h-9"/><path d="M8 12H3"/><path d="M21 20h-5"/><path d="M12 20H3"/><path d="M14 2v4"/><path d="M8 10v4"/><path d="M16 18v4"/></symbol>
     <symbol id="i-panel" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/></symbol>
+    <symbol id="i-device" viewBox="0 0 24 24"><rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/></symbol>
+    <symbol id="i-sidebar" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="M5.5 7h1"/><path d="M5.5 10h1"/></symbol>
     <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
     <symbol id="i-flag" viewBox="0 0 24 24"><path d="M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 8 2a6 6 0 0 0 3.6-1.2.5.5 0 0 1 .4.4V14a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.5"/></symbol>
     <symbol id="i-books" viewBox="0 0 24 24"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/><path d="M8 7h8"/><path d="M8 11h6"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
     <symbol id="i-file" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></symbol>
     <symbol id="i-text" viewBox="0 0 24 24"><path d="M17 6.1H3"/><path d="M21 12.1H3"/><path d="M15.1 18H3"/></symbol>
+    <symbol id="i-select-area" viewBox="0 0 24 24"><path d="M5 3a2 2 0 0 0-2 2"/><path d="M19 3a2 2 0 0 1 2 2"/><path d="M21 19a2 2 0 0 1-2 2"/><path d="M5 21a2 2 0 0 1-2-2"/><path d="M9 3h1"/><path d="M14 3h1"/><path d="M9 21h1"/><path d="M14 21h1"/><path d="M3 9v1"/><path d="M21 9v1"/><path d="M3 14v1"/><path d="M21 14v1"/><path d="m9 11 3 3 5-6"/></symbol>
     <symbol id="i-back" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
     <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
@@ -56,6 +69,7 @@
     <symbol id="i-arrow-down" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></symbol>
     <symbol id="i-pilcrow" viewBox="0 0 24 24"><path d="M13 4v16"/><path d="M17 4v16"/><path d="M19 4H9.5a4.5 4.5 0 0 0 0 9H13"/></symbol>
     <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M22 12h-4"/><path d="M6 12H2"/><path d="M12 6V2"/><path d="M12 22v-4"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></symbol>
     <symbol id="i-languages" viewBox="0 0 24 24"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></symbol>
@@ -83,7 +97,7 @@
 
   <div class="tb-group view-tools">
     <button class="icon-btn" id="btn-zoom-out" title="Zoom out (−)" aria-label="Zoom out"><svg class="i"><use href="#i-zoom-out"/></svg></button>
-    <button class="icon-btn" id="btn-fit" title="Fit page / fit width (0)" aria-label="Fit"><svg class="i"><use href="#i-fit"/></svg></button>
+    <button class="icon-btn" id="btn-fit" title="Fit: whole page → page width → paragraph → sentence → word, then out again: sentence → paragraph → page width → whole page (0)" aria-label="Fit: zoom in step by step to the word, then out again"><svg class="i"><use href="#i-fit"/></svg></button>
     <button class="icon-btn" id="btn-zoom-in" title="Zoom in (+)" aria-label="Zoom in"><svg class="i"><use href="#i-zoom-in"/></svg></button>
     <button class="icon-btn" id="btn-spread" title="Two pages side by side" aria-label="Two-page view" aria-pressed="false"><svg class="i"><use href="#i-spread"/></svg></button>
   </div>
@@ -96,9 +110,16 @@
       <button role="radio" data-mode="word" title="Click a word to hear it (3)">Word</button>
       <button role="radio" data-mode="off" title="Turn off clickable text (4)">Off</button>
     </div>
+    <div class="seg" id="lang-seg" role="radiogroup" aria-label="Read which language" hidden>
+      <button role="radio" data-lang="both" title="Read the Chinese and the English">中+EN</button>
+      <button role="radio" data-lang="zh" title="Read only the Chinese">中</button>
+      <button role="radio" data-lang="en" title="Read only the English">EN</button>
+    </div>
     <button class="icon-btn" id="btn-voice" title="Settings: voice, speed and translation" aria-label="Settings: voice, speed and translation" aria-expanded="false"><svg class="i"><use href="#i-sliders"/></svg></button>
     <button class="icon-btn" id="btn-translate" title="Translation on the page: show it when pointing at a sentence" aria-label="Translation on the page" aria-pressed="false"><svg class="i"><use href="#i-languages"/></svg></button>
     <button class="icon-btn repeat-btn" id="btn-repeat" title="Repeat each sentence: once. Click: 2, 3, 4, 5 times, ∞ (R)" aria-label="Repeat each sentence: once" aria-pressed="false"><svg class="i"><use href="#i-repeat"/></svg><span class="count-badge" id="repeat-badge" hidden></span></button>
+    <button class="icon-btn" id="btn-collect" title="Add new words: click words, clauses or sentences on the page — Word, Clause or Sentence chooses which (N)" aria-label="Add new words" aria-pressed="false"><svg class="i"><use href="#i-collect"/></svg></button>
+    <button class="icon-btn" id="btn-cards" title="Flashcards: practice your new words (C)" aria-label="Flashcards"><svg class="i"><use href="#i-cards"/></svg></button>
   </div>
 
   <div class="tb-group end">
@@ -115,15 +136,32 @@
     <button role="tab" data-ptab="voice" aria-selected="true"><svg class="i"><use href="#i-volume"/></svg>Voice</button>
     <button role="tab" data-ptab="translation" aria-selected="false"><svg class="i"><use href="#i-languages"/></svg>Translation</button>
     <button role="tab" data-ptab="follow" aria-selected="false"><svg class="i"><use href="#i-target"/></svg>Follow</button>
+    <button role="tab" data-ptab="screen" aria-selected="false"><svg class="i"><use href="#i-device"/></svg>Screen</button>
+  </div>
+  <div class="pop-body" data-ptab="screen" hidden>
+  <label class="field"><span>Made for</span><select class="select device-select" id="device-select" aria-describedby="device-hint"></select></label>
+  <p class="hint device-hint" id="device-hint"></p>
+  <p class="hint">Automatic changes by itself: a phone turned sideways gets the tablet's layout, a computer's window made narrow the phone's. A layout you choose stays on this device (each phone, tablet and computer keeps its own).</p>
   </div>
   <div class="pop-body" data-ptab="voice">
-  <label class="field"><span>Voice</span><select id="voice-select" class="select"></select></label>
+  <label class="field"><span>Read</span><select id="speech-language-mode" class="select"><option value="both">English and Chinese</option><option value="en">English only</option><option value="zh">Chinese only</option></select></label>
+  <label class="field"><span>English voice</span><select id="voice-select" class="select"></select></label>
+  <div class="voice-offline-tools"><span class="voice-offline-status" id="voice-offline-status" role="status">Checking…</span><button class="btn small primary" id="offline-import" type="button" title="Generate offline audio for this voice" aria-label="Generate offline audio" hidden><svg class="i"><use href="#i-download"/></svg>Generate</button></div>
+  <label class="field offline-scope"><span>Generate for</span><select id="offline-scope" class="select">
+    <option value="page">Whole current page</option><option value="book">Whole book</option><option value="selected">Selected sentences or audio</option><option value="all">All saved audio</option>
+  </select></label>
+  <div class="offline-generation"><div class="rec-progress offline-progress" id="offline-progress" role="progressbar" aria-label="Generating offline audio" aria-valuemin="0" aria-valuemax="100" hidden><div></div></div><span id="offline-status" class="edit-status" role="status"></span></div>
+  <label class="field"><span>Chinese voice</span><select id="chinese-voice-select" class="select"></select></label>
+  <label class="field" title="Each sentence and its translation (the language of the Translation tab), one after the other"><span>Read the translation</span><select id="tr-read" class="select"><option value="off">No</option><option value="after">After each sentence</option><option value="before">Before each sentence</option></select></label>
+  <label class="field" id="tr-voice-field" hidden><span id="tr-voice-label">Translation voice</span><select id="tr-voice-select" class="select"></select></label>
+  <p class="hint" id="tr-read-hint" hidden></p>
   <label class="field"><span>Speed <output id="rate-out">1.0×</output></span><input type="range" id="rate-input" min="0.5" max="1.5" step="0.05" value="1"></label>
   <label class="field" title="Silence after each sentence (or clause) before the next one is read — time to repeat it aloud"><span>Pause between sentences <output id="gap-out">none</output></span><input type="range" id="gap-input" min="0" max="10" step="0.5" value="0"></label>
   <label class="field" title="How many times each sentence is read before the next one; ∞ repeats it until you click another sentence, pause or stop"><span>Repeat each sentence <output id="repeat-out">once</output></span><input type="range" id="repeat-input" min="1" max="11" step="1" value="1"></label>
   <label class="check"><input type="checkbox" id="follow-input" checked> Highlight each word while reading</label>
+  <details class="offline-library"><summary>Imported offline audio files</summary><div class="offline-actions"><button class="btn" id="offline-export-all" type="button"><svg class="i"><use href="#i-download"/></svg>Export folder</button></div><div id="offline-list" class="offline-list"></div></details>
   <button class="btn" id="voice-test"><svg class="i"><use href="#i-volume"/></svg>Test voice</button>
-  <p class="hint" id="voice-hint"></p>
+  <p class="hint" id="voice-hint">Mixed English/Chinese text switches to a matching voice. Pinyin with tone marks is skipped.</p>
   </div>
   <div class="pop-body" data-ptab="follow" hidden>
   <label class="check"><input type="checkbox" id="follow-on"> <span>Keep the sentence being read in view (<kbd>F</kbd>)</span></label>
@@ -140,13 +178,32 @@
   </div>
   <div class="pop-body" data-ptab="translation" hidden>
   <label class="field"><span>Translate into</span><select id="tr-lang" class="select"><option value="">Loading…</option></select></label>
+  <p class="hint" id="tr-from" hidden></p>
   <p class="sub-head">Show the translation</p>
   <label class="check"><input type="checkbox" id="tr-show"> In the Text list, under each sentence</label>
-  <label class="check"><input type="checkbox" id="tr-page"> On the page, in a popup when you point at a sentence (Word mode: the word too)</label>
-  <p class="hint tr-hint">The translate buttons switch them on and off quickly: the one at the top for the page, the one in the Text tab (or <kbd>L</kbd>) for the list. Translating needs the internet the first time; then it is saved on this computer.</p>
-  <button class="btn" id="tr-book">Translate the whole book now</button>
-  <div class="rec-progress" id="tr-progress" hidden><div></div></div>
-  <p class="hint" id="tr-status"></p>
+  <label class="check"><input type="checkbox" id="tr-page"> On the page, show the sentence, clause, or word translation by its text</label>
+  <label class="check"><input type="checkbox" id="tr-offline"> Read using saved translations only (offline)</label>
+  <p class="hint tr-hint">Prepare downloads missing translations using the internet, even when offline reading is selected. Selected text is sent to the translation service and the results are saved on this computer. Word meanings use their sentence as context.</p>
+  <label class="field"><span>Prepare translations for offline use</span><select id="tr-scope" class="select">
+    <option value="page">Current page</option><option value="selected">Selected sentences on this page</option><option value="book">Whole book</option>
+  </select></label>
+  <p class="sub-head">Translation levels to save</p>
+  <div class="tr-levels">
+    <label class="check"><input type="checkbox" id="tr-level-sentence" checked> Sentence</label>
+    <label class="check"><input type="checkbox" id="tr-level-clause" checked> Clause</label>
+    <label class="check"><input type="checkbox" id="tr-level-word" checked> Word in context</label>
+    <label class="check" title="What breaking a sentence down shows: the sentence, each word in it, and each word on its own (word by word)"><input type="checkbox" id="tr-level-breakdown" checked> Breakdown (word by word)</label>
+  </div>
+  <p class="hint tr-level-hint">Word-level preparation can take longer. In Word mode, hover over or click a word to show its contextual meaning. Breakdown saves what breaking a sentence down shows (the sentence, each word in it and each word on its own), so it works offline.</p>
+  <div id="tr-sentence-picker" class="tr-sentence-picker" hidden></div>
+  <button class="btn" id="tr-book">Prepare current page</button>
+  <div class="rec-progress" id="tr-progress" role="progressbar" aria-label="Translation preparation" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden><div></div></div>
+  <p class="hint" id="tr-status" aria-live="polite"></p>
+  <div class="tr-again" id="tr-again" hidden>
+    <button class="btn small" id="tr-again-yes" title="Download all these translations again from the translator, replacing the saved ones">Prepare again</button>
+    <button class="btn small" id="tr-again-no">No need</button>
+  </div>
+  <div class="tr-steps" id="tr-steps" hidden></div>
   </div>
   <p class="pop-foot" id="logout-row" hidden><button class="link-btn" id="btn-logout">Log out on this device</button></p>
 </div>
@@ -155,6 +212,7 @@
   <!-- The library: the home screen (web/js/library.js). -->
   <section class="library" id="library" hidden aria-label="Library">
     <div class="lib-head">
+      <button class="icon-btn" id="lib-tree-btn" title="Hide the tree of branches" aria-label="Tree of branches" aria-controls="lib-tree" aria-expanded="true" hidden><svg class="i"><use href="#i-sidebar"/></svg></button>
       <div class="tabs lib-tabs" role="tablist">
         <button role="tab" data-scope="public" aria-selected="false">Public library</button>
         <button role="tab" data-scope="mine" aria-selected="false">My books</button>
@@ -164,11 +222,21 @@
       <div class="lib-tools">
         <label class="search-field lib-search"><svg class="i"><use href="#i-search"/></svg><input id="lib-q" type="search" placeholder="Find a book" aria-label="Find a book" autocomplete="off"></label>
         <button class="btn primary" id="lib-add"><svg class="i"><use href="#i-plus"/></svg>Add a book</button>
+        <button class="btn" id="lib-migrate">Import old app</button>
         <span class="lib-account" id="lib-account"></span>
       </div>
     </div>
-    <div class="lib-body" id="lib-body"></div>
-    <footer class="lib-foot"><a href="/web/terms.html" target="_blank">Terms and privacy</a> · Lingua Books: every sentence clickable, read aloud, translated.</footer>
+    <!-- The branches as a tree on the left (like the folders of a file manager); the open branch on the right. -->
+    <div class="lib-main" id="lib-main">
+      <nav class="lib-tree" id="lib-tree" aria-label="Tree of branches" hidden></nav>
+      <div class="lib-split" id="lib-split" role="separator" aria-orientation="vertical" aria-label="Width of the tree" tabindex="0"
+        aria-valuemin="180" aria-valuemax="520" aria-valuenow="270" title="Drag to make the tree wider or narrower"></div>
+      <div class="lib-pane">
+        <div class="lib-body" id="lib-body"></div>
+        <footer class="lib-foot"><a href="/web/terms.html" target="_blank">Terms and privacy</a> · Lingua Books: every sentence clickable, read aloud, translated.
+          <label class="lib-device"><svg class="i"><use href="#i-device"/></svg><span>Screen</span><select class="select small device-select" id="lib-device" aria-label="The app made for"></select></label></footer>
+      </div>
+    </div>
   </section>
   <aside class="drawer" id="drawer" aria-label="Pages and resources" hidden>
     <div class="tabs" role="tablist">
@@ -189,6 +257,23 @@
     <section class="stage" id="stage" tabindex="-1" aria-label="Book page">
       <div class="spread" id="spread"></div>
     </section>
+    <div class="offline-voice-badge" id="offline-voice-badge" hidden aria-label="Offline voice active">OFFLINE</div>
+    <!-- Adding new words (words.js): how many there are on the page, Flashcards, Done. -->
+    <div class="reading-pill collect-pill" id="collect-bar" role="group" aria-label="Adding new words" hidden>
+      <svg class="i"><use href="#i-collect"/></svg>
+      <span class="collect-pick"><span>Add to</span>
+        <button class="btn small collect-cat" id="collect-cat" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="collect-cats" title="The category the new words go to: choose another, or add one"><span class="cat-dot" id="collect-dot"></span><span class="name" id="collect-cat-name">New words</span><svg class="i"><use href="#i-chev-up"/></svg></button>
+      </span>
+      <!-- The categories: a panel opening upwards from the bar — choose one, add one, delete one. -->
+      <div class="collect-cats" id="collect-cats" role="dialog" aria-label="Categories of new words" hidden>
+        <p class="sub-head">New words go to</p>
+        <div class="collect-cat-list" id="collect-cat-list" role="radiogroup" aria-label="Categories"></div>
+        <div class="collect-cat-add"><input class="input" id="collect-new-name" maxlength="40" placeholder="A new category" aria-label="Name of a new category"><button class="btn small primary" id="collect-new-add" type="button"><svg class="i"><use href="#i-plus"/></svg>Add</button></div>
+      </div>
+      <span id="collect-label" aria-live="polite">New words</span>
+      <button class="btn small" id="collect-cards" title="Practice them as flashcards (C)"><svg class="i"><use href="#i-cards"/></svg>Flashcards</button>
+      <button class="btn small primary" id="collect-done" title="Stop adding new words (N or Esc)">Done</button>
+    </div>
     <div class="reading-pill" id="reading-pill" role="status" hidden>
       <span class="pulse" aria-hidden="true"></span><span id="reading-label">Reading</span>
       <button class="btn small" id="reading-toggle" title="Pause or continue (Space)"><svg class="i"><use href="#i-pause"/></svg>Pause</button>
@@ -213,6 +298,7 @@
     <div class="tab-body" data-tab="text">
       <div class="panel-actions" id="read-actions">
         <button class="btn primary" id="read-page" title="Read the page from the start. Tip: click any sentence to read from there; click it again to pause."><svg class="i"><use href="#i-play"/></svg>Read page aloud</button>
+        <button class="icon-btn" id="read-area" title="Read an area aloud: draw a box on the page around the sentences to read" aria-label="Read an area aloud" aria-pressed="false"><svg class="i"><use href="#i-select-area"/></svg></button>
         <button class="icon-btn" id="tr-toggle" title="Show translations (L)" aria-label="Show translations" aria-pressed="false"><svg class="i"><use href="#i-languages"/></svg></button>
         <button class="icon-btn" id="edit-text" title="Correct the text (E)" aria-label="Correct the text"><svg class="i"><use href="#i-pencil"/></svg></button>
         <button class="icon-btn" id="copy-text" title="Copy the page text" aria-label="Copy the page text"><svg class="i"><use href="#i-copy"/></svg></button>
@@ -225,16 +311,30 @@
         <span class="edit-status" id="edit-status" role="status"></span>
         <div class="edit-tools" id="edit-tools" role="toolbar" aria-label="Correct the selected sentence">
           <button class="icon-btn small" data-op="edit" title="Change the text of the selected sentence (Enter, or double-click it)" aria-label="Change the text"><svg class="i"><use href="#i-pencil"/></svg></button>
-          <button class="icon-btn small" data-op="split" title="Split into two sentences" aria-label="Split"><svg class="i"><use href="#i-scissors"/></svg></button>
+          <button class="icon-btn small" data-op="split" title="Split into sentences: click the word that starts each new one (after 。？！ they are marked to begin with), then Split (Enter)" aria-label="Split into sentences"><svg class="i"><use href="#i-scissors"/></svg></button>
           <button class="icon-btn small" data-op="mergePrev" title="Merge with the sentence before" aria-label="Merge with the sentence before"><svg class="i"><use href="#i-merge-up"/></svg></button>
           <button class="icon-btn small" data-op="mergeNext" title="Merge with the sentence after" aria-label="Merge with the sentence after"><svg class="i"><use href="#i-merge-down"/></svg></button>
           <button class="icon-btn small" data-op="up" title="Move up (before the sentence above)" aria-label="Move up"><svg class="i"><use href="#i-arrow-up"/></svg></button>
           <button class="icon-btn small" data-op="down" title="Move down (after the sentence below)" aria-label="Move down"><svg class="i"><use href="#i-arrow-down"/></svg></button>
+          <button class="icon-btn small" data-op="move-click" title="Choose this as the reference, then click sentences in order to place them after it" aria-label="Start ordered sentence moves"><svg class="i"><use href="#i-grip"/></svg></button>
           <button class="icon-btn small" data-op="paragraph" title="New paragraph from this sentence" aria-label="New paragraph"><svg class="i"><use href="#i-pilcrow"/></svg></button>
           <button class="icon-btn small" data-op="mark" title="Mark on page: drag a box around the sentence on the page image" aria-label="Mark on page"><svg class="i"><use href="#i-target"/></svg></button>
+          <button class="icon-btn small" data-op="ocr" aria-pressed="false" title="Re-read areas of the page: draw one box or several, one after the other, then read them and add the missed text" aria-label="Re-read an area"><svg class="i"><use href="#i-transcribe"/></svg></button>
           <button class="icon-btn small" data-op="add" title="Add a new sentence after this one" aria-label="Add a sentence after"><svg class="i"><use href="#i-plus"/></svg></button>
           <button class="icon-btn small danger" data-op="delete" title="Delete the sentence (Delete key; Undo brings it back)" aria-label="Delete"><svg class="i"><use href="#i-trash"/></svg></button>
           <span class="edit-sel" id="edit-sel"></span>
+        </div>
+        <div class="edit-bulk" id="edit-bulk" role="toolbar" aria-label="The page and the chosen sentences">
+          <button class="tbtn" data-op="read-page" title="Read the whole page again with OCR: review what is found, then it replaces the page's text"><svg class="i"><use href="#i-transcribe"/></svg>Read the whole page again</button>
+          <button class="tbtn" data-op="ocr" aria-pressed="false" title="Draw boxes around text on the page, one or several, one after the other. Then OCR reads them; review what was found in each and add the recovered text"><svg class="i"><use href="#i-transcribe"/></svg>Re-read text by area</button>
+          <button class="tbtn" data-op="order-areas" aria-pressed="false" title="Put the sentences in order: draw boxes around the parts of the page (paragraphs, dialogues, columns) in the order they should be read"><svg class="i"><use href="#i-arrow-down"/></svg>Order by areas</button>
+          <button class="tbtn" data-op="check-area" aria-pressed="false" title="Select existing sentence entries inside a box. This does not read or recognize text"><svg class="i"><use href="#i-select-area"/></svg>Select sentences by area</button>
+          <button class="tbtn" data-op="check-all" title="Choose every sentence of the page">Choose all</button>
+          <span class="bulk-chosen bulk-count" id="bulk-count" hidden></span>
+          <button class="tbtn danger bulk-chosen" data-op="delete-checked" title="Delete the chosen sentences (Delete key; Undo brings them back)" hidden><svg class="i"><use href="#i-trash"/></svg>Delete</button>
+          <button class="tbtn" data-op="merge-checked" aria-pressed="false" title="Use the selected sentence as the start, then click following sentences in order"><svg class="i"><use href="#i-merge-down"/></svg>Merge in order</button>
+          <button class="tbtn bulk-chosen" data-op="move-checked" title="Move the chosen sentences after the selected sentence (click it first)" hidden><svg class="i"><use href="#i-arrow-down"/></svg>Move after selected</button>
+          <button class="tbtn bulk-chosen" data-op="check-none" title="Choose none" hidden>Clear</button>
         </div>
       </div>
       <div class="text-view" id="text-view"></div>
@@ -256,7 +356,7 @@
 
     <div class="tab-body" data-tab="audio" hidden>
       <div class="panel-actions" id="rec-actions">
-        <button class="btn primary" id="rec-new" title="Choose sentences and make an MP3 with a natural voice"><svg class="i"><use href="#i-plus"/></svg>New audio</button>
+        <button class="btn primary" id="rec-new" title="Create a separate new audio. Use the regenerate icon on a saved audio to edit or replace it."><svg class="i"><use href="#i-plus"/></svg>New audio</button>
         <div class="seg small" id="rec-filter" role="radiogroup" aria-label="Show">
           <button role="radio" data-f="page">This page</button><button role="radio" data-f="book">This book</button><button role="radio" data-f="all">All</button>
         </div>
@@ -266,10 +366,26 @@
         <button class="btn" id="rec-cancel">Cancel</button>
         <span class="edit-status" id="rec-count"></span>
       </div>
-      <div class="rec-search" id="rec-search-row">
-        <svg class="i"><use href="#i-search"/></svg><input id="rec-search" type="search" placeholder="Search your audio" aria-label="Search your audio" autocomplete="off">
+      <div class="rec-section" id="rec-pick-section" hidden>
+        <button class="rec-section-toggle" id="rec-pick-toggle" aria-expanded="true">Sentences to include <span>▾</span></button>
+        <div class="rec-pick-view" id="rec-pick-view"></div>
       </div>
-      <div class="rec-view" id="rec-view"></div>
+      <div class="rec-section" id="rec-page-offline-section" hidden>
+        <button class="rec-section-toggle" id="rec-page-offline-toggle" type="button" aria-expanded="false">
+          Offline voice files on this page
+          <span class="rec-section-tail"><span id="rec-page-offline-count"></span><span id="rec-page-offline-chevron">▸</span></span>
+        </button>
+        <div class="page-offline-list" id="rec-page-offline-list" hidden></div>
+      </div>
+      <div class="rec-section" id="rec-audio-section">
+        <button class="rec-section-toggle" id="rec-audio-toggle" aria-expanded="true">Saved audio <span>▾</span></button>
+        <div class="rec-audio-content" id="rec-audio-content">
+          <div class="rec-search" id="rec-search-row">
+            <svg class="i"><use href="#i-search"/></svg><input id="rec-search" type="search" placeholder="Search your audio" aria-label="Search your audio" autocomplete="off">
+          </div>
+          <div class="rec-view" id="rec-view"></div>
+        </div>
+      </div>
     </div>
   </aside>
 </main>

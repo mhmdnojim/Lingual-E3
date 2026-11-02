@@ -29,7 +29,7 @@
 <!-- ============================================================ OVERVIEW -->
 <section class="chapter" id="ch-overview">
   <div class="hero">
-    <span class="audience">For: anyone rebuilding or changing this app — you or a developer</span>
+    <span class="audience">For: anyone rebuilding or changing this app — you, a developer, or another AI (see <a href="#react">12. Rebuild it in React</a>)</span>
     <h1>From a dead Flash app to a <span>modern browser app</span></h1>
     <p class="lead">This guide explains how the old <b>American English File 2e Level 3</b> classroom software was rebuilt to run in a web browser.
       It shows every step, every feature, the real code (read directly from the project files), every screenshot, and small live demos you can try here.</p>
@@ -52,8 +52,8 @@
   <p>Adobe stopped Flash at the end of 2020, and XULRunner is no longer maintained. The program also checked a licence online. So on a modern Windows 11 computer the app no longer worked.</p>
 
   <h3 id="new-app">What the new app does</h3>
-  <p>The new version is a small website that runs <b>only on your own computer</b>. A tiny Python server sends the files to Microsoft Edge or Chrome. No Flash and no internet are needed (except for the optional “Natural” voices).</p>
-  <p>The content was converted <b>once</b> by build scripts. The page images, audio and answer keys come from the original disc. The page text was read from the page images with OCR, and it is what makes every sentence, clause and word clickable.</p>
+  <p>The new version is a small website. A tiny Python server sends the files to Microsoft Edge or Chrome — on your own computer, to phones on the home Wi-Fi, or as a public website (<b>Lingua Books</b>, where anyone can add a text, a PDF or photos of pages and read them the same way). No Flash is needed, and no internet except for the online “Natural” voices and the first translation of a page.</p>
+  <p>The content was converted <b>once</b> by build scripts. The page images, audio and answer keys come from the original disc. The page text was read from the page images with OCR, and it is what makes every sentence, clause and word clickable. The recordings that had no script on the disc got one from speech recognition.</p>
 
   <h3 id="old-vs-new">Old app vs new app</h3>
   <div class="table-wrap"><table>
@@ -66,9 +66,43 @@
     <tr><td>Video</td><td>FLV (VP6 codec) in Flash</td><td>MP4 (H.264), plays in any browser</td></tr>
     <tr><td>Answer keys</td><td>Flash SWF files</td><td>Same SWF files, played by Ruffle (a Flash emulator in WebAssembly)</td></tr>
     <tr><td>Search</td><td>—</td><td>Full-text search in one or all three books</td></tr>
-    <tr><td>Text corrections</td><td>—</td><td>Edit, split, merge, move, add, delete sentences; saved per page</td></tr>
+    <tr><td>Text corrections</td><td>—</td><td>Edit, split, merge, move, add, delete sentences; re-read an area with OCR; saved per page</td></tr>
+    <tr><td>Scripts</td><td>Only some recordings had one</td><td>Every recording and video: 204 scripts made by speech recognition (faster-whisper)</td></tr>
+    <tr><td>Translation</td><td>—</td><td>43 languages, under each sentence or in a popup; prepared once, then offline</td></tr>
+    <tr><td>Own MP3s</td><td>—</td><td>Natural or Windows voices, with subtitles; voice files kept in the browser for offline use</td></tr>
+    <tr><td>Vocabulary</td><td>—</td><td>New words, clauses and sentences in categories, practised as flashcards by lesson or File</td></tr>
+    <tr><td>Other books</td><td>—</td><td>A library: a text, a PDF or photos of pages become books like these; import of old iTools apps</td></tr>
   </table></div>
 
+  <h3 id="rebuild-another-app">Can another old app be rebuilt as a web app?</h3>
+  <p><b>Usually, yes—if you can provide the app folder and the files it depends on.</b> It is a careful rebuild, not a one-click format conversion: first identify the old technology and assets, then reproduce the useful screens and behavior in a browser while keeping the original folder untouched. Results depend on what the folder contains; missing source code, server services, passwords, DRM or proprietary formats can limit what can be reproduced.</p>
+  <p>You can add the raw app folder to this workspace or provide it as a ZIP. Include the app files, local data/content folders, and any setup or usage notes. Do not include passwords, private keys, personal user data, or material you are not allowed to copy. Keep the original app and source folder as a read-only reference.</p>
+  <p>A rebuild can be tracked with numbered milestones and a real progress indicator. Each step is marked complete only after its checks pass; if a step needs a decision or the source is unclear, it is shown as waiting rather than pretending the work is finished.</p>
+  <ol class="steps">
+    <li><b>Inventory and safety:</b> list files and formats, identify the entry point and dependencies, note licenses and data boundaries, and make a backup/working copy.</li>
+    <li><b>Understand the old app:</b> inspect source and configuration, run it safely if possible, capture its screens and workflows, and map its features to the files that implement them.</li>
+    <li><b>Plan the web version:</b> agree which features and data to preserve, choose a browser/server architecture, and define what cannot be reproduced exactly.</li>
+    <li><b>Build a small pilot:</b> implement the main screen and one representative workflow using a small sample of the original data.</li>
+    <li><b>Review and refine:</b> compare behavior and screenshots, collect your corrections, and update the design before scaling up.</li>
+    <li><b>Convert in batches:</b> process data/assets with scripts where possible; show per-step and per-batch counts, current item, failures, and a resume option.</li>
+    <li><b>Verify and package:</b> test the main workflows in a real browser, check that original data remains unchanged, then prepare run/deploy instructions and backups.</li>
+  </ol>
+  <p><b>Technique:</b> use an AI coding assistant to explain unfamiliar code, trace workflows, draft and revise the web implementation, and interpret screenshots. Pair that with ordinary engineering tools—file/type inventories, source search, format-specific parsers, OCR only when needed, checksums, browser automation, and human review. AI is an aid, not a guarantee: generated results must be checked against the original, especially for extracted text and media.</p>
+
+  <h3 id="import-old-app">Import an old app's books inside Lingua Books</h3>
+  <p>The library's <b>Import old app</b> button is now implemented. It imports supported content into this reader without VS Code, Codex or an AI key. Choose a ZIP or use the folder picker (a typed folder path alone cannot upload files). Keep the old app's directory structure, especially <code>.shared/content</code>, <code>.shared/books</code> and <code>.shared/assets</code> for iTools.</p>
+  <ol class="steps">
+    <li><b>Upload files:</b> see byte and file progress. Interrupted uploads can continue by selecting the same source again.</li>
+    <li><b>Inspect the old app:</b> identify iTools book assets, PDFs and page images. Show an inventory and limitations. Uploaded program files are never run.</li>
+    <li><b>Choose content:</b> select collections, language(s), page range, OCR settings, repeated corrections and whether to preserve supported media.</li>
+    <li><b>Review samples:</b> check 1–5 pages, adjust settings and regenerate if needed. Conversion requires explicit approval of the current sample.</li>
+    <li><b>Convert pages:</b> save each page independently with checkpoints. Cancel pauses; retry reuses valid completed pages.</li>
+    <li><b>Validate and export:</b> open private books in the existing reader or download their content ZIP and import report. Each step shows real counts and progress.</li>
+  </ol>
+  <p><b>What is carried over:</b> page images, extracted text, supported MP3/WAV/OGG/M4A audio, MP4/WebM video, XML cue transcripts and remapped page links. The imported books gain the current reader's editing and voice tools. Voice generation is a separate reader action.</p>
+  <p><b>Limits:</b> this is a content importer, not an automatic rewrite of arbitrary application logic. Flash/SWF activities and FLV video are currently reported as unsupported. Unrecognized formats need another adapter. The export is a content archive, not a standalone website. OCR can make mistakes: review the samples and correct sentences after import.</p>
+  <p><b>Implementation:</b> <code>web/migration.py</code> provides safe ZIP/folder ingestion, format adapters, tile stitching, PDF/OCR extraction, ownership checks, durable jobs and exports. <code>web/js/migration.js</code> provides the guided UI. No external AI calls are made. Jobs live under the app data directory's <code>migrations/</code>; books live under <code>books/</code>. See <code>web/README.md</code> for usage and <code>deploy/README.md</code> for hosted limits, OCR and backups.</p>
+  <p>Use <b>Remove import files</b> to free a stopped job's source, previews and export after confirmation. It removes unfinished imported books but keeps completed library books and the original folder. Removed import progress cannot be recovered.</p>
   <h3 id="feature-tour">Feature tour</h3>
   <p>Click a card to jump to how it works.</p>
   <div class="cards">
@@ -87,6 +121,17 @@
     <a class="card" href="#f-phone"><img src="img:phone" alt=""><div><b>Phones and tablets</b><span>Android and iPhone: tap, swipe, pinch.</span></div></a>
     <a class="card" href="#f-host"><img src="img:phone-page" alt=""><div><b>Your own website</b><span>Login, GitHub, a VPS with HTTPS.</span></div></a>
     <a class="card" href="#f-theme"><img src="img:dark-mode" alt=""><div><b>Dark mode</b><span>Follows the Windows setting.</span></div></a>
+  </div>
+  <div class="callout tip"><b class="tag">New in this edition</b>
+    <ul>
+      <li><a href="#f-words">6.24 New words and flashcards</a> — collect words, clauses and sentences in categories; practise them by page, lesson, File or book.</li>
+      <li><a href="#f-transcribe">6.25 Speech recognition</a> — scripts for the 204 recordings and videos that had none.</li>
+      <li><a href="#f-offline-audio">6.26 Offline voice files and Windows voices</a> — generate a page or a whole book once, then click sentences without internet.</li>
+      <li><a href="#f-translate">6.19 Translation</a> — <b>Prepare</b> a page, chosen sentences or the book (sentences, clauses, words in context) for offline use.</li>
+      <li><a href="#f-edit">6.17 Text corrections</a> — re-read an area or the whole page with OCR, put a page in order by areas, choose sentences by area.</li>
+      <li><a href="#f-import">6.27 Importing an old app</a> — the importer in the library, step by step.</li>
+      <li><a href="#react">12. Rebuild it in React</a> — what to give Lovable (or another AI) to rebuild the app as a React app, with the brief and the prompts.</li>
+    </ul>
   </div>
 </section>
 
@@ -110,6 +155,7 @@
         <li>Windows OCR with the English (United States) language</li>
         <li>Node.js (only to download Ruffle and to run the tests)</li>
         <li>About 1 GB of free disk space and 25–30 minutes</li>
+        <li>Optional, for scripts by speech recognition: <code>Setup transcription.bat</code> (faster-whisper and the <code>base.en</code> model, about 420 MB)</li>
       </ul></td></tr>
   </table></div>
 
@@ -130,6 +176,9 @@
     <tr><td><kbd>+</kbd> <kbd>−</kbd> <kbd>0</kbd></td><td>Zoom in, zoom out, fit</td><td><kbd>S</kbd></td><td>One page or two pages</td></tr>
     <tr><td><kbd>/</kbd></td><td>Search</td><td><kbd>Space</kbd></td><td>Pause or continue reading (or the recording)</td></tr>
     <tr><td><kbd>Esc</kbd></td><td>Stop reading, close popups</td><td><kbd>E</kbd></td><td>Start or finish correcting the text</td></tr>
+    <tr><td><kbd>L</kbd></td><td>Translations in the Text list: on / off</td><td><kbd>R</kbd></td><td>Repeat each sentence: once → 2 → 3 → 4 → 5 → ∞</td></tr>
+    <tr><td><kbd>F</kbd></td><td>Follow the reading: on / off</td><td><kbd>N</kbd></td><td>Add new words: on / off</td></tr>
+    <tr><td><kbd>C</kbd></td><td>Flashcards</td><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Undo the last correction</td></tr>
   </table></div>
 </section>
 
@@ -184,6 +233,15 @@
     <tr><td><code>search.js</code></td><td>Full-text search across the books.</td></tr>
     <tr><td><code>editor.js</code></td><td>Text corrections: the editable model, every correction, word-box matching, undo and saving.</td></tr>
     <tr><td><code>segment.js</code></td><td>Clause splitting in the browser (same rules as the build), used after corrections.</td></tr>
+    <tr><td><code>recordings.js</code></td><td>My audio: choosing sentences, creating MP3s on the server, the list, the page icons, highlighting while they play; offline voice files for a page or a book.</td></tr>
+    <tr><td><code>offline-audio.js</code></td><td>The browser's store (IndexedDB) of the offline voice files.</td></tr>
+    <tr><td><code>voice-options.js</code></td><td>Tells Windows voices and online Natural voices apart, and finds the server voice that matches the browser voice.</td></tr>
+    <tr><td><code>translation.js</code></td><td>Translations: the language, under each sentence, the popup on the page, <b>Prepare</b> for offline use, the scripts of recordings and videos.</td></tr>
+    <tr><td><code>follow.js</code></td><td>Following the reading: the sentence being read stays in view unless the person scrolls away.</td></tr>
+    <tr><td><code>words.js</code></td><td>New words: collecting them in categories, the marks on the page, the flashcards.</td></tr>
+    <tr><td><code>transcription.js</code></td><td>The <b>Transcribe</b> button of a recording without a script.</td></tr>
+    <tr><td><code>library.js</code></td><td>The library (home screen): books, adding a book with a sample first, sharing, reports, accounts, the admin page.</td></tr>
+    <tr><td><code>migration.js</code></td><td>The guided import of an old app (upload, inspect, choose, sample, convert, export).</td></tr>
     <tr><td><code>util.js</code></td><td>Small helpers: element creation, saved settings, JSON loading, downloads, messages.</td></tr>
   </table></div>
   <div class="snip" data-file="web/js/main.js" data-from="import { $, $$" data-n="6" data-title="imports"></div>
@@ -424,8 +482,13 @@ Adam started off OK. However, after an hour, Adam decided that he was going too 
     <tr><td><code>POST /api/recordings</code>, <code>GET /api/jobs/&lt;id&gt;</code></td><td>Starts making an MP3, then reports its progress</td></tr>
     <tr><td><code>GET /api/recordings</code>, <code>PUT</code> / <code>DELETE /api/recordings/&lt;id&gt;</code></td><td>Lists, renames and deletes My audio MP3s</td></tr>
     <tr><td><code>GET /api/tr-languages</code></td><td>The 43 translation languages</td></tr>
-    <tr><td><code>POST /api/translate</code>, <code>/api/translate-word</code></td><td>Translations of a page's sentences (saved in <code>web\translations</code>), and of one word</td></tr>
-    <tr><td><code>GET /api/version</code>, <code>POST /api/quit</code></td><td>Lets the page notice an older server, and lets a new start of the app replace an old one</td></tr>
+    <tr><td><code>POST /api/translate</code>, <code>/api/translate-word</code></td><td>Translations of a page's sentences (saved in <code>web\translations</code>), and of words in their sentence (<code>cachedOnly</code>: only what is saved)</td></tr>
+    <tr><td><code>POST /api/ocr-region/&lt;book&gt;/&lt;page&gt;</code></td><td>Reads one box of a page image again with OCR and returns it as page text, to review (<a href="#f-edit">6.17</a>)</td></tr>
+    <tr><td><code>GET</code> / <code>POST /api/words</code>, <code>PUT</code> / <code>DELETE /api/words/&lt;id&gt;</code>, <code>/api/words/categories</code></td><td>New words and their categories; a flashcard answer (<a href="#f-words">6.24</a>)</td></tr>
+    <tr><td><code>POST /api/transcribe</code>, <code>GET /api/transcript?src=…</code></td><td>Speech recognition of a recording without a script, and how far it is (<a href="#f-transcribe">6.25</a>; never on the website)</td></tr>
+    <tr><td><code>/api/migrations…</code></td><td>The import of an old app: upload, analyze, sample, convert, cancel, discard, preview, export, report (<a href="#f-import">6.27</a>)</td></tr>
+    <tr><td><code>/api/me</code>, <code>/api/books…</code>, <code>/api/admin…</code></td><td>Accounts and the library (<a href="#f-library">6.22</a>)</td></tr>
+    <tr><td><code>GET /api/version</code>, <code>POST /api/quit</code></td><td>Lets the page notice an older server (<code>API_VERSION</code> 17), and lets a new start of the app replace an old one</td></tr>
   </table></div>
   <div class="snip" data-file="web/server.py" data-from="def api_get(self, path):"></div>
   <div class="snip" data-file="web/server.py" data-from="def do_PUT(self):"></div>
@@ -478,7 +541,7 @@ Adam started off OK. However, after an hour, Adam decided that he was going too 
   <div class="snip" data-file="web/js/main.js" data-from="setMode(mode) {"></div>
 
   <h3 id="f-speech">6.4 Text to speech (the “voice”)</h3>
-  <figure class="narrow"><img src="img:voice-settings" alt="Voice settings"><figcaption>The settings (sliders button), <b>Voice</b> tab: choose a voice, the speed, the pause between sentences, how many times each sentence is read (1–10 or ∞) and word highlighting. Edge also lists the online “Natural” voices. The <b>Translation</b> tab is described in <a href="#f-translate">6.19</a>.</figcaption></figure>
+  <figure class="narrow"><img src="img:voice-settings" alt="Voice settings"><figcaption>The settings (sliders button), <b>Voice</b> tab: which language to read, the English voice (here a Windows voice, with <b>Generate</b> for <a href="#f-offline-audio">offline voice files</a>), the Chinese voice, reading the translation, the speed, the pause between sentences, how many times each sentence is read (1–10 or ∞) and word highlighting. Edge also lists the online “Natural” voices. The <b>Translation</b> and <b>Follow</b> tabs are described in <a href="#f-translate">6.19</a> and <a href="#f-follow">6.23</a>.</figcaption></figure>
   <p>The app uses the browser's <b>Web Speech API</b> (<code>speechSynthesis</code>). Nothing is installed: Edge and Chrome use the Windows voices (David, Zira, Mark — offline), and Edge adds high-quality online <b>Natural</b> voices.</p>
   <ul>
     <li><b>Choosing a voice:</b> English voices are ranked: “Natural” first, then US, then UK.</li>
@@ -488,7 +551,7 @@ Adam started off OK. However, after an hour, Adam decided that he was going too 
     <li><b>Clean speech text:</b> bullets are removed, <code>p.104</code> becomes “page 104”, dashes become pauses, and exercise numbers glued to words (<code>2was</code>) are removed.</li>
   </ul>
   <div class="snip" data-file="web/js/speech.js" data-from="function rank(v) {"></div>
-  <div class="snip" data-file="web/js/speech.js" data-from="speak(text, cb = {}, voiceOverride) {"></div>
+  <div class="snip" data-file="web/js/speech.js" data-from="speak(text, cb = {}) {"></div>
   <div class="snip" data-file="web/js/pagetext.js" data-from="speech(a, b) {"></div>
   <div class="snip" data-file="web/js/pagetext.js" data-from="function speakable(t) {"></div>
   <div class="demo" data-demo="tts">
@@ -534,6 +597,10 @@ Adam started off OK. However, after an hour, Adam decided that he was going too 
   <div class="snip" data-file="web/js/main.js" data-from="this.cycleRepeat = () => {"></div>
   <div class="snip" data-file="web/js/recordings.js" data-from="replay(at, ms) {"></div>
 
+  <h4>Read an area of the page</h4>
+  <p>The <b>area</b> button next to <b>Read page aloud</b> (Text tab): draw a box on the page, and the sentences in it — in Clause mode the clauses — are read one after the other, each highlighted while it is read. A sentence belongs to the box when at least half of its placed words have their centre inside it; words without a place on the page (added by hand) do not count. The queue goes to the same <code>Reader.startList</code> as a click, so pause, repeat, the pause between sentences and following work the same. <kbd>Esc</kbd> cancels the box.</p>
+  <div class="snip" data-file="web/js/main.js" data-from="  readArea() {"></div>
+
 <h3 id="f-text">6.6 Text extraction: the Text panel</h3>
   <p>The side panel shows the page text by paragraph, with <b>every sentence numbered and on a line of its own</b> (<code>&lt;span class="sline"&gt;</code> with <code>display: block</code>); a translation goes under its sentence. Each word is a <code>&lt;span&gt;</code> <b>with its trailing space</b>, so highlights have no gaps. Pointing and clicking in the panel works exactly like on the page, and both stay in sync (<code>markPanel</code>). You can also select text with the mouse to copy part of it.</p>
   <ul>
@@ -560,6 +627,7 @@ Adam started off OK. However, after an hour, Adam decided that he was going too 
     <li><b>Over the script</b>: the two translation buttons and the language (the same <code>ScriptTranslation</code> as for <a href="#f-video">videos</a>; the box when pointing is beside the panel, over the page), and a <b>repeat</b> button.</li>
     <li><b>Repeat each line.</b> The repeat buttons (top bar, Script tab, video window) and the slider in the Voice tab are one setting. While a recording plays, the transcript looks every frame (<code>requestAnimationFrame</code>, not the 4-a-second <code>timeupdate</code>, so the next line is not heard) whether the next line is about to start; if the line must be heard again, it goes back to its start (<code>checkRepeat</code>; the last line on <code>ended</code>). Its time shows “2/3”. A jump made by the person (a click on a line, the seek bar) starts counting again; <code>seeking</code> events of its own jumps are told apart. My audio MP3s keep their own repeat (with the pause between sentences, <code>recordings.js</code>).</li>
   </ul>
+  <p><b>Recordings without a script on the disc</b> (204 of the 319) have one made by speech recognition; the Script tab then says “Made by speech recognition: it may have mistakes.” How they are made: <a href="#f-transcribe">6.25</a>.</p>
   <div class="snip" data-file="web/js/media.js" data-from="update(ms) {"></div>
   <div class="snip" data-file="web/js/media.js" data-from="  checkRepeat() {"></div>
   <div class="snip" data-file="web/js/media.js" data-from="async play(asset, {"></div>
@@ -646,7 +714,7 @@ Adam started off OK. However, after an hour, Adam decided that he was going too 
   <div class="table-wrap"><table>
     <tr><th>Button (bar at the top)</th><th>What it does to the selected sentence</th></tr>
     <tr><td>Pencil · <kbd>Enter</kbd> · double click</td><td>Change the sentence text — fix a word, a capital letter, punctuation… (<kbd>Enter</kbd> saves, <kbd>Esc</kbd> cancels)</td></tr>
-    <tr><td>Split</td><td>Shows the words as buttons; click the word that starts the new sentence.</td></tr>
+    <tr><td>Split</td><td>Shows the words as buttons; click the word that starts each new sentence (in the list, or on the page; again: not any more). The words after 。？！ . ? ! are marked to begin with (not “Mr.” or “……”). Each new sentence is outlined in its color on the page with the number it will have, and listed so; <b>Split into N sentences</b> (or <kbd>Enter</kbd>) makes them all at once (<code>OPS.splitAt</code>, one step to undo).</td></tr>
     <tr><td>Merge ↑ / Merge ↓</td><td>Join with the sentence before / after. If that sentence is in another paragraph, the two paragraphs are joined (for a sentence that OCR cut in the middle).</td></tr>
     <tr><td>Drag and drop</td><td>Drag a sentence by the dots on its left; a blue line shows where it will go — between two sentences, at the end of a paragraph or the start of the next. The list scrolls by itself near its edges.</td></tr>
     <tr><td>Move up / Move down</td><td>Swap places with the sentence before / after, also across paragraphs.</td></tr>
@@ -655,6 +723,11 @@ Adam started off OK. However, after an hour, Adam decided that he was going too 
     <tr><td>Mark on page</td><td>Drag a box around the sentence on the page image; its words are laid out inside the box so it can be clicked and highlighted there.</td></tr>
     <tr><td>Delete</td><td>Remove the sentence.</td></tr>
     <tr><td>Undo · Restore</td><td>Undo the last change (<kbd>Ctrl</kbd>+<kbd>Z</kbd>, up to 80 steps, it also goes back to the sentence that was selected) · go back to the original OCR text of the page.</td></tr>
+    <tr><td>Re-read an area</td><td>Draw a box around text that OCR missed or read badly, or several boxes one after the other (numbered on the page; <b>Take back the last box</b>; then <b>Read</b>, or <kbd>Enter</kbd>; each area is reviewed and used on its own, all in one step to undo; while reviewed, each sentence found is outlined on the page in its color with its number, unticked ones grey, and <b>+ Draw more areas</b> adds boxes to the same review, its changes kept):the server reads just that box again (<code>POST /api/ocr-region</code>) and the app shows what it found, to review, before adding it or replacing the words there. The new sentences go where they are on the page (replacing: where the old words were), so the sentences stay numbered in order. For a book in another language: that language and English, only that language, or only English.</td></tr>
+    <tr><td>Read the whole page again</td><td>The same for the whole page, step by step with a bar (its steps come from the server as lines of JSON while it reads: <code>"progress": true</code>; <b>Stop</b> or <kbd>Esc</kbd> stops it). The corrections stay: the page is compared with its text as it was made (<code>GET /api/text/…?original=1</code>), and the sentences whose text, place or split was changed, and those typed, are kept as they are, with what OCR reads in their places left out. Text deleted before comes back unticked. The new sentences go where the old ones they cover were, so the order as corrected stays too; then they replace the rest of the page's text.</td></tr>
+    <tr><td>Put in order by areas</td><td>Draw boxes around the parts of the page (paragraphs, dialogues, columns) in the order they should be read: the sentences of each box become a paragraph, in that order — for pages whose reading order OCR got wrong.</td></tr>
+    <tr><td>Choose by area · Choose all</td><td>Tick many sentences at once (a box on the page, or every sentence); then <b>Delete</b>, <b>Merge</b> or <b>Move after</b> the selected sentence works on all of them.</td></tr>
+    <tr><td>Move by clicks</td><td>Choose a sentence as the reference, then click sentences in the order they should follow it.</td></tr>
   </table></div>
   <figure><img src="img:editor-drag" alt="Dragging a sentence"><figcaption>Drag and drop: the sentence follows the pointer and the blue line shows where it will be dropped.</figcaption></figure>
   <div class="fig-row">
@@ -687,9 +760,26 @@ Adam started off OK. However, after an hour, Adam decided that he was going too 
   <div class="snip" data-file="web/js/editor.js" data-from="editInline(view, bi, si) {"></div>
   <div class="snip" data-file="web/js/main.js" data-from="textChanged(view, unit) {"></div>
   <div class="snip" data-file="web/js/main.js" data-from="let pending = null, tapLine = null, tapAt = 0;" data-to="this.editor.editInline(this.views[Number(line.dataset.v)]"></div>
+  <h4>Reading an area again with OCR</h4>
+  <p>The box is drawn in page pixels (the same units as the words). The server crops that part of the page image, reads it with the book's OCR (<code>library.read_png</code>: Tesseract or Windows OCR), moves the words back to page coordinates and makes them page text with the same rules as when the book was made (<code>library._doc</code>, which also leaves out pinyin for Chinese books). Nothing is saved yet: the editor shows the sentences found and how many words are in the box now, and the person adds them or lets them replace those words. The paragraphs found stay paragraphs: each row of a list of new words, for example.</p>
+  <h4>Lists of new words</h4>
+  <p>A box of new words (生词 New Words) has rows of a number, a Chinese word, its pinyin, its part of speech and its meaning, in columns: “⑧ 服务 fúwù v. serve”. OCR reads such a box line by line across the page, so its rows would come between the lines of the dialogue beside it, and a meaning on several lines (centred on its row: the first lines are above the word) would be cut from its word. <code>segment_text.word_lists</code> finds the list by its parts of speech one under the other (n., v., adj., m., suf. …, at least 3), the words' column (where words in Chinese start in half the rows), and where the meanings start. Rows whose part of speech OCR misread are found by their word or pinyin in its column. The meaning's lines are shared out among the rows so that each row's meaning is around its middle (or starts at its top), and a line on a row's line goes with that row. Each row becomes a paragraph of its own, in the list's order, after the list's title: the word (a sentence as it is), then the meaning; the number, pinyin and part of speech are left out with the pinyin. A list next to another one, or text beside it, ends where a wide gap or another row starts. The table of the parts of speech itself (name, English, abbreviation: nothing after the abbreviation) is not a list.</p>
+  <div class="snip" data-file="web/tools/segment_text.py" data-from="def word_lists(lines, keep_reading=True):"></div>
+  <h4>Choices of an exercise</h4>
+  <p>The choices of an exercise are often on one line: “A 换房子 B 买空调 C 去女儿的初中”. <code>segment_text.choice_starts</code> finds their letters one after the other in a line (A, B, C …, also “a)”, “(C)”, and “_C” as OCR reads it), each with words after it, the first at the start of the line (or three from A), and makes each choice a sentence; so is each question (“(2) …” at the start of a line, or after the last choice on its line). Two letters joined by a word are no choices (“neither A nor B”), nor a number in English going on (“sentences ⏎ (10) to compare”). <code>SENTENCE_RULES</code> 4: the library's pages made before are cut so once, when the app starts (the owner's corrections only cut, by <code>split_languages</code>).</p>
+  <div class="snip" data-file="web/tools/segment_text.py" data-from="def choice_starts(tokens, line_of):"></div>
+  <h4>The speakers of a dialogue</h4>
+  <p>Under the picture of each speaker of a dialogue there is their name, in small characters (“刘明”). Read with the dialogue, the name would be read as part of what is said. <code>library._speakers</code> finds the lines of 1 to 4 characters much smaller than the page's (measured by their longer side, so a flat “一” is not small) and the pictures as OCR reads them (“(O”, “(0)”: round, bigger than the text), and <code>_doc</code> leaves them out in Chinese books. <code>SENTENCE_RULES</code> 5: pages made before lose them once (<code>drop_speakers</code>).</p>
+  <div class="snip" data-file="web/library.py" data-from="def _speakers(lines):"></div>
+  <h4>Full stops OCR did not read</h4>
+  <p>Windows OCR often leaves out the “。” of Chinese in a larger print, and a paragraph without its stops is one sentence. Every character takes a cell of the same width, and so does a stop: <code>segment_text.missed_stops</code> looks at the page picture where a cell is empty after a character (between two, or at the end of the line) and finds a small ring low in it, with nothing above it (<code>_ring</code>: not a comma, a dot, or a closed part of a character as 口). The stop is put on the character before it, so the sentence ends there; a “0” or “o” OCR read for one becomes “。” too. Only for words read by OCR (<code>_doc(…, stops=True)</code>: areas, the whole page, scans and photos): the boxes of a PDF's text do not fit the picture closely enough, and it has its stops. <code>SENTENCE_RULES</code> 6: the owner's corrected pages get their stops back once, and are cut only there (<code>restore_stops</code>, <code>cut_after</code>).</p>
+  <div class="snip" data-file="web/tools/segment_text.py" data-from="def missed_stops(gray, words):"></div>
+  <div class="snip" data-file="web/server.py" data-from="    def post_ocr_region(self, book, page):"></div>
+  <div class="snip" data-file="web/js/editor.js" data-from="  async readAreas(view, rects, sel, read"></div>
+  <div class="snip" data-file="web/js/editor.js" data-from="  orderAreas(model, bi, si, { areas, lineH }) {"></div>
 
   <h3 id="f-myaudio">6.18 My audio: MP3s with a natural voice</h3>
-  <p>Any paragraphs or sentences of a page can be turned into <b>one MP3</b> read by a Microsoft <b>Natural</b> voice. An icon next to the paragraph plays it, the text is highlighted sentence by sentence and word by word while it plays, and the <b>My audio</b> tab keeps all of them (play, download, rename, delete, filter, search).</p>
+  <p>Any paragraphs or sentences of a page can be turned into <b>one MP3</b> read by a Microsoft <b>Natural</b> voice or by a <b>Windows voice</b> installed on the computer that runs the server (David, Zira, Huihui… — made without internet). An icon next to the paragraph plays it, the text is highlighted sentence by sentence and word by word while it plays, and the <b>My audio</b> tab keeps all of them (play, download, rename, delete, filter, search). Options in the dialog: <b>Read the translation</b> (each sentence's translation after or before it, with a voice of that language), a second voice for speaker B in dialogues (<code>A: … B: …</code>), and for Chinese books a Chinese voice (English only, Chinese only, or both).</p>
   <div class="fig-row">
     <figure><img src="img:rec-pick" alt="Choosing sentences"><figcaption>1 · <b>New audio</b>: click the first and the last sentence (everything in between is chosen), tick a whole paragraph, or Ctrl+click single sentences — in the list or on the page. Chosen sentences are blue.</figcaption></figure>
     <figure><img src="img:rec-dialog" alt="The New audio dialog"><figcaption>2 · Title, voice (47 English Natural voices, with <b>Try</b>), speed and pause between sentences.</figcaption></figure>
@@ -707,11 +797,13 @@ Adam started off OK. However, after an hour, Adam decided that he was going too 
     <li><b>Clicking a sentence plays the MP3 first.</b> Before reading a clicked sentence with the live voice, the app looks for an MP3 of this page that contains it (<code>locate</code>: the one in the player first, then the newest). If there is one, the MP3 plays from that sentence — no internet needed; clicking the same sentence pauses, another one jumps. Clause mode starts at the clause's first word, word mode plays just that word. Only sentences without an MP3 use the live voice, and without internet the live voice switches to an offline Windows voice at once.</li>
     <li><b>Subtitles.</b> Every MP3 gets <code>&lt;id&gt;.srt</code> and <code>&lt;id&gt;.vtt</code> with the time of each sentence (made from the JSON timing, also for MP3s made earlier); <b>CC</b> in the list downloads the .srt.</li>
     <li><b>Playing.</b> The normal audio player plays the MP3. Every frame it reports the time; the app finds the sentence and word at that time and highlights them on the page and in the text (<code>follow</code>). If the text was corrected after the MP3 was made, each sentence is found again by its text.</li>
+    <li><b>Windows voices.</b> <code>web/windows_speech.ps1</code> uses .NET's <code>System.Speech</code>: <code>list</code> gives the installed voices (ids start with <code>windows:</code>), <code>speak</code> returns a WAV and the time of every word. <code>tts.py</code> then cuts and joins the sentences exactly like the Natural ones. The voices of the server's computer are listed, never those of another machine, and the app never silently swaps one voice for another.</li>
+    <li><b>When Microsoft refuses.</b> Since October 2026 Microsoft answers HTTP 403 to the Natural voices at edge-tts's old address in many countries; <code>tts.py</code> uses the address Edge itself now uses (<code>api.msedgeservices.com</code>), and if a voice is still refused the app says so and suggests a Windows voice.</li>
   </ol>
   <div class="snip" data-file="web/tts.py" data-from="async def _create(jid, job):" data-to="'start': round(start, 3), 'end': round(now(), 3), 'words': word_times}"></div>
   <div class="snip" data-file="web/tts.py" data-from="def _word_times(words, bounds, start, end):"></div>
-  <div class="snip" data-file="web/js/main.js" data-from="async unitClick(view, unit, fromPage) {"></div>
-  <div class="snip" data-file="web/js/recordings.js" data-from="async locate(view, unit) {"></div>
+  <div class="snip" data-file="web/js/main.js" data-from="  unitClick(view, unit, fromPage) {"></div>
+  <div class="snip" data-file="web/js/recordings.js" data-from="async locate(view, unit, preferredId = null) {"></div>
   <div class="snip" data-file="web/tts.py" data-from="def _write_subtitles(meta, folder):"></div>
   <div class="snip" data-file="web/js/recordings.js" data-from="follow(rec, ms) {"></div>
   <div class="snip" data-file="web/js/recordings.js" data-from="async create(body, progress) {"></div>
@@ -728,25 +820,28 @@ Adam started off OK. However, after an hour, Adam decided that he was going too 
     <tr><td>On the page</td><td>Point at a sentence (or clause): its translation in a box under the line. In Word mode the box also shows “word → translation”.</td></tr>
     <tr><td>While reading</td><td>The translation of the sentence being read is highlighted and kept in view</td></tr>
     <tr><td>Copy / Save</td><td>Each sentence's translation is written after it</td></tr>
-    <tr><td>Whole book</td><td><b>Translate the whole book now</b> goes through every page (can be stopped and continued), so everything works offline</td></tr>
+    <tr><td>Prepare for offline use</td><td>Settings → Translation: <b>Current page</b>, <b>Selected sentences</b> or <b>Whole book</b>, and which levels — <b>Sentence</b>, <b>Clause</b>, <b>Word in context</b>, <b>Breakdown (word by word)</b> — then <b>Prepare</b>. It first checks what is saved already and downloads only what is missing, with a bar for every step (sentences, clauses, words…) and “✓ Completed” at the end. If everything was saved before, it says “✓ Already prepared” and asks: <b>Prepare again</b> or <b>No need</b>. While it works the button says <b>Stop</b>; the next Prepare goes on from there. <b>Read using saved translations only (offline)</b> then never asks the internet.</td></tr>
   </table></div>
   <h4>How it works</h4>
   <ol>
     <li><b>Which translator.</b> The local server (<code>web/translate.py</code>) uses Google's free translators — no account or key. First the address Chrome uses for “Translate this page” (<code>translate-pa.googleapis.com/v1/translateHtml</code>); if it fails, the older address (<code>translate.googleapis.com/translate_a/single?client=gtx</code>). Microsoft's free address, the first idea, no longer answers (404). These are not official APIs for other apps, so they could change one day; the official alternative is the Google Cloud or Azure Translator API with a key.</li>
-    <li><b>Whole paragraphs, but every sentence comes back on its own.</b> A sentence translated alone loses its context (“he”, “it”, tenses). So each paragraph is sent as one piece with its sentences marked: <code>&lt;a i=0&gt;First sentence.&lt;/a&gt; &lt;a i=1&gt;Second one.&lt;/a&gt;</code>. Google translates the paragraph as a whole and keeps the marks, so each sentence's translation is found by its number. A normal page is one request (about 1 s). If Google ever moves a sentence into another one, those sentences are sent again one by one.</li>
+    <li><b>Whole paragraphs, but every sentence comes back on its own.</b> A sentence translated alone loses its context (“he”, “it”, tenses). So each paragraph is sent as one piece with its sentences marked: <code>&lt;a i=0&gt;First sentence.&lt;/a&gt; &lt;a i=1&gt;Second one.&lt;/a&gt;</code>. Google translates the paragraph as a whole and keeps the marks, so each sentence's translation is found by its number. A normal page is one request (about 1 s). If Google ever moves a sentence into another one, those sentences are sent again one by one. A paragraph with sentences in two writings (a Chinese sentence, then the book's own English for it) is sent one sentence at a time from the start: together, Google moves words of the Chinese sentence's translation into the English one's mark (“…resolve issues” | “related to lost items.”).</li>
     <li><b>The backup address.</b> It answers in pieces <code>[translation, original]</code>. The originals, put together, are exactly the text sent, so each piece's position shows which sentence it belongs to (<code>_align</code>).</li>
     <li><b>Not too fast.</b> Google blocks a computer for a while when it gets many requests in a row (it then sends every request to its “unusual traffic” page). So requests to the same address are at least 0.4 s apart, <b>Translate the whole book</b> waits 1.5 s after each page that really needed the translator, and an address that answers “too many requests” is left alone for 2 minutes (4, 8… up to 30 if it happens again) instead of being asked again at once. The server tells the page how long to wait (HTTP 429 with <code>wait</code>); the book translation shows a countdown and goes on by itself, and the Text list tries again by itself.</li>
     <li><b>Saved once, offline after.</b> The result is saved in <code>web\translations\&lt;language&gt;\&lt;book&gt;\&lt;page&gt;.json</code>, keyed by the English sentence. Opening the page again reads the file (no internet). A sentence that was <a href="#f-edit">corrected</a> is new text, so only its paragraph is sent again. Single words (Word mode) are saved in <code>&lt;language&gt;\words.json</code>.</li>
+    <li><b>Words in context.</b> A word means different things in different sentences, so a word is translated <b>in its sentence</b>: the sentence is sent with the word marked, and the marked part of the answer is its meaning there. These are saved in <code>&lt;language&gt;\words-context.json</code>, keyed by the word, its sentence and where it is in it. With <code>cachedOnly</code> (the offline setting) the server answers only from saved files and reports what is <code>missing</code>.</li>
     <li><b>In the page.</b> <code>translation.js</code> asks for the page's translations once per page version and language, then puts a <code>&lt;span class="tr"&gt;</code> after the last word of each sentence in the Text list, with <code>dir="rtl"</code> for Arabic, Persian, Urdu, Kurdish and Hebrew. The box on the page shows the sentence translation at once and adds the word when it arrives. It is placed under the <b>whole</b> sentence (all its lines), above it if there is no room, else beside it, and it moves with the page when you scroll — so it never covers the sentence you are reading.</li>
   </ol>
   <div class="snip" data-file="web/translate.py" data-from="def _call(engine, req):"></div>
   <div class="snip" data-file="web/translate.py" data-from="def _by_chrome(lang, paragraphs):"></div>
   <div class="snip" data-file="web/translate.py" data-from="def _translate_paragraphs(lang, paragraphs, found):"></div>
-  <div class="snip" data-file="web/translate.py" data-from="def translate_page(lang, book, page, paragraphs):"></div>
+  <div class="snip" data-file="web/translate.py" data-from="def translate_page(lang, book, page, paragraphs, cached_only=False):"></div>
   <div class="snip" data-file="web/js/translation.js" data-from="forView(view) {"></div>
   <div class="snip" data-file="web/js/translation.js" data-from="async decoratePanel() {"></div>
   <div class="snip" data-file="web/js/translation.js" data-from="placeTip(view, area) {"></div>
   <div class="snip" data-file="web/js/translation.js" data-from="async translateBook() {"></div>
+  <div class="snip" data-file="web/js/translation.js" data-from="  async prepareScope() {"></div>
+  <div class="snip" data-file="web/translate.py" data-from="def translate_words(lang, items, cached_only=False):"></div>
   <h3 id="f-phone">6.20 Phones and tablets</h3>
   <p>The same app works on Android and iPhone; below 700 px of width the layout changes (one place in <code>app.css</code>, <code>@media (max-width: 700px)</code>), and touches replace the mouse. Nothing is installed: the phone opens the app's address in its browser, and <b>Add to Home screen</b> gives it an icon and a full screen (<code>manifest.webmanifest</code>, icons from <code>make_icons.py</code>).</p>
   <div class="fig-row">
@@ -833,7 +928,7 @@ bash setup-server.sh books.dolingual.com https://github.com/mhmdnojim/Lingual-E3
     <li><b>Limits</b> per account: books, MB, PDF size and pages, photos, books and MP3s per day; sign-ups and logins are limited per address; translations per hour.</li>
   </ul>
   <div class="snip" data-file="web/library.py" data-from="def can_read(b, user):"></div>
-  <div class="snip" data-file="web/library.py" data-from="def _pdf_pages(bid, path, build):"></div>
+  <div class="snip" data-file="web/library.py" data-from="def _pdf_pages(path, indices, ocr_all, progress):"></div>
   <div class="snip" data-file="web/accounts.py" data-from="def session_user(token):"></div>
   <div class="snip" data-file="web/server.py" data-from="    def user(self):"></div>
   <h3 id="f-follow">6.23 Following the reading</h3>
@@ -846,6 +941,68 @@ bash setup-server.sh books.dolingual.com https://github.com/mhmdnojim/Lingual-E3
   <div class="snip" data-file="web/js/follow.js" data-from="  reading(view, unit, list = true) {"></div>
   <div class="snip" data-file="web/js/follow.js" data-from="  placeOnPage(view, unit, force = false) {"></div>
   <div class="snip" data-file="web/js/follow.js" data-from="  updateBadge() {"></div>
+
+  <h3 id="f-words">6.24 New words and flashcards</h3>
+  <p>The words a learner wants to keep — single words, parts of sentences or whole sentences — are collected from the pages into <b>categories</b> and practised as <b>flashcards</b>.</p>
+  <div class="table-wrap"><table>
+    <tr><th>You do</th><th>What happens</th></tr>
+    <tr><td>The <b>bookmark</b> button at the top, or <kbd>N</kbd></td><td>Collecting starts. A bar at the bottom shows <b>Add to</b> and the category: <i>New words</i>, <i>Definitions</i>, <i>Common sentences</i> at first. Clicking it opens a panel upwards with the categories and their counts, a field to add one, and a bin to delete one (its words go back to <i>New words</i>).</td></tr>
+    <tr><td>Click a word (or clause, or sentence: the click mode decides)</td><td>It is added to the chosen category at once and marked on the page in the category's colour. Nothing is read aloud meanwhile. A click on one already in that category takes it out; on one of another category, moves it here.</td></tr>
+    <tr><td>The <b>cards</b> button, or <kbd>C</kbd></td><td>Choose the cards: <b>Category</b>, <b>Show</b> (words, clauses, sentences) and <b>From</b> (this page, <b>this lesson</b> — e.g. 1A <i>Mood food</i> with its Grammar Bank page — this File, the whole book, or any lesson, File or page that has cards). Each choice says how many cards it gives.</td></tr>
+    <tr><td>Practise</td><td>A card shows the English and reads it aloud (or the translation first). Click it (or <kbd>Space</kbd>) to turn it over: the meaning in the translation language and, for a word or clause, its sentence with it marked and translated. <b>I knew it</b> (<kbd>2</kbd>) or <b>Again</b> (<kbd>1</kbd>); <kbd>←</kbd> <kbd>→</kbd> go back and forth.</td></tr>
+  </table></div>
+  <h4>How it works</h4>
+  <ol>
+    <li><b>One file per person.</b> <code>words.py</code> keeps <code>{categories, items}</code> in <code>web\words\words.json</code> (on a website one per account), so the computer and the phones on the home Wi-Fi share it. An item remembers where it is (<code>book</code>, <code>path</code>, <code>a</code>–<code>b</code>: its words on the page), its <code>mode</code>, <code>text</code>, its sentence (<code>context</code>, <code>contextOffset</code>), the category and the practice record. The same words of the same page are never added twice; adding them again moves them.</li>
+    <li><b>Lessons and Files.</b> <code>web/lessons.json</code> lists the lessons of the Student Book (36) and the Workbook (26) with their printed pages (<code>"4-7, 132"</code>): a lesson's own pages plus its Grammar Bank page. The server adds them to the book (<code>lessons</code>), and <code>words.js</code> turns them into page sets for <b>From</b>. Other books offer pages and the whole book.</li>
+    <li><b>Spaced repetition, simply.</b> Each card has a <code>box</code> from 0 to 5: <b>I knew it</b> moves it one box up, <b>Again</b> back to 0 (<code>PUT /api/words/&lt;id&gt; {known}</code>). Cards in lower boxes come first next time; a missed card comes again four cards later in the same round. At the end: how many were known the first time, and <b>Practice the ones I missed</b>.</li>
+    <li><b>Translations on the back</b> come from the same saved translations as the pages (<a href="#f-translate">6.19</a>): the word's meaning <b>in its sentence</b>, and the sentence. After <b>Prepare</b>, the cards work without internet.</li>
+  </ol>
+  <div class="snip" data-file="web/words.py" data-from="def add(raw_items, folder=None):"></div>
+  <div class="snip" data-file="web/words.py" data-from="def practiced(iid, known, folder=None):"></div>
+  <div class="snip" data-file="web/js/words.js" data-from="  async toggle(view, unit) {"></div>
+  <div class="snip" data-file="web/js/words.js" data-from="  ranges(book) {"></div>
+  <div class="snip" data-file="web/js/words.js" data-from="    const answer = (ok) => {"></div>
+
+  <h3 id="f-transcribe">6.25 Speech recognition: scripts for recordings without one</h3>
+  <p>204 of the disc's 319 recordings and videos came <b>without a script</b>. Their scripts are made on this computer by <b>faster-whisper</b> (OpenAI's Whisper model, run with CTranslate2 on the processor; the English model <code>base.en</code>), one line per sentence, so they can be clicked, repeated and translated like the disc's own. The Script tab says “Made by speech recognition: it may have mistakes.”</p>
+  <ol class="steps">
+    <li><b>Once:</b> double-click <code>Setup transcription.bat</code>. It installs faster-whisper into <code>web\vendor\python</code> (apart from the app's own packages) and the model into <code>web\vendor\models\base.en</code> (about 420 MB). No internet is needed afterwards.</li>
+    <li><b>All at once:</b> <code>python web\tools\transcribe_all.py</code> (a few seconds per recording; those done are skipped). The results are kept in <code>web\transcripts\&lt;id&gt;.json</code>; <code>build_data.py</code> copies them to <code>web\data\scripts</code> and marks them <code>"auto": true</code> in <code>books.json</code>. Others need only <code>web\data</code>, not the setup.</li>
+    <li><b>One at a time:</b> a recording without any script shows a <b>Transcribe</b> button (<code>POST /api/transcribe</code>); it runs in the background, one at a time, and goes on if the player is closed. Only the disc's own recordings can be transcribed, and never on the public website.</li>
+  </ol>
+  <h4>From Whisper's pieces to sentences</h4>
+  <p>Whisper returns pieces with the time of every word. <code>sentences()</code> starts a new line at a full stop, question or exclamation mark — but not after <i>Mr.</i>, <i>Dr.</i> …, and after <i>U.S.</i> or <i>a.m.</i> only when a capital follows — and also at a pause over 1.2 s, in long stretches without full stops, and for lists of single words (pronunciation exercises). Each line starts at the time of its first word. Phrases Whisper is known to “hear” in silence or music (“Thanks for watching”) are dropped, and <code>vad_filter</code> with <code>hallucination_silence_threshold</code> keeps it from inventing words in silence.</p>
+  <div class="snip" data-file="web/transcription.py" data-from="def sentences(segments):"></div>
+  <div class="snip" data-file="web/transcription.py" data-from="def transcribe(path, threads=4, progress=None):"></div>
+  <div class="snip" data-file="web/tools/build_data.py" data-from="def machine_script(src):"></div>
+  <div class="snip" data-file="web/js/transcription.js" data-from="export async function transcribeRecording("></div>
+
+  <h3 id="f-offline-audio">6.26 Offline voice files and Windows voices</h3>
+  <p>The live voice needs the internet for the Natural voices. To read without internet in the <b>same</b> voice, a page or a whole book can be turned into voice files once and kept <b>in the browser</b>. Settings → <b>Voice</b>: each English voice says whether it is offline on this device, online, or has voice files already; choose <b>Whole current page</b>, <b>Whole book</b>, <b>Selected sentences or audio</b> or <b>All saved audio</b>, then <b>Generate</b>.</p>
+  <ul>
+    <li><b>Only what is missing.</b> Only English sentences without a voice file for this voice (and the same way of reading translations) are made. Each page becomes its own MP3 package — a whole book is a set of page files, not one long track; large pages are split into numbered parts. The server makes them like a My audio MP3 (<code>offlineVoiceOnly</code>), and the browser copies the MP3 and its sentence timings into IndexedDB (<code>offline-audio.js</code>); the server keeps its copy until the voice file is deleted.</li>
+    <li><b>Playing.</b> A click on a sentence first looks for a voice file of this page in the chosen voice (<code>playOfflineForUnit</code>, then <code>locate</code>); if there is one, it plays from that sentence with the usual highlighting, else the live voice reads it. The <b>OFFLINE / ONLINE</b> badge in the corner is about the current page's voice files, not the whole book.</li>
+    <li><b>Matching voices exactly.</b> A Windows voice (David, Zira) never stands in for a Natural one (Aria, Ana) or the other way round: <code>voice-options.js</code> finds the server voice whose name and locale match the browser voice, or none — then no Generate button is offered.</li>
+    <li><b>Managing them.</b> My audio → <b>Offline voice files on this page</b> deletes one (the browser copy and any server leftovers; another voice of the page takes over if there is one). <b>Export folder</b> (Edge or Chrome) writes the packages into folders by book, language mode and voice, with <code>book-collection.json</code>, an ordered list of the page files. Browser storage can be cleared by the browser, so these are a convenience, not a backup.</li>
+  </ul>
+  <div class="snip" data-file="web/js/offline-audio.js" data-from="export const offlineAudio = {"></div>
+  <div class="snip" data-file="web/js/recordings.js" data-from="  async playOfflineForUnit(view, unit, fromPage) {"></div>
+  <div class="snip" data-file="web/js/voice-options.js" data-from="export function matchingRecordingVoice(voice, voiceList, language = 'en') {"></div>
+  <div class="snip" data-file="web/tts.py" data-from="def windows_voices():"></div>
+  <div class="snip" data-file="web/tts.py" data-from="def _windows_speak(text, voice, rate):"></div>
+
+  <h3 id="f-import">6.27 Importing an old app</h3>
+  <p>The steps a person sees are in <a href="#import-old-app">Import an old app's books</a> (chapter 1). Behind them, <code>web/migration.py</code> keeps each import as a private, resumable <b>job</b> under <code>migrations/&lt;id&gt;/</code> with numbered steps, real counts and a state; every request checks that the job belongs to the person.</p>
+  <ul>
+    <li><b>Upload.</b> Files are sent one by one (<code>PUT /api/migrations/&lt;id&gt;/source?name=…</code>) with their folder paths; a ledger records each one, so selecting the same source again goes on where it stopped. ZIPs are unpacked with checks against paths that leave the folder, links, and too many or too large files. Nothing uploaded is ever run.</li>
+    <li><b>Analyze.</b> Format adapters recognise iTools books (<code>.shared/content/index.json</code>, page tiles, <code>index.json</code> hotspots), PDFs and folders of page images, and report what cannot be converted (Flash activities, FLV video).</li>
+    <li><b>Sample, then convert.</b> 1–5 sample pages are made with the chosen settings and must be approved; a change of settings needs a new sample (a fingerprint of the settings is checked). Conversion stitches tiles, reads text from the PDF or with OCR, and saves each page on its own with a checkpoint, so <b>Cancel</b> pauses and a retry reuses the valid pages. Supported media and XML cue scripts are copied, page links are remapped to the new pages.</li>
+    <li><b>Export.</b> A ZIP of the converted books with an import report; the books themselves are private books of the library, opened in the same reader.</li>
+  </ul>
+  <div class="snip" data-file="web/migration.py" data-from="def save_upload(mid, user, name, data):"></div>
+  <div class="snip" data-file="web/migration.py" data-from="def _stitch(mid, page):"></div>
+  <div class="snip" data-file="web/migration.py" data-from="def _conversion(mid, user):"></div>
 </section>
 
 <!-- ============================================================ TESTING -->
@@ -855,8 +1012,14 @@ bash setup-server.sh books.dolingual.com https://github.com/mhmdnojim/Lingual-E3
   <script type="text/plain" class="codeblock" data-lang="ps1" data-title="PowerShell — run the tests">
 cd web\tests
 npm install          # once: installs puppeteer-core (uses your installed Edge, no browser download)
-node ui-test.mjs     # 158 checks, prints PASS/FAIL (ONLY=phone, ONLY=library or ONLY=website: just those)
+node ui-test.mjs     # 170 checks, prints PASS/FAIL (ONLY=phone, ONLY=library or ONLY=website: just those)
 node capture-screenshots.mjs   # re-takes the screenshots used in this guide
+# If Edge does not start without a window, use Chrome:
+$env:BROWSER = "C:\Program Files\Google\Chrome\Application\chrome.exe"; node ui-test.mjs
+</script>
+  <p>Smaller tests, each for one feature (some in a real browser, some in Node alone with a small stand-in for the page; run each with <code>node &lt;file&gt;</code>): <code>voice-options-test.mjs</code> (Windows and Natural voices kept apart), <code>offline-page-test.mjs</code> (the OFFLINE/ONLINE badge, deleting a page's voice file), <code>audio-create-recovery-test.mjs</code> (creating audio after a failure), <code>translation-offline-test.mjs</code> and <code>translation-offline-logic-test.mjs</code> (Prepare, offline-only reading), <code>migration-test.mjs</code> (upload, preview, convert, export, read). The server's modules have Python tests, each in its own temporary folder:</p>
+  <script type="text/plain" class="codeblock" data-lang="ps1" data-title="PowerShell — the Python tests">
+python -m unittest discover -s web/tests -p "test_*.py"    # 45 tests: migration, words, offline deletion, MP3 making, word translations
 </script>
   <div class="table-wrap"><table>
     <tr><th>Area</th><th>What is checked</th></tr>
@@ -882,7 +1045,8 @@ node capture-screenshots.mjs   # re-takes the screenshots used in this guide
   <div class="snip" data-file="web/tests/harness.mjs" data-from="export async function startServer({"></div>
   <div class="snip" data-file="web/tests/ui-test.mjs" data-from="// Sentence mode: hover + click" data-to="await page.click('#reading-stop');"></div>
   <p><b>How many readers at once</b> (for a website): <code>python web\tests\load-test.py</code> (needs <code>pip install psutil</code>; <code>CORES=2</code> for two cores). The results are in <a href="#f-host">6.21</a>.</p>
-  <script type="text/plain" class="codeblock" data-lang="txt" data-title="Last result">
+  <div class="callout warn"><b class="tag">Last run</b><p>16 October 2026, in Chrome (Edge did not start without a window on this computer): <b>154 passed, 16 failed</b> of 170. The Python tests: 45 of 45. The smaller tests: 5 of 6 (<code>offline-page-test.mjs</code> stops where it clicks the delete button of a page's voice file). The failing checks belong to work in progress: playing a My audio MP3 from its icon and from a sentence, with highlighting and repeat (7); the New audio sentence picker (2) and the paragraph borders while choosing (1); the translation popup on the page (2, and the same on a phone); copying with translations; the whole-book translation waiting for Google; and the correction bar, whose check still expects 11 buttons (there are 12 since <b>Re-read an area</b>). New words and flashcards have unit tests (<code>test_words.py</code>) but no browser check yet. The excerpt below is from an earlier run.</p></div>
+  <script type="text/plain" class="codeblock" data-lang="txt" data-title="An earlier result">
 PASS  page 25 shows clickable words  (561 words)
 PASS  hotspot buttons are shown  (7 buttons)
 PASS  hovering a word highlights its sentence  (Once the boat passed through Biscayne Bay and went under the Rickenbacker Bridge, he entered open water.)
@@ -933,8 +1097,9 @@ PASS  L switches translations off and on; the second time they come from the sav
         <tr><td><code>web\vendor\ruffle</code></td><td>Ruffle Flash emulator</td><td class="num"><span data-stat="mb.ruffle">29</span> MB</td></tr>
       </table></div></div></li>
     <li data-check="start"><input type="checkbox" aria-label="Done"><div><b>Start the app</b> with <code>Start Lingua Books.bat</code> and open Student Book p.25.</div></li>
-    <li data-check="test"><input type="checkbox" aria-label="Done"><div><b>Run the tests</b> (optional): <code>cd web\tests</code>, <code>npm install</code>, <code>node ui-test.mjs</code> → “158 passed, 0 failed”.</div></li>
-    <li data-check="edits"><input type="checkbox" aria-label="Done"><div><b>Moving to another computer?</b> Copy your <code>web\edits</code> folder too — it holds your text corrections.</div></li>
+    <li data-check="scripts"><input type="checkbox" aria-label="Done"><div><b>Scripts for the recordings without one</b> (optional): copy <code>web\transcripts</code> from a copy that has them before the build (then step 5 uses them), or make them: <code>Setup transcription.bat</code> once, then <code>python web\tools\transcribe_all.py</code> (<a href="#f-transcribe">6.25</a>).</div></li>
+    <li data-check="test"><input type="checkbox" aria-label="Done"><div><b>Run the tests</b> (optional): <code>cd web\tests</code>, <code>npm install</code>, <code>node ui-test.mjs</code> (170 checks; see <a href="#testing">7</a> for the last result), and <code>python -m unittest discover -s web/tests -p "test_*.py"</code> (45 tests).</div></li>
+    <li data-check="edits"><input type="checkbox" aria-label="Done"><div><b>Moving to another computer?</b> Copy what you made too: <code>web\edits</code> (text corrections), <code>web\recordings</code> (My audio), <code>web\translations</code> (saved translations), <code>web\words</code> (new words) and <code>web\transcripts</code> (speech recognition), and <code>web\library</code> (your library books). Offline voice files live in the browser: export them (<a href="#f-offline-audio">6.26</a>).</div></li>
   </ul>
   <div class="callout tip"><b class="tag">Faster changes</b><p>To change only how sentences/clauses are split, edit <code>segment_text.py</code> and run just that step — the OCR results in <code>web\_build\ocr_raw</code> are kept:
     <code>python web\tools\segment_text.py</code> (a few seconds).</p></div>
@@ -975,6 +1140,12 @@ PASS  L switches translations off and on; the second time they come from the sav
     <tr><td><code>web\translations\&lt;language&gt;\&lt;book&gt;\&lt;page&gt;.json</code></td><td><code>{"English sentence": "translation", …}</code>; <code>&lt;language&gt;\words.json</code> is the same for single words</td></tr>
     <tr><td><code>search/&lt;book&gt;.json</code></td><td><code>[{"p": "page number", "t": "page text"}, …]</code> — paragraphs separated by new lines</td></tr>
     <tr><td><code>_build/ocr_raw/&lt;book&gt;__&lt;page&gt;.json</code></td><td>Raw OCR: <code>{w, h, angle, lines: [{words: [{t, x, y, w, h}]}]}</code></td></tr>
+    <tr><td><code>web\translations\&lt;language&gt;\words-context.json</code></td><td>Words translated in their sentence: <code>{"&lt;sha256 of word, sentence, position&gt;": "meaning", …}</code></td></tr>
+    <tr><td><code>web\recordings\&lt;id&gt;.mp3</code> + <code>.json</code> (+ <code>.srt</code>, <code>.vtt</code>)</td><td>A My audio MP3 and its details: <code>{id, title, created, book, bookId, bookType, page, path, voice, voiceName, rate, gap, duration, file, sentences: [{path, a, b, text, start, end, words: [[start, end], …]}]}</code> (seconds; plus <code>translation</code>, <code>voiceB</code>, <code>zhVoice</code>, <code>languageMode</code>, <code>offlineVoiceOnly</code> when used); the id is <code>r&lt;date&gt;-&lt;time&gt;-&lt;4 hex&gt;</code></td></tr>
+    <tr><td><code>web\words\words.json</code></td><td><code>{categories: [{id, name, color}], items: [{id, book, bookId, page, path, mode, a, b, text, context, contextOffset, category, added, box, seen, right, last}]}</code></td></tr>
+    <tr><td><code>web\transcripts\&lt;id&gt;.json</code></td><td>Speech recognition of a recording: <code>{model, cues: [{t, x}]}</code> (the same cues as a script)</td></tr>
+    <tr><td><code>web\lessons.json</code></td><td><code>{"&lt;book slug&gt;": [{id: "1A", title: "Mood food", unit: "File 1", pages: "4-7, 132"}, …]}</code></td></tr>
+    <tr><td>Browser: IndexedDB <code>lingua-books-offline-audio</code></td><td>Store <code>recordings</code>, one entry per voice file: <code>{id, summary, recording (as the .json above), blob (the MP3), importedAt}</code></td></tr>
   </table></div>
   <div class="example" data-key="search" data-title="web/data/search/BO-ff57d1a56e6bf.json (first page, shortened)"></div>
 </section>
@@ -993,6 +1164,10 @@ PASS  L switches translations off and on; the second time they come from the sav
   <details><summary>Correction mode says “Not saved”</summary><div><p>The app could not reach its server. Check that the black window is still open (or start the app again with the .bat file), then make any small change again — the whole page is saved each time.</p></div></details>
   <details><summary>Translation says “The translation failed” or “busy”, or does not appear</summary><div><p>“Busy” means Google got too many requests from this computer in a short time: the app waits the time shown and goes on by itself. Otherwise: the first translation of a page needs the internet. Check the connection and open the page again (or switch translations off and on with <b>L</b>). Pages translated before work offline. If it says the server is an older version, close the black window and start the app again.</p></div></details>
   <details><summary>The port is already in use</summary><div><p>The server tries the next 19 ports by itself. The black window shows the address it used.</p></div></details>
+  <details><summary>Creating an MP3 says Microsoft refused the voice (HTTP 403)</summary><div><p>Microsoft refuses its Natural voices at times, in some countries. Try again later, or choose a <b>Windows offline</b> voice in the dialog (made on this computer, no internet). The app never changes the voice by itself.</p></div></details>
+  <details><summary>The Transcribe button says the speech model is missing</summary><div><p>Run <code>Setup transcription.bat</code> once (it needs the internet to download about 420 MB), then restart the app.</p></div></details>
+  <details><summary>A page says OFFLINE but a sentence is read with the live voice</summary><div><p>The badge is about the page's voice files for the chosen voice. Sentences added or changed after the voice file was made, or another voice chosen in the settings, use the live voice. <b>Generate</b> again for the page: only what is missing is made.</p></div></details>
+  <details><summary>The tests say “Failed to launch the browser process”</summary><div><p>Edge sometimes does not start without a window (for example while it updates). Run the tests with Chrome: <code>$env:BROWSER = "C:\Program Files\Google\Chrome\Application\chrome.exe"</code>, then <code>node ui-test.mjs</code>.</p></div></details>
 </section>
 
 <!-- ============================================================ LIMITS -->
@@ -1004,15 +1179,47 @@ PASS  L switches translations off and on; the second time they come from the sav
     <li><b>Natural voices</b> need Edge and an internet connection; offline voices are more robotic.</li>
     <li><b>Ruffle</b> plays the answer keys well; other old Flash parts of the disc (interactive exercises not linked from the pages) were not used.</li>
     <li><b>Translations</b> are machine translations (Google Translate): good for understanding, not always perfect. The free addresses are not official APIs and could change, and Google limits how fast they may be used.</li>
+    <li><b>Speech recognition</b> scripts can contain mistakes (names, numbers, overlapping speakers); the app says so on each of them.</li>
+    <li><b>Offline voice files</b> are kept in the browser's storage, which the browser may clear; export them to keep a copy.</li>
     <li><b>Python</b> must be installed to run the small server.</li>
     <li><b>The website</b> serves many readers on one core (<a href="#f-host">6.21</a>), but makes books one at a time, and the free translator limits how fast it may be used.</li>
     <li>The rebuilt app is for use on your own computer. The book content belongs to Oxford University Press.</li>
   </ul>
 </section>
 
+<!-- ============================================================ REACT -->
+<section class="chapter">
+  <h2 id="react">12. Rebuild it in React (Lovable or another AI)</h2>
+  <p>The app is plain JavaScript on purpose (<a href="#build-then-run">3</a>): nothing to install or compile. To rebuild its browser part as a <b>React</b> app — for example with <b>Lovable</b>, which builds React apps from prompts — give the builder the <b>React kit</b>. Lovable cannot import an existing code base, so it builds the app from a specification, step by step.</p>
+  <div class="table-wrap"><table>
+    <tr><th>In <code>guide\Lingua Books React kit.zip</code></th><th>What it is for</th></tr>
+    <tr><td><code>READ ME FIRST.md</code></td><td>For you: the steps below.</td></tr>
+    <tr><td><code>docs/BRIEF.md</code></td><td>The brief (also <code>guide\Lingua Books React brief.md</code>): <b>Part A</b> to paste into Lovable's project knowledge, <b>Part B</b> the specification (types, every API call, screens, every behaviour, the algorithms to port exactly, acceptance checks), <b>Part C</b> 15 prompts in order, each with “Done when”, <b>Part D</b> pitfalls.</td></tr>
+    <tr><td><code>docs/reference/</code></td><td>The current code: the browser app (<code>web/index.html</code>, <code>css</code>, <code>js</code>) and the server (<code>server</code>) — the truth about behaviour and the API.</td></tr>
+    <tr><td><code>docs/screenshots/</code></td><td>The current look. They show the disc's pages: for layout only, never to publish.</td></tr>
+    <tr><td><code>public/fixtures/</code></td><td>A <b>sample book</b> in the app's real formats, from an original text (no book content): two pages, their words and sentences, a recording with a script, Spanish translations, new words — so the React app can run in Lovable without the server. Made by <code>guide/src/make_fixtures.py</code>.</td></tr>
+  </table></div>
+  <ol class="steps">
+    <li>Make a new Lovable project and connect it to GitHub.</li>
+    <li>Copy the kit's <code>docs</code> and <code>public/fixtures</code> folders into that repository and push them.</li>
+    <li>Paste Part A of the brief into Lovable's project knowledge.</li>
+    <li>Send the prompts of Part C one at a time; check each “Done when” in the preview before the next.</li>
+    <li>When it is done: build it and let the Python server serve it next to the old app (<code>web\app\</code>), so the disc's books, OCR, translations, MP3s and speech recognition keep working.</li>
+  </ol>
+  <h3 id="react-architecture">The plan in short</h3>
+  <ul>
+    <li><b>Keep the server.</b> OCR, PDFs, translation, natural-voice MP3s, speech recognition, accounts and the library cannot (or must not) run in a browser. The React app calls the same API (<a href="#f-server">6.1</a>); in Lovable's preview it uses the sample book instead (<code>VITE_API_MODE=mock</code>).</li>
+    <li><b>Same origin.</b> The server refuses changes from other sites (<code>same_origin()</code> compares <code>Origin</code> and <code>Host</code>), so the built app is served by the server itself; in development a Vite proxy with <code>changeOrigin: false</code>.</li>
+    <li><b>Engines outside React.</b> The reading queue, speech, the audio player, following and the correction model stay plain TypeScript; components subscribe to them, so highlights that change many times a second do not re-render the page.</li>
+    <li><b>Ported exactly:</b> <code>PageText</code>, <code>speakable</code>, <code>clauseRanges</code>/<code>tokenize</code>, the correction model and <code>fold</code> — the same results as now, page for page.</li>
+    <li><b>Same addresses and settings:</b> <code>#/&lt;book&gt;/&lt;page&gt;</code> routes and the <code>aef3.</code> settings keys, so bookmarks and settings carry over.</li>
+  </ul>
+  <div class="snip" data-file="guide/src/react-brief.md" data-from="## Part A: Project knowledge" data-to="DO NOT: invent API endpoints"></div>
+</section>
+
 <!-- ============================================================ SOURCE -->
 <section class="chapter" id="source-code-section">
-  <h2 id="source-code">12. Source code</h2>
+  <h2 id="source-code">13. Source code</h2>
   <p>Every code file of the app, the build tools and the tests. Choose a file on the left. You can copy or download each one.</p>
   <div class="srcb">
     <div class="srcb-list" id="srcb-list"></div>

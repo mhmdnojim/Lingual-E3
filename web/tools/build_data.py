@@ -1,4 +1,6 @@
 """Build web/data/books.json and the audio/video transcripts from the original app data.
+Recordings without a script on the disc get the one made by speech recognition, if there is one
+(web/transcripts, see web/tools/transcribe_all.py): marked "auto".
 
 Hotspot coordinates are converted from the old OpenLayers map units
 (lon = x from the left, lat = y from the BOTTOM) to image pixels (y from the top).
@@ -9,7 +11,7 @@ import os
 import re
 import sys
 
-from common import DATA, PAGE_H, PAGE_W, SHARED, load_json, page_dir, save_json
+from common import DATA, PAGE_H, PAGE_W, SHARED, TRANSCRIPTS, load_json, page_dir, save_json
 
 CUE = re.compile(r'<Cue([^>]*)>(.*?)</Cue>', re.S)
 VALUE = re.compile(r'value\s*=\s*[\'"](\d+)[\'"]')
@@ -58,6 +60,29 @@ def build_script(link, kind):
     return f'/web/data/scripts/{asset_id}.json'
 
 
+def machine_script(src):
+    """A recording without a script on the disc: the script made by speech recognition, copied to
+    /web/data/scripts like the others. Its URL, or None if there is none (yet)."""
+    m = re.search(r'/([A-Z]{2}-[0-9a-f]+)/[^/]+$', src)
+    path = os.path.join(TRANSCRIPTS, f'{m.group(1)}.json') if m else None
+    if not path or not os.path.isfile(path):
+        return None
+    cues = load_json(path).get('cues')
+    if not cues:
+        return None
+    save_json(os.path.join(DATA, 'scripts', f'{m.group(1)}.json'), cues)
+    return f'/web/data/scripts/{m.group(1)}.json'
+
+
+def add_script(out, link, kind):
+    """The disc's script of a recording or video, else the one made by speech recognition."""
+    out['script'] = build_script(link, kind)
+    if not out['script']:
+        out['script'] = machine_script(out['src'])
+        if out['script']:
+            out['auto'] = True
+
+
 def convert_asset(a):
     kind = a.get('type')
     x = round(float(a['lon']))
@@ -65,12 +90,12 @@ def convert_asset(a):
     out = {'t': kind, 'x': x, 'y': y, 'title': a.get('title', '')}
     if kind == 'audio':
         out['src'] = shared_url(resource_to_path(a['link']))
-        out['script'] = build_script(a.get('script'), kind)
+        add_script(out, a.get('script'), kind)
     elif kind == 'video':
         rel = a['link'].replace('\\', '/')  # assets/video/VI-x/name.flv
         vid, name = rel.split('/')[-2], os.path.splitext(rel.split('/')[-1])[0]
         out['src'] = f'/web/data/video/{vid}/{name}.mp4'
-        out['script'] = build_script(a.get('script'), kind)
+        add_script(out, a.get('script'), kind)
     elif kind == 'swf':
         out['src'] = shared_url(resource_to_path(a['link']))
         out['w'], out['h'] = a.get('width'), a.get('height')
@@ -95,7 +120,7 @@ def build_resources():
     res = []
     for f in files:
         name, ext = os.path.splitext(os.path.basename(f))
-        res.append({'title': name.replace('AEF2e_3_', '').replace('_', ' '),
+        res.append({'title': re.sub(r'^AEF2e_\d+_', '', name).replace('_', ' '),  # (AEF2e_<level>_)
                     'kind': ext.lstrip('.').lower(),
                     'src': shared_url(os.path.relpath(f, SHARED))})
     res.sort(key=lambda r: [int(s) if s.isdigit() else s.lower() for s in re.split(r'(\d+)', r['title'])])

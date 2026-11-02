@@ -58,8 +58,10 @@ bash setup-server.sh books.dolingual.com https://github.com/mhmdnojim/Lingual-E3
 (For a **private** repository use the `git@github.com:…` address instead: the script then shows
 a key to add on GitHub under Settings → Deploy keys.)
 
-It asks for **your e-mail address**: when you sign up on the website with it, you are the
-**admin** (you see the *Admin* tab: reports, hiding and deleting books).
+On a fresh setup, the script asks for **your admin e-mail address** (default:
+`mhmd.nojim@gmail.com`), creates an owner setup code, and enables subscriptions. Sign up with that
+e-mail and enter the owner setup code printed at the end of setup. This proves you control the
+server before the account gets the *Admin* role. Keep the setup code private.
 
 Open `https://books.dolingual.com`, **Sign up** with that e-mail, and add the first books.
 
@@ -71,7 +73,58 @@ After `git push`:
 ssh root@SERVER-IP /opt/lingua-books/deploy/update.sh
 ```
 
+## Subscription access codes
+
+On a fresh server setup, `LB_REQUIRE_SUBSCRIPTION=1` is enabled. Users create an account, then
+redeem a one-use code. The code starts its subscription when redeemed; the admin chooses its
+length, the books it covers, and how long the unused code remains valid. In **Library → Admin**,
+generate a code and QR link, cancel unused codes, or revoke a user's active subscription. The
+QR opens the sign-in and redemption page. `LB_PUBLIC_URL` must be the site's HTTPS address so the
+QR works on phones.
+
+The admin account uses `LB_ADMIN_EMAIL` and `LB_ADMIN_SETUP_TOKEN`. To change the owner on an
+existing server, update those values in `/etc/lingua-books.env`, restart the service, then claim
+the configured e-mail with the owner setup code. To turn subscriptions off, set
+`LB_REQUIRE_SUBSCRIPTION=0` and restart the service.
+
+Only serve books you are allowed to distribute. Add them to the server's library and share them
+there; do not expose the original `.shared` or `web/data` folders as static files. The server
+checks access for each book API and page image request. A user who has already received or saved
+book content can keep a copy of it; subscriptions control future server access.
+
 ## Good to know
+
+### Old-app imports
+
+The library now has **Import old app**: upload a ZIP or choose a folder, inspect supported
+content, select extraction settings, approve sample pages, then convert with six numbered
+progress steps. It runs in the Python server without VS Code/Codex or an AI key. See
+`web/README.md` for the supported formats and limitations. This imports books into the existing
+reader; it does not automatically rewrite an arbitrary application's code or Flash activities.
+
+- On the website, an account is required. Import jobs, previews, reports and exports belong
+  to that account (admins may access them); new books start private.
+- Source uploads, job checkpoints and exports live in `$LB_DATA_DIR/migrations/<job-id>/`;
+  converted books live in `$LB_DATA_DIR/books/<book-id>/`. Both are included when backing up
+  the entire data directory. Closing the importer does not delete these files. For storage
+  cleanup, **Remove import files** (after confirmation) deletes the job's source,
+  previews, export and unfinished books, while keeping completed books. Otherwise allow space for
+  the upload, extracted source, converted pages and export ZIP. Retained source/export storage
+  is separate from the ordinary per-account book quota; monitor disk usage on public hosts.
+- Defaults: **512 MiB per uploaded file/ZIP**, **8 GiB total/expanded source**, **250,000 files**,
+  **2,000 selected pages** per job, up to **10 unfinished jobs** per account. Configure
+  `LB_MIGRATION_UPLOAD_MB`, `LB_MIGRATION_TOTAL_MB`, `LB_MIGRATION_FILES`, and
+  `LB_MIGRATION_PAGES` in the server environment, then restart the service. Use smaller
+  limits on small/public servers. A folder upload sends files individually; ZIP is usually faster.
+- Processing is serialized for imports to limit OCR memory use. Running jobs interrupted by
+  a server restart can be retried from the importer; completed pages are reused after validation.
+- Install the OCR languages the books need on the **server**. English PDFs with embedded
+  text do not need OCR; Chinese scans need the corresponding Chinese and English OCR packs.
+- If a reverse proxy rejects a large upload, its request-size/time limits may need adjustment.
+  Do not expose the data directory as a static website: artifacts/media are served only through
+  permission-checked routes. Uploaded EXE, scripts and HTML remain inert and are never served.
+
+### General notes
 
 - Where things are on the server: the code in `/opt/lingua-books`, everything people add in
   `/var/lib/lingua-books`, the settings in `/etc/lingua-books.env` (after a change:

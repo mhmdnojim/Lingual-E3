@@ -73,7 +73,7 @@ async function editorChecks(page) {
   // The selected sentence is shown as it is; the tools are in a bar at the top of the panel.
   const plain = await page.$eval('#text-view .esent.sel', (r) => !r.querySelector('textarea, button'));
   const bar = await page.$eval('#edit-tools', (t) => { const r = t.getBoundingClientRect(); return r.height > 0 && t.querySelectorAll('button[data-op]').length; });
-  check('correction mode: the tools are in a bar at the top, the selected sentence stays plain text', plain && bar === 10, `${bar} buttons`);
+  check('correction mode: the tools are in a bar at the top, the selected sentence stays plain text', plain && bar === 11, `${bar} buttons`);
 
   // Change the text: Enter (or a double click) turns the selected sentence into a box.
   await page.keyboard.press('Enter');
@@ -92,7 +92,8 @@ async function editorChecks(page) {
   const tool = async (op) => { await page.click(`#edit-tools [data-op="${op}"]`); await sleep(150); await settled(); };
   let n = await rows();
   await tool('split');
-  await page.click('.esent.sel .chip[data-k="3"]');
+  await page.click('.esent.sel .chip[data-k="3"]'); // (the word starting the new sentence; then Split)
+  await page.click('.esent.sel [data-op="split-apply"]');
   await sleep(150);
   check('split makes two sentences', (await rows()) === n + 1 && (await selText()) === 'corrected by hand.', await selText());
   await tool('mergePrev');
@@ -277,6 +278,25 @@ async function websiteChecks(browser, problems) {
     check('…a PDF book: its page is drawn and its words come from the PDF', pj.status === 'ready' && psents.includes('Reading is fun.'), psents.join(' | '));
     const notPdf = await ann('PUT', `/api/books/${pdfBook.id}/source/pdf`, undefined, Buffer.from('hello'));
     check('…a file that is not a PDF is refused', notPdf.status === 400, notPdf.data.error);
+    // First a sample of the pages: what is wrong is said at once; it is made in the background; only its owner sees it.
+    const sampled = (await ann('POST', '/api/books', { kind: 'pdf', title: 'Sampled', importOptions: { language: 'en' } })).data;
+    await ann('PUT', `/api/books/${sampled.id}/source/pdf`, undefined, makePdf(['Samples come first.', 'Then all the pages.']));
+    const noPage = await ann('POST', `/api/books/${sampled.id}/preview`, { options: { language: 'en', pages: '2-9' } });
+    await ann('POST', `/api/books/${sampled.id}/preview`, { options: { language: 'en', margins: true } });
+    let sample = {};
+    for (let i = 0; i < 120 && (i === 0 || sample.state === 'working'); i++) {
+      if (i) await sleep(500);
+      sample = (await ann('GET', `/api/books/${sampled.id}/preview`)).data;
+    }
+    const strangers = [await anon('GET', `/api/books/${sampled.id}/preview`), await anon('GET', sample.pages?.[0]?.img || '/lib/x')];
+    check('…a PDF: first a sample of its pages to check (here its only page), made as asked; only its owner sees it',
+      noPage.status === 400 && /no page 2/.test(noPage.data.error) && sample.state === 'ready' && sample.pages?.length === 1
+      && sample.pages[0].how === 'pdf' && /Samples come first/.test(sample.pages[0].text) && sample.options?.margins === true
+      && strangers[0].status !== 200 && strangers[1].status === 404, JSON.stringify({ noPage: noPage.data, sample, strangers: strangers.map((o) => o.status) }));
+    await ann('POST', `/api/books/${sampled.id}/make`, sample.options);
+    const sj = await ready(ann, sampled.id);
+    check('…then all its pages are made the same way, and the sample goes', sj.status === 'ready'
+      && sj.book.importOptions?.margins === true && (await ann('GET', `/api/books/${sampled.id}/preview`)).status === 404);
 
     const textBook = (await ann('POST', '/api/books', { kind: 'text', title: 'Ann’s lesson', author: 'Ann' })).data;
     await ann('PUT', `/api/books/${textBook.id}/source/text`, undefined, Buffer.from(JSON.stringify({ text: 'Hello world. This is my lesson.\n\nIt has two paragraphs. Good luck!' })));
@@ -357,11 +377,14 @@ async function websiteChecks(browser, problems) {
     await page.type('.lib-form input[type=text]', 'Photo lesson');
     await (await page.$('.lib-form input[type=file][multiple]')).uploadFile(photo);
     await page.click('.lib-form button[type=submit]');
+    await page.waitForSelector('.sample-review .btn.primary', { timeout: 120000 }).catch(() => {});
+    const photoSample = await page.$$eval('.sample-text', (t) => t.map((x) => x.textContent).join(' '));
+    await page.evaluate(() => document.querySelector('.sample-review .btn.primary')?.click()); // Make all 1 page
     await page.waitForFunction(() => location.hash.startsWith('#/L'), { timeout: 120000 }).catch(() => {});
     await page.waitForFunction(() => document.querySelector('.page-img')?.complete && document.querySelectorAll('#text-view .sline').length, { timeout: 20000 }).catch(() => {});
     const ocrText = await page.$$eval('#text-view .sline', (ls) => ls.map((l) => [...l.querySelectorAll('.w')].map((w) => w.textContent).join('').trim()));
-    check('…sign up in the app; add photos of a page: the words are read (OCR) and clickable', signedUp && ocrText.some((t) => /Lingua Books/.test(t)) && ocrText.length >= 3,
-      ocrText.join(' | '));
+    check('…sign up in the app; add photos of a page: a sample to check first, then the words are read (OCR) and clickable',
+      signedUp && /Lingua Books/.test(photoSample) && ocrText.some((t) => /Lingua Books/.test(t)) && ocrText.length >= 3, ocrText.join(' | '));
     // Share it with everyone (settings: licence + "I may share it").
     const photoId = (await page.evaluate(() => location.hash)).split('/')[1];
     await page.evaluate(() => window.aef.setDrawer(true));
@@ -430,17 +453,92 @@ async function libraryChecks(page) {
     words: document.querySelectorAll('.hits rect').length, readonly: document.body.classList.contains('readonly') }));
   check('…add a text lesson: set into a page, every sentence clickable, yours to correct', lesson.title === 'My first lesson' && lesson.lines === 5
     && lesson.words === 21 && !lesson.readonly, JSON.stringify(lesson));
-  // Delete it again (settings).
+  // Delete it again (its ⋮ menu).
   await page.click('#book-title');
   await sleep(500);
   await page.click('#library [data-scope="mine"]');
   await sleep(500);
   page.once('dialog', (d) => d.accept().catch(() => {})); // (an earlier check may answer it already)
-  await page.click('.book-card .bc-edit');
+  await page.click('.book-card .bc-more');
   await sleep(200);
-  await page.evaluate(() => [...document.querySelectorAll('.lib-form button')].find((b) => /Delete/.test(b.textContent)).click());
+  await page.evaluate(() => [...document.querySelectorAll('.lib-menu button')].find((b) => /Delete the book/.test(b.textContent)).click());
   await sleep(600);
   check('…and delete it again', (await page.$$('.book-card')).length === 0);
+}
+
+/**
+ * Adding photos of Chinese pages with pinyin: the app asks their language and about pinyin, and
+ * first makes a sample of a few pages; one of its tips changes what is made, tried again on the
+ * same pages; then all the pages are made the same way.
+ */
+async function sampleChecks(page) {
+  const info = await page.evaluate(() => fetch('/api/page-languages').then((r) => r.json()));
+  if (!info.languages.find((l) => l.code === 'zh-Hans')?.ocr) {
+    check('Adding photos of Chinese pages: not checked (this computer cannot read Chinese from pictures)', true);
+    return;
+  }
+  const tmp = mkdtempSync(path.join(os.tmpdir(), 'lb-zh-'));
+  let id = null;
+  try {
+    const photos = [];
+    for (let k = 0; k < 3; k++) {
+      const png = await page.evaluate((n) => {
+        const c = document.createElement('canvas');
+        c.width = 1400; c.height = 1000;
+        const g = c.getContext('2d');
+        g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+        g.fillStyle = '#111';
+        [['Wǒ jiā yǒu sì kǒu rén.', '我家有四口人。'], ['Bàba shì lǎoshī, māma shì yīshēng.', '爸爸是老师，妈妈是医生。'],
+          ['Tā jīntiān hěn máng.', '他今天很忙。']].forEach(([pinyin, zh], i) => {
+          g.font = '30px Arial'; g.fillText(pinyin, 100, 150 + i * 190);
+          g.font = '52px "Microsoft YaHei", SimHei, sans-serif'; g.fillText(zh, 100, 215 + i * 190);
+        });
+        g.font = '34px Arial'; g.fillText(String(20 + n), 680, 960); // the page number
+        return c.toDataURL('image/png').split(',')[1];
+      }, k);
+      photos.push(path.join(tmp, `page-${k + 1}.png`));
+      writeFileSync(photos[k], Buffer.from(png, 'base64'));
+    }
+    await page.click('#lib-add');
+    await page.waitForSelector('.add-kind', { timeout: 10000 });
+    await page.click('.add-kind [data-kind="images"]');
+    await page.type('.lib-form input[type=text]', 'Chinese lesson');
+    await (await page.$('.lib-form input[type=file][multiple]')).uploadFile(...photos);
+    const pinyinAsked = await page.evaluate(() => {
+      const [language, pinyin] = document.querySelectorAll('.page-questions select');
+      const before = pinyin.closest('div').hidden;
+      language.value = 'zh-Hans';
+      language.dispatchEvent(new Event('change'));
+      return before && !pinyin.closest('div').hidden;
+    });
+    await page.click('.lib-form button[type=submit]');
+    await page.waitForSelector('.sample-review', { timeout: 120000 }).catch(() => {});
+    const shown = () => page.evaluate(() => ({ pages: [...document.querySelectorAll('.sample-page figcaption b')].map((b) => b.textContent),
+      text: [...document.querySelectorAll('.sample-text')].map((t) => t.textContent).join(' / '),
+      tips: [...document.querySelectorAll('.sample-tip p')].map((p) => p.textContent) }));
+    const first = await shown();
+    check('Adding photos of Chinese pages: asks about pinyin, samples 2 of 3 pages, and excludes pinyin by default',
+      pinyinAsked && first.pages.length === 2 && /\u6211\u5bb6\u6709\u56db\u53e3\u4eba/.test(first.text)
+      && !/[A-Za-z]{2}/.test(first.text) && first.tips.some((t) => /pinyin/.test(t)), JSON.stringify(first));
+    await page.evaluate(() => [...document.querySelectorAll('.sample-review button')].find((b) => b.textContent === 'Try again on these pages').click());
+    await page.waitForSelector('.sample-review', { timeout: 120000 }).catch(() => {});
+    const second = await shown();
+    check('…retrying the same sample preserves Chinese and still excludes pinyin',
+      second.pages.join() === first.pages.join() && /\u6211\u5bb6\u6709\u56db\u53e3\u4eba/.test(second.text) && !/[A-Za-z]{2}/.test(second.text), JSON.stringify(second));
+    await page.evaluate(() => document.querySelector('.sample-review .btn.primary').click()); // Make all 3 pages
+    await page.waitForFunction(() => location.hash.startsWith('#/L'), { timeout: 120000 }).catch(() => {});
+    await page.waitForFunction(() => document.querySelector('.page-img')?.complete && document.querySelectorAll('#text-view .sline').length, { timeout: 20000 }).catch(() => {});
+    id = (await page.evaluate(() => location.hash)).split('/')[1];
+    const made = await page.evaluate(() => ({ pages: window.aef.book?.pages?.length,
+      lines: [...document.querySelectorAll('#text-view .sline')].map((l) => [...l.querySelectorAll('.w')].map((w) => w.textContent).join('').trim()),
+      words: [...document.querySelectorAll('#text-view .w')].slice(0, 3).map((w) => w.textContent) }));
+    check('…then all 3 pages are made that way: each sentence and each character can be clicked, no pinyin',
+      made.pages === 3 && made.lines.some((t) => /^我家有四口人。?$/.test(t)) && made.words[0] === '我' && !made.lines.some((t) => /[A-Za-z]{2}/.test(t)),
+      JSON.stringify(made));
+  } finally {
+    if (id) await page.evaluate((b) => fetch(`/api/books/${b}`, { method: 'DELETE' }), id);
+    rmSync(tmp, { recursive: true, force: true });
+  }
 }
 
 /** How far (px) the sentence being read is from the middle of the page area that can be seen. */
@@ -477,7 +575,7 @@ async function followChecks(page) {
   await setRange('#follow-speed', '0');
   const speedOut = await page.$eval('#follow-speed-out', (o) => o.textContent);
   await page.keyboard.press('Escape');
-  await page.click('#btn-voice'); // close it
+  if (await page.$eval('#voice-pop', (p) => !p.hidden)) await page.click('#btn-voice'); // close it (Esc closes it already: a click would open it again)
   await sleep(200);
   check('Follow tab in the settings: on, where on the page, speed, wait, the Text list', tab && speedOut === 'jump at once');
 
@@ -627,7 +725,7 @@ async function phoneChecks(browser, problems) {
   await sleep(600);
   const read = await page.evaluate(() => window.aef.reader.busy && window.aef.reader.active?.unit.a <= 40 && window.aef.reader.active?.unit.b > 40);
   const tip = await page.$eval('.tr-tip', (t) => (t.hidden ? '' : t.textContent));
-  check('Phone: a tap on a sentence reads it and shows its translation', read && /[؀-ۿ]/.test(tip), tip.slice(0, 30));
+  check('Phone: a tap on a sentence reads it and shows its translation', read && /[\\u0600-\\u06ff]/.test(tip), tip.slice(0, 30));
   await page.evaluate(() => { window.aef.reader.stop(); window.aef.translator.setPage(false); window.aef.translator.setList(false); });
 
   // Swipe to turn the page; pinch to zoom.
@@ -836,12 +934,23 @@ async function audioChecks(page) {
   const count = () => page.$eval('#rec-count', (c) => c.textContent);
   await page.click('#rec-new');
   await sleep(200);
-  await (await page.$$('#rec-view .pblock .pblock-box input'))[1].click(); // the "His trip began…" paragraph
+  const pickLayout = await page.$eval('#rec-pick-view', (x) => ({ height: x.getBoundingClientRect().height, rows: x.querySelectorAll('.prow').length }));
+  check('New audio opens a readable, scrollable sentence picker', pickLayout.height >= 150 && pickLayout.rows > 0,
+    `${pickLayout.height}px, ${pickLayout.rows} sentences`);
+  await page.click('#rec-audio-toggle');
+  check('opening saved audio collapses the sentence picker', (await page.$eval('#rec-pick-view', (x) => x.hidden)) &&
+    !(await page.$eval('#rec-audio-content', (x) => x.hidden)));
+  await page.click('#rec-pick-toggle');
+  check('reopening sentence selection collapses saved audio', !(await page.$eval('#rec-pick-view', (x) => x.hidden)) &&
+    (await page.$eval('#rec-audio-content', (x) => x.hidden)));
+  check('new audio starts with no sentences preselected', (await count()) === '0 sentences chosen', await count());
+  check('existing audio list stays visible while choosing sentences', !(await page.$eval('#rec-view', (x) => x.hidden)));
+  await (await page.$$('#rec-pick-view .pblock .pblock-box input'))[1].click(); // the "His trip began…" paragraph
   await sleep(150);
   check('“New audio”: the box of a paragraph chooses all its sentences', (await count()) === '11 sentences chosen', await count());
   check('chosen sentences are marked on the page', (await page.$$eval('.hl-pick rect', (r) => r.length)) > 10);
   // First and last sentence, clicked on the page: everything in between is chosen.
-  await page.click('#rec-view [data-pick="none"]');
+  await page.click('#rec-pick-view [data-pick="none"]');
   const expected = await page.evaluate(() => { const t = window.aef.views[0].text; return t.w2s[300] - t.w2s[40] + 1; });
   let p = await wordCenter(page, 40);
   await page.mouse.click(p.x, p.y);
@@ -860,10 +969,10 @@ async function audioChecks(page) {
   check('Ctrl+click drops a single sentence', (await count()) === `${expected - 1} sentences chosen`, await count());
 
   // The same in the list: the first three sentences of the paragraph.
-  await page.click('#rec-view [data-pick="none"]');
-  await (await page.$$('#rec-view .prow input'))[1].click();
+  await page.click('#rec-pick-view [data-pick="none"]');
+  await (await page.$$('#rec-pick-view .prow input'))[1].click();
   await sleep(100);
-  await (await page.$$('#rec-view .prow input'))[3].click();
+  await (await page.$$('#rec-pick-view .prow input'))[3].click();
   await sleep(150);
   check('…also in the list', (await count()) === '3 sentences chosen', await count());
 
@@ -885,6 +994,12 @@ async function audioChecks(page) {
   check('the MP3 is created and listed', (await page.evaluate(() => window.aef.recordings.list.length)) === before + 1 && rec.title === 'Test audio' && rec.count === 3,
     `${rec.title}, ${rec.count} sentences, ${rec.duration} s`);
   check('a play icon appears next to the paragraph', (await page.$$('.rec-spot')).length >= 1);
+  check('the new recording article is framed on the page', (await page.$$('.rec-frame rect')).length > 0);
+  await page.click('#rec-new');
+  await sleep(250);
+  check('existing audio icons and paragraph borders stay visible while choosing new sentences',
+    await page.$eval('.rec-spot', (b) => getComputedStyle(b).display !== 'none') && (await page.$$('.rec-frame rect')).length > 0);
+  await page.click('#rec-cancel');
   const link = await page.$eval(`#rec-view .rec[data-id="${rec.id}"] a[download]`, (a) => `${a.getAttribute('href')} ${a.getAttribute('download')}`);
   check('it can be downloaded as an MP3', /\.mp3 Test audio\.mp3$/.test(link), link);
 
@@ -893,6 +1008,7 @@ async function audioChecks(page) {
   await sleep(2000);
   const playing = await page.$eval('#audio', (a) => !a.paused && a.currentTime > 0.5);
   const full = await page.evaluate((id) => window.aef.recordings.full.get(id), rec.id);
+  check('playing generated audio frames its paragraph on the page', (await page.$$('.rec-frame rect')).length > 0);
   const shown = await page.$$eval('#text-view .w.active', (s) => s.map((x) => x.textContent).join('').trim());
   check('the icon plays it, highlighting the sentence being read', playing && shown === full.sentences[0].text, shown);
   await page.$eval('#audio', (a, t) => { a.currentTime = t; }, full.sentences[2].start + 0.4);
@@ -901,7 +1017,7 @@ async function audioChecks(page) {
   check('the highlight follows the audio (jump to sentence 3)', third === full.sentences[2].text, third);
   check('the current word is highlighted too', (await page.$$('#text-view .w.cur')).length === 1);
 
-  // Clicking a sentence that is in the MP3 plays the MP3 from there (not the live voice).
+  // In My audio mode, page clicks seek in that recording until the mode icon is toggled off.
   const clickWord = async (w) => { const q = await wordCenter(page, w); await page.mouse.click(q.x, q.y); await sleep(700); };
   const state = () => page.evaluate(() => {
     const a = document.querySelector('#audio');
@@ -909,18 +1025,18 @@ async function audioChecks(page) {
   });
   await clickWord(full.sentences[0].a + 1);
   let st = await state();
-  check('clicking a sentence that has an MP3 plays the MP3 from that sentence', st.src === rec.file && !st.paused && !st.live &&
+  check('clicking a sentence in My audio mode seeks the saved MP3', st.src === rec.file && !st.paused && !st.live &&
     st.t >= full.sentences[0].start && st.t < full.sentences[0].start + 1.5, `${st.t.toFixed(1)} s`);
-  await clickWord(full.sentences[0].a + 1);
-  check('clicking it again pauses the MP3', (await state()).paused);
-  await clickWord(full.sentences[2].a + 1);
-  st = await state();
-  check('clicking another of its sentences jumps there', !st.paused && st.t >= full.sentences[2].start - 0.1 && st.t < full.sentences[2].start + 1.5, `${st.t.toFixed(1)} s`);
-  await page.click('#pl-close');
+  check('the selected My audio icon shows the active mode', await page.$eval('.rec-spot', (b) => b.getAttribute('aria-pressed') === 'true'));
+  // Toggling the same My audio icon exits the mode; sentence clicks then use live speech.
+  await page.click('.rec-spot');
   await clickWord(full.sentences[1].a + 1);
   st = await state();
-  check('…also when the player was closed', st.src === rec.file && !st.paused && st.t >= full.sentences[1].start - 0.1 && st.t < full.sentences[1].start + 1.5,
-    `${st.t.toFixed(1)} s`);
+  check('toggling My audio off returns page clicks to the live voice', st.paused && st.live &&
+    await page.$eval('.rec-spot', (b) => b.getAttribute('aria-pressed') === 'false'),
+    `saved audio paused=${st.paused}; live reader=${st.live}`);
+  await page.click('.rec-spot'); // enter My audio mode again before testing MP3 repeat behavior
+  await sleep(500);
   // Repeat each sentence (2 times) with the MP3: at the end of sentence 2 it goes back to its start once, then on.
   await page.$eval('#repeat-input', (i) => { i.value = '2'; i.dispatchEvent(new Event('input', { bubbles: true })); });
   const s1 = full.sentences[1], s2 = full.sentences[2];
@@ -935,6 +1051,7 @@ async function audioChecks(page) {
     again >= s1.start && again < s1.start + 1.5 && onward >= s2.start && onward < s2.start + 1.5,
     `sentence ${s1.start.toFixed(1)}–${s1.end.toFixed(1)} s: ${again.toFixed(1)} s, then ${onward.toFixed(1)} s (next sentence from ${s2.start.toFixed(1)} s)`);
   await page.$eval('#repeat-input', (i) => { i.value = '1'; i.dispatchEvent(new Event('input', { bubbles: true })); });
+  await page.click('.rec-spot'); // live voice is available again only after leaving My audio mode
   await clickWord(300);
   st = await state();
   check('a sentence without an MP3 is read with the live voice', st.live && st.paused);
@@ -1113,7 +1230,7 @@ async function translationChecks(page, problems) {
   await hoverWord(40);
   await sleep(500);
   const tip = await page.$eval('.tr-tip', (t) => (t.hidden ? '' : t.textContent));
-  check('pointing at a sentence on the page shows its translation', /[؀-ۿ]/.test(tip), tip.slice(0, 40));
+  check('pointing at a sentence on the page shows its translation', /[\\u0600-\\u06ff]/.test(tip), tip.slice(0, 40));
   // The popup must leave every line of the sentence visible (word 40: a sentence of 3 lines).
   const tipPlace = (w) => page.evaluate((w) => {
     const t = window.aef.views[0].text, [a, b] = t.sent[t.w2s[w]];
@@ -1188,7 +1305,7 @@ async function translationChecks(page, problems) {
   await page.click('#reading-stop');
   await page.evaluate(() => { speechSynthesis.speak = window.realSpeak; });
   const text = await page.evaluate(() => window.aef.pageText());
-  check('copying and saving the page include the translations', /Once the boat passed[^\n]*\n[^\n]*[؀-ۿ]/.test(text));
+  check('copying and saving the page include the translations', /Once the boat passed[^\n]*\n[^\n]*[\\u0600-\\u06ff]/.test(text));
   await page.mouse.move(5, 400);
   await page.keyboard.press('l');
   await sleep(200);
@@ -1218,15 +1335,20 @@ async function translationChecks(page, problems) {
   let bookCalls = 0;
   const fake = (r) => {
     if (!isTranslate(r)) return r.continue();
-    if (++bookCalls === 2) return busy(r);
-    const { paragraphs } = JSON.parse(r.postData());
+    const { paragraphs, cachedOnly } = JSON.parse(r.postData());
+    // Prepare first checks what is saved (from the disk only): nothing yet. The second download is "busy".
+    if (!cachedOnly && ++bookCalls === 2) return busy(r);
     return r.respond({ status: 200, contentType: 'application/json',
-      body: JSON.stringify({ translations: paragraphs.map((p) => p.map((s) => `[fr] ${s}`)), fetched: 0 }) });
+      body: JSON.stringify({ translations: paragraphs.map((p) => p.map((s) => (cachedOnly ? '' : `[fr] ${s}`))), fetched: 0 }) });
   };
   page.on('request', fake);
   await page.click('#btn-voice');
   await page.click('#voice-pop [role=tab][data-ptab="translation"]');
   await sleep(300);
+  await page.select('#tr-scope', 'book');
+  // Sentences and clauses only: word meanings would go to the real translator.
+  const levelsBefore = await page.$$eval('[id^="tr-level-"]', (xs) => xs.map((x) => [x.id, x.checked]));
+  for (const [id, on] of levelsBefore) if (on !== ['tr-level-sentence', 'tr-level-clause'].includes(id)) await page.click(`#${id}`);
   await page.click('#tr-book');
   const status = () => page.$eval('#tr-status', (s) => s.textContent);
   const paused = await page.waitForFunction(() => /goes on by itself in 0:0\d/.test(document.querySelector('#tr-status').textContent), { timeout: 15000 })
@@ -1234,12 +1356,14 @@ async function translationChecks(page, problems) {
   const went = await page.waitForFunction(() => /\((4|5|6) of \d+\)/.test(document.querySelector('#tr-status').textContent), { timeout: 20000 })
     .then(() => true, () => false);
   await page.click('#tr-book'); // Stop
-  const stopped = await page.waitForFunction(() => /Stopped after/.test(document.querySelector('#tr-status').textContent), { timeout: 5000 })
+  const stopped = await page.waitForFunction(() => /^Stopped/.test(document.querySelector('#tr-status').textContent), { timeout: 5000 })
     .then(status, () => '');
   check('Translate the whole book: when Google is busy it waits and goes on by itself (no stop)', !!paused && went && !!stopped,
     `${bookCalls} requests; ${stopped.slice(0, 22)}`);
   page.off('request', fake);
   await page.setRequestInterception(false);
+  for (const [id, on] of levelsBefore) if (await page.$eval(`#${id}`, (x) => x.checked) !== on) await page.click(`#${id}`);
+  await page.select('#tr-scope', 'page');
   await page.keyboard.press('Escape');
   // The made-up 429 answers are not errors of the app.
   problems.splice(0, problems.length, ...problems.filter((p) => !/HTTP 429: .*\/api\/translate$/.test(p)));
@@ -1503,7 +1627,10 @@ try {
   if (!only || only === 'follow') await followChecks(page);
 
   // The library on this computer
-  if (!only || only === 'library') await libraryChecks(page);
+  if (!only || only === 'library') {
+    await libraryChecks(page);
+    await sampleChecks(page);
+  }
 
   // Phones (iPhone size, touch only)
   if (!only || only === 'phone') await phoneChecks(browser, problems);

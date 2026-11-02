@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#c4122f">
+<title>Redeem access code · Lingua Books</title>
+<style>
+  :root { color-scheme: light; font-family: system-ui, sans-serif; color: #21242b; background: #f4f5f7; }
+  * { box-sizing: border-box; }
+  body { min-height: 100svh; margin: 0; display: grid; place-items: center; padding: 20px; }
+  main { width: min(100%, 460px); background: #fff; border: 1px solid #dddfe4; border-radius: 18px; padding: 28px; box-shadow: 0 10px 36px #17191f12; }
+  h1 { margin: 0 0 8px; font-size: 26px; } p { color: #626875; line-height: 1.5; }
+  label { display: block; margin: 18px 0 6px; font-weight: 650; font-size: 14px; }
+  input { width: 100%; min-height: 46px; padding: 10px 12px; border: 1px solid #b9bdc6; border-radius: 8px; font: inherit; }
+  button { min-height: 46px; padding: 9px 16px; border: 0; border-radius: 8px; background: #c4122f; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+  button:disabled { opacity: .55; cursor: wait; }
+  .full { width: 100%; margin-top: 16px; }
+  .tabs { display: flex; gap: 8px; margin: 20px 0; }
+  .tabs button { flex: 1; background: #eceef2; color: #333944; }
+  .tabs button[aria-selected="true"] { background: #242832; color: #fff; }
+  .msg { min-height: 24px; color: #bd1532; font-size: 14px; }
+  .hidden { display: none !important; }
+  .owner { margin-top: 18px; padding-top: 12px; border-top: 1px solid #e5e6ea; }
+  a { color: #b20f2a; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Redeem an access code</h1>
+  <p id="intro">Sign in or create an account, then redeem the code from your administrator.</p>
+  <section id="account">
+    <div class="tabs" role="tablist">
+      <button type="button" id="login-tab" aria-selected="false">Log in</button>
+      <button type="button" id="signup-tab" aria-selected="true">Create account</button>
+    </div>
+    <form id="account-form">
+      <label id="name-label">Your name<input id="name" maxlength="60" autocomplete="name"></label>
+      <label>E-mail<input id="email" type="email" required autocomplete="email"></label>
+      <label>Password<input id="password" type="password" required minlength="8" autocomplete="new-password"></label>
+      <label id="owner-label" class="owner">Owner setup code (site owner only)<input id="owner-code" type="password" autocomplete="off"></label>
+      <button id="account-submit" class="full">Create account</button>
+    </form>
+  </section>
+  <section id="redeem" class="hidden">
+    <label>Access code<input id="code" maxlength="19" autocapitalize="characters" autocomplete="off"></label>
+    <button id="redeem-button" class="full">Redeem code</button>
+  </section>
+  <p id="message" class="msg" role="status" aria-live="polite"></p>
+  <p><a href="/web/">Return to Lingua Books</a></p>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const params = new URLSearchParams(location.search);
+  const codeFromLink = params.get('code') || '';
+  let tab = 'signup';
+  let signedIn = false;
+  const api = async (path, body) => {
+    const response = await fetch(path, { method: body === undefined ? 'GET' : 'POST',
+      headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store' });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `Request failed (${response.status}).`);
+    return data;
+  };
+  function setTab(next) {
+    tab = next;
+    $('login-tab').setAttribute('aria-selected', String(tab === 'login'));
+    $('signup-tab').setAttribute('aria-selected', String(tab === 'signup'));
+    $('name-label').classList.toggle('hidden', tab !== 'signup');
+    $('password').autocomplete = tab === 'signup' ? 'new-password' : 'current-password';
+    $('account-submit').textContent = tab === 'signup' ? 'Create account' : 'Log in';
+  }
+  function showRedeem() {
+    signedIn = true;
+    $('account').classList.add('hidden');
+    $('redeem').classList.remove('hidden');
+    $('intro').textContent = 'Your code is for one use. Its access period starts when you redeem it.';
+    if (codeFromLink) {
+      $('code').value = codeFromLink;
+      redeemNow();
+    }
+  }
+  async function redeemNow() {
+    if (!signedIn) return;
+    const button = $('redeem-button');
+    const code = $('code').value.trim();
+    if (!code) { $('message').textContent = 'Enter an access code.'; return; }
+    button.disabled = true;
+    $('message').textContent = 'Checking your code…';
+    try {
+      await api('/api/redeem', { code });
+      $('message').textContent = 'Access activated. Opening your books…';
+      history.replaceState(null, '', '/web/redeem.html');
+      setTimeout(() => { location.href = '/web/'; }, 900);
+    } catch (error) {
+      $('message').textContent = error.message;
+      button.disabled = false;
+    }
+  }
+  $('login-tab').addEventListener('click', () => setTab('login'));
+  $('signup-tab').addEventListener('click', () => setTab('signup'));
+  $('account-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = $('account-submit');
+    button.disabled = true;
+    $('message').textContent = '';
+    const path = tab === 'signup' ? '/api/signup' : '/api/login';
+    const body = { email: $('email').value, password: $('password').value };
+    body.adminSetupCode = $('owner-code').value;
+    if (tab === 'signup') {
+      body.name = $('name').value;
+    }
+    try {
+      await api(path, body);
+      signedIn = true;
+      if (codeFromLink) showRedeem();
+      else {
+        $('account').classList.add('hidden');
+        $('redeem').classList.remove('hidden');
+        $('intro').textContent = 'You are signed in. Enter the access code from your administrator.';
+        $('code').focus();
+      }
+    } catch (error) {
+      $('message').textContent = error.message;
+      button.disabled = false;
+    }
+  });
+  $('redeem-button').addEventListener('click', redeemNow);
+  $('code').addEventListener('keydown', (event) => { if (event.key === 'Enter') redeemNow(); });
+  setTab('signup');
+  api('/api/me').then((me) => {
+    if (me.user?.admin) {
+      $('account').classList.add('hidden'); $('redeem').classList.add('hidden');
+      $('intro').textContent = 'Your administrator account already has full access.';
+      return;
+    }
+    if (me.user) showRedeem();
+  }).catch((error) => { $('message').textContent = error.message; });
+</script>
+</body>
+</html>

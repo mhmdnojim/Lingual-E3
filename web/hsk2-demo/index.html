@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#174f53">
+  <title>HSK 2 · Book preview</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="HSK 2 book preview home">
+      <span class="brand-mark">汉</span>
+      <span><strong>HSK 2</strong><small>TEXTBOOK PREVIEW</small></span>
+    </a>
+    <div class="top-note"><span class="live-dot"></span> 9-page demo</div>
+    <a class="back-link" href="../#/Laa0f1cd49e/1">Open clickable reader <span aria-hidden="true">↗</span></a>
+  </header>
+
+  <main>
+    <section class="intro">
+      <div>
+        <p class="eyebrow">STANDARD COURSE · VOLUME 2</p>
+        <h1>A closer look at the book</h1>
+        <p class="subtitle">PDF pages 21–29 <span>·</span> printed pages 1–9 <span>·</span> clickable Chinese and English</p>
+      </div>
+      <div class="chapter-chip"><span>01</span><span>LESSON<br><b>September in Beijing</b></span></div>
+    </section>
+
+    <section class="reader" aria-label="Textbook page reader">
+      <div class="reader-main">
+        <div class="toolbar">
+          <div class="page-nav">
+            <button class="nav-arrow" id="previous" aria-label="Previous page" title="Previous page (←)">←</button>
+            <label class="page-count"><span class="sr-only">PDF page</span><input id="page-number" type="number" min="21" max="29" value="21"><span>/ 29</span></label>
+            <button class="nav-arrow" id="next" aria-label="Next page" title="Next page (→)">→</button>
+          </div>
+          <div class="view-tools" aria-label="Page view controls">
+            <button id="zoom-out" class="tool-button" aria-label="Zoom out" title="Zoom out">−</button>
+            <button id="fit" class="tool-button fit-button" title="Fit page to screen">Fit</button>
+            <button id="zoom-in" class="tool-button" aria-label="Zoom in" title="Zoom in">+</button>
+            <button id="fullscreen" class="tool-button fullscreen-button" aria-label="Full screen" title="Full screen">⛶</button>
+          </div>
+        </div>
+        <div class="page-stage" id="page-stage">
+          <img id="book-page" src="assets/pages/pdf-021.jpg" alt="Textbook PDF page 21, printed page 1" draggable="false">
+        </div>
+        <nav class="page-strip" id="page-strip" aria-label="Choose a page"></nav>
+      </div>
+
+      <aside class="audio-panel">
+        <div class="panel-heading">
+          <div class="headphone-icon" aria-hidden="true">♫</div>
+          <div><p class="eyebrow">LISTEN ALONG</p><h2>Page audio</h2></div>
+        </div>
+        <p class="panel-description">Play the recordings linked to the activity numbers on this page.</p>
+        <div class="track-list" id="track-list"></div>
+        <div class="audio-note"><span class="note-icon">i</span><span>Audio is grouped by lesson. The printed track numbers match the book.</span></div>
+        <div class="demo-card">
+          <div class="demo-card-top"><span class="mini-label">SAMPLE SCOPE</span><span class="scope-count">9 pages</span></div>
+          <p>Lesson 1, its notes and practice, plus the opening warm-up for Lesson 2.</p>
+          <div class="scope-bar"><span></span></div>
+          <small>Lesson 1 tracks 01–1 through 01–5</small>
+        </div>
+      </aside>
+    </section>
+    <footer><span>HSK Standard Course 2</span><span>Use ← → to turn pages</span></footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

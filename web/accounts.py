@@ -70,7 +70,7 @@ def public_user(u):
     return {'id': u['id'], 'name': u['name'], 'email': u['email'], 'admin': bool(u['admin'])} if u else None
 
 
-def sign_up(email, name, password, address):
+def sign_up(email, name, password, address, admin_setup_token=''):
     email, name = str(email).strip().lower(), ' '.join(str(name).split())[:60]
     if not EMAIL_RE.match(email) or email == 'local':
         raise AccountError('Please give a valid e-mail address.')
@@ -82,12 +82,20 @@ def sign_up(email, name, password, address):
         raise AccountError('Too many new accounts from here. Try again later.')
     if db.one('SELECT 1 FROM users WHERE email = ?', (email,)):
         raise AccountError('There is already an account with this e-mail. Log in instead.')
+    is_admin = email in ADMINS
+    if is_admin and os.environ.get('LB_REQUIRE_SUBSCRIPTION', '').strip().lower() in ('1', 'true', 'yes', 'on'):
+        expected = os.environ.get('LB_ADMIN_SETUP_TOKEN', '')
+        # A public server must not grant its owner role to the first person who types the address.
+        if not expected:
+            raise AccountError('The owner setup code is not configured on this server yet.')
+        if not hmac.compare_digest(expected, str(admin_setup_token)):
+            raise AccountError('The owner setup code is not correct.')
     uid = db.run('INSERT INTO users (email, name, pw, admin, created) VALUES (?, ?, ?, ?, ?)',
-                 (email, name, hash_password(str(password)), int(email in ADMINS), int(time.time())))
+                 (email, name, hash_password(str(password)), int(is_admin), int(time.time())))
     return db.one('SELECT * FROM users WHERE id = ?', (uid,))
 
 
-def log_in(email, password, address):
+def log_in(email, password, address, admin_setup_token=''):
     email = str(email).strip().lower()
     if limited('login', address, 10, 900):
         raise AccountError('Too many tries. Wait 15 minutes, then try again.')
@@ -97,7 +105,13 @@ def log_in(email, password, address):
         raise AccountError('Wrong e-mail or password.')
     if u['disabled']:
         raise AccountError('This account is closed.')
-    if email in ADMINS and not u['admin']:  # made an admin (LB_ADMIN_EMAIL) after signing up
+    if email in ADMINS and not u['admin']:
+        if os.environ.get('LB_REQUIRE_SUBSCRIPTION', '').strip().lower() in ('1', 'true', 'yes', 'on'):
+            expected = os.environ.get('LB_ADMIN_SETUP_TOKEN', '')
+            if not expected:
+                raise AccountError('The owner setup code is not configured on this server yet.')
+            if not hmac.compare_digest(expected, str(admin_setup_token)):
+                raise AccountError('Enter the owner setup code to activate the administrator account.')
         db.run('UPDATE users SET admin = 1 WHERE id = ?', (u['id'],))
         u['admin'] = 1
     return u

@@ -4,6 +4,7 @@
 param(
   [Parameter(Mandatory = $true)][string]$InputDir,
   [Parameter(Mandatory = $true)][string]$OutputDir,
+  [string]$Language = 'en-US',
   [switch]$Force
 )
 $ErrorActionPreference = 'Stop'
@@ -25,8 +26,8 @@ function Await($op, [Type]$resultType) {
   $task.Result
 }
 
-$engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage([Windows.Globalization.Language]::new('en-US'))
-if (-not $engine) { throw 'English OCR language is not installed.' }
+$engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage([Windows.Globalization.Language]::new($Language))
+if (-not $engine) { throw "The OCR language '$Language' is not installed in Windows. Add its language pack in Windows Settings, then try again." }
 
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 $files = Get-ChildItem -Path $InputDir -Filter *.png | Sort-Object Name

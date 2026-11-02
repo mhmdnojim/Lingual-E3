@@ -1,7 +1,43 @@
-// Clause splitting in the browser, used after text corrections.
-// Same rules as split_clauses() in web/tools/segment_text.py — keep the two in step.
+// Clause splitting and the words of typed text in the browser, used after text corrections.
+// Same rules as split_clauses() and cjk_words() in web/tools/segment_text.py — keep them in step.
 
-const CLAUSE_END = /[,;:]["'”’)\]]*$|[—–]$/;
+const CLAUSE_END = /[,;:，、；：]["'”’)\]）」』]*$|[—–]$/;
+// Chinese (Japanese, Korean) characters, and their full-width punctuation.
+const CJK_CHARS = '぀-ヿ㐀-䶿一-鿿豈-﫿가-힯';
+const CJK = new RegExp(`[${CJK_CHARS}]`, 'u');
+const CJK_OPEN = '（《〈「『【', CJK_CLOSE = '。，、；：！？）》〉」』】';
+// One character with the brackets before it and the punctuation after it, a run of other
+// letters (pinyin, English), or punctuation alone.
+const CJK_PIECE = new RegExp(`[${CJK_OPEN}]*(?:[${CJK_CHARS}]|[^${CJK_OPEN}${CJK_CLOSE}${CJK_CHARS}]+)[${CJK_CLOSE}]*`
+  + `|[${CJK_OPEN}${CJK_CLOSE}]+`, 'gu');
+const cjkEdge = (ch) => !!ch && (CJK.test(ch) || CJK_OPEN.includes(ch) || CJK_CLOSE.includes(ch));
+
+/** Does text contain Chinese (Japanese, Korean) characters? */
+export const hasCJK = (text) => CJK.test(text);
+
+/**
+ * The words of typed text, [{t, sp}] (sp: a space after it): split at spaces, and Chinese one
+ * word per character with its punctuation, without spaces between them, like the pages.
+ */
+export function tokenize(text) {
+  const out = [];
+  for (const chunk of String(text).split(/\s+/).filter(Boolean)) {
+    const pieces = CJK.test(chunk) || [...chunk].every(cjkEdge) ? chunk.match(CJK_PIECE) : [chunk];
+    pieces.forEach((t, k) => {
+      const prev = out[out.length - 1];
+      const punct = [...t].every((ch) => CJK_CLOSE.includes(ch) || CJK_OPEN.includes(ch));
+      if (punct && prev && CJK_CLOSE.includes(t[0])) { prev.t += t; return; } // "人" + "。" -> "人。"
+      if (prev && [...prev.t].every((ch) => CJK_OPEN.includes(ch))) { prev.t += t; prev.sp = 1; return; } // "（" + "你"
+      if (prev && k > 0) prev.sp = 0; // typed together
+      out.push({ t, sp: 1 });
+    });
+  }
+  out.forEach((w, k) => { // no spaces in Chinese, even if they were typed
+    const next = out[k + 1];
+    if (next && cjkEdge(w.t.at(-1)) && cjkEdge(next.t[0])) w.sp = 0;
+  });
+  return out;
+}
 const DASHES = new Set(['-', '—', '–']);
 // Words that usually start a new clause. Coordinators need longer pieces on
 // both sides so "Rutledge and Adam" is not split.

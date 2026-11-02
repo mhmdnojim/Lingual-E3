@@ -56,8 +56,10 @@ sudo -u lingua "$APP/.venv/bin/pip" install -q -r "$APP/web/requirements.txt"
 
 echo "== Settings"
 if [ ! -f /etc/lingua-books.env ]; then
-  read -rp "Your e-mail address (it becomes the admin when you sign up with it): " ADMIN
+  read -rp "Your admin e-mail [mhmd.nojim@gmail.com]: " ADMIN
+  ADMIN=${ADMIN:-mhmd.nojim@gmail.com}
   read -rp "E-mail address for questions and copyright complaints (shown in the terms) [$ADMIN]: " CONTACT
+  ADMIN_SETUP_TOKEN=$(openssl rand -hex 16)
   umask 077
   cat > /etc/lingua-books.env <<EOF
 LB_ADMIN_EMAIL=$ADMIN
@@ -65,6 +67,9 @@ LB_CONTACT_EMAIL=${CONTACT:-$ADMIN}
 LB_DATA_DIR=$DATA/library
 AEF_RECORDINGS_DIR=$DATA/voices
 AEF_TRANSLATIONS_DIR=$DATA/translations
+LB_REQUIRE_SUBSCRIPTION=1
+LB_PUBLIC_URL=https://$DOMAIN
+LB_ADMIN_SETUP_TOKEN=$ADMIN_SETUP_TOKEN
 EOF
 fi
 
@@ -98,4 +103,8 @@ systemctl reload caddy || systemctl restart caddy
 if command -v ufw >/dev/null && ufw status | grep -q active; then ufw allow 80,443/tcp; fi
 
 echo
-echo "Done. Open https://$DOMAIN and sign up with your e-mail address (you are the admin)."
+echo "Done. Open https://$DOMAIN and create your admin account using the configured e-mail address."
+if [ -n "${ADMIN_SETUP_TOKEN:-}" ]; then
+  echo "Owner setup code (enter once during admin sign-up): $ADMIN_SETUP_TOKEN"
+  echo "Keep this code private. It is also stored in /etc/lingua-books.env."
+fi

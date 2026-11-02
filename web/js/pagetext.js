@@ -134,6 +134,9 @@ export function normalize(s) {
 }
 
 export function speakable(t) {
+  // Pinyin is normally marked with tone accents. It shares Latin letters with English,
+  // so only remove words with explicit tone marks; unmarked pinyin is ambiguous.
+  if (/[āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜńňḿ]/i.test(t) || /[a-z][\u0300-\u036f]/i.test(t.normalize('NFD'))) return '';
   return t
     .replace(/[•·■●▪►]/g, '')
     // Exercise gap numbers glued to the next word: "2was", "14couldn't" (but not "21st", "10am").

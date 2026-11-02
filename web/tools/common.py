@@ -2,10 +2,15 @@
 import json
 import os
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+APP = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))  # this app's folder
+# The disc (level) to build: this folder's, or another level's folder (AEF_LEVEL_ROOT; build_all.ps1
+# -Root). Its web/data is made from its .shared; the app shows it when web/levels.json lists it.
+ROOT = os.path.abspath(os.environ.get('AEF_LEVEL_ROOT') or APP)
 SHARED = os.path.join(ROOT, '.shared')
 WEB = os.path.join(ROOT, 'web')
 DATA = os.path.join(WEB, 'data')
+# Made by speech recognition (web/transcription.py), of every level: in this app's folder.
+TRANSCRIPTS = os.environ.get('AEF_TRANSCRIPTS_DIR') or os.path.join(APP, 'web', 'transcripts')
 
 # Page geometry used by the original OpenLayers viewer (page.map.js).
 TILE_W, TILE_H = 124, 156

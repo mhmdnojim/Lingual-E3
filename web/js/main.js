@@ -1,6 +1,6 @@
 import { $, $$, el, icon, store, getJSON, toast, downloadText, typingInField } from './util.js';
-import { PageView } from './pageview.js';
-import { speech, settings, repeatTimes } from './speech.js';
+import { PageView, HOLD_MS } from './pageview.js';
+import { speech, settings, repeatTimes, chineseKind } from './speech.js';
 import { AudioPlayer, openVideo, openSwf, initDialog } from './media.js';
 import { Search } from './search.js';
 import { TextEditor } from './editor.js';
@@ -8,12 +8,16 @@ import { Recordings } from './recordings.js';
 import { Translator } from './translation.js';
 import { Library } from './library.js';
 import { Follower, followSettings, setFollow } from './follow.js';
+import { Words } from './words.js';
+import { Breakdown } from './breakdown.js';
 
 const RATIO = 1984 / 2496;
-const NEEDS_API = 7; // server features this page needs (API_VERSION in web/server.py)
+const NEEDS_API = 26; // server features this page needs (API_VERSION in web/server.py)
 const CHUNK_UNITS = 10; // sentences (or clauses) read in one go, for a smooth flow
 const CHUNK_CHARS = 1500;
 const MODES = ['sentence', 'clause', 'word', 'off'];
+const FIT_UNITS = ['paragraph', 'sentence', 'word']; // the fit button after the page and its width
+const FIT_MIN = { paragraph: 0.3, sentence: 0.35, word: 0.15 }; // fitted as if at least this part of the page wide
 const DOUBLE_CLICK_MS = 280; // a click in the Text list waits this long in case it is a double click
 // With a login (phones on the home Wi-Fi, a web host): when it has run out, go to the login page.
 const realFetch = window.fetch.bind(window);
@@ -25,8 +29,43 @@ window.fetch = async (...args) => {
   return r;
 };
 
-/** Phone-sized screen (the layout in app.css changes at the same width). */
-const isPhone = () => matchMedia('(max-width: 700px)').matches;
+/** The phone's layout (js/device.js: automatic, or chosen in the Screen tab; app.css follows it). */
+const isPhone = () => (window.linguaDevice ? window.linguaDevice.isPhone() : matchMedia('(max-width: 700px)').matches);
+
+const VOICE_SAMPLES = {
+  en: 'Hello! This is how I will read the book to you.',
+  zh: '你好！我会这样给你读这本书。',
+  both: 'Hello! This is how I will read the book to you. 你好！我会这样给你读这本书。',
+};
+const CHINESE_KINDS = { mandarin: 'Mandarin', taiwan: 'Taiwan Mandarin', regional: 'regional accent', cantonese: 'Cantonese, not Mandarin' };
+const NO_CHINESE_VOICE = 'No Chinese voice on this device: the Chinese cannot be read. Open the app in Microsoft Edge (natural Chinese voices), '
+  + 'or add Chinese to the speech of the device (Windows: Settings → Time & language → Speech; Android: Text-to-speech output; '
+  + 'iPhone and iPad: Accessibility → Spoken Content → Voices).';
+
+/** The English and Chinese voice lists of the settings, best first, and a hint about them. */
+function fillVoices(sel, zhSel, recordings = null) {
+  const short = (v) => v.name.replace(/^Microsoft /, '').replace(/ - (English|Chinese).*$/, '');
+  const fill = (select, language, none, label) => {
+    const list = speech.voicesFor(language), current = speech.currentVoice(language);
+    select.replaceChildren(...(list.length
+      ? [true, false].map((local) => {
+        const matching = list.filter((v) => !!v.localService === local);
+        return matching.length ? el('optgroup', { label: local ? 'Device voices — offline' : 'Online voices' },
+          ...matching.map((v) => el('option', { value: v.voiceURI, selected: v === current }, label(v)))) : null;
+      }).filter(Boolean)
+      : [el('option', { value: '' }, none)]));
+  };
+  fill(sel, 'en', 'No English voice on this device', (v) => `${short(v)} (${v.lang}) · ${recordings?.voiceAvailability(v).label || (v.localService ? 'offline on device' : 'checking')}`);
+  fill(zhSel, 'zh', 'No Chinese voice on this device', (v) => `${short(v)} · ${CHINESE_KINDS[chineseKind(v)]} (${v.lang})`);
+  const zh = speech.currentVoice('zh');
+  $('#voice-hint').textContent = !zh
+    ? 'No Chinese voice: Chinese cannot be read well. Open this app in Microsoft Edge (natural Chinese voices), or add Chinese in the Windows Settings: Time & language → Speech.'
+    : chineseKind(zh) !== 'mandarin'
+      ? `${short(zh)} does not speak standard Mandarin. Choose a voice marked “Mandarin” for the pronunciation of the book.`
+      : !/natural/i.test(zh.name) && speech.voicesFor('zh').some((v) => /natural/i.test(v.name) && chineseKind(v) === 'mandarin')
+        ? 'Voices marked “Natural” (Xiaoxiao, Yunxi) sound best; they need an internet connection.'
+        : 'Chinese characters are read by the Chinese voice, everything else by the English voice. Pinyin with tone marks is skipped. “Natural” voices sound best but need an internet connection.';
+}
 
 /**
  * Reads the page aloud. Clicking a sentence (or clause) reads from there to the end of the
@@ -42,6 +81,10 @@ class Reader {
     this.pos = 0;
     this.active = null;
     this.lastWord = -1;
+    this.ticket = 0; // a translation being fetched or read is dropped when this changes (pause, stop)
+    this.trSaid = false; // the current sentence's translation has been read
+    this.phase = null; // 'translation' while one is read
+    this.told = new Set(); // what was told already in this reading (tellOnce)
     $('#reading-stop').addEventListener('click', () => this.stop());
     $('#reading-toggle').addEventListener('click', () => this.toggle());
   }
@@ -55,25 +98,35 @@ class Reader {
   }
 
   start(view, unit, fromPage = false) {
-    if (!speech.supported) { toast('This browser cannot read text aloud.'); return; }
-    this.app.audio.pause();
-    this.clear();
-    this.app.views.forEach((v) => v.showActive(null)); // e.g. the sentence kept after correcting
+    const queue = [];
     if (unit.mode === 'word') {
-      this.queue = [{ view, unit }];
+      queue.push({ view, unit });
     } else {
       const views = this.app.views;
       for (let k = views.indexOf(view); k < views.length; k++) {
         const v = views[k];
         if (!v.text) continue;
         for (let i = v === view ? unit.i : 0; i < v.text.count(unit.mode); i++) {
-          this.queue.push({ view: v, unit: v.text.unit(unit.mode, i) });
+          queue.push({ view: v, unit: v.text.unit(unit.mode, i) });
         }
       }
     }
+    this.startList(queue, fromPage);
+  }
+
+  /** Read these ([{view, unit}]) one after the other: from a sentence to the end, or the sentences of an area of the page. */
+  startList(queue, fromPage = false) {
+    if (!speech.supported) { toast('This browser cannot read text aloud.'); return; }
+    if (!queue.length) return;
+    this.app.audio.pause();
+    this.clear();
+    this.app.views.forEach((v) => v.showActive(null)); // e.g. the sentence kept after correcting
+    this.queue = queue;
     this.pos = 0;
     this.round = 1; // the how-many-th time the current sentence is being read
     this.state = 'playing';
+    this.saidTrProblem = false;
+    this.told = new Set();
     if (fromPage) this.app.showTab('text');
     this.next(fromPage);
   }
@@ -82,7 +135,40 @@ class Reader {
     if (this.pos >= this.queue.length) { this.stop(); return; }
     const item = this.queue[this.pos];
     this.setActive(item, center);
+    if (this.trOrder === 'before' && !this.trSaid) { this.sayTranslation(item, () => this.speakFrom(this.pos, item.unit.a)); return; }
     this.speakFrom(this.pos, item.unit.a);
+  }
+
+  /** Read each sentence's translation too: 'before' or 'after' it, or 'off' (voice settings). */
+  get trOrder() { return this.app.translator?.lang ? settings.trOrder : 'off'; }
+
+  /**
+   * Read the translation of the current sentence (or clause, or word) with the voice of its
+   * language, then go on with `then`. Without a translation or a voice for it, go on at once.
+   */
+  async sayTranslation(item, then) {
+    const t = this.app.translator, ticket = ++this.ticket;
+    this.trSaid = true;
+    this.phase = 'translation'; // (paused now: read the translation again when continuing)
+    this.app.showWord(item.view, -1);
+    this.app.readingChanged(this.state, `${t.name || 'Translation'} · ${this.label()}`);
+    const goOn = () => { if (ticket === this.ticket && this.state === 'playing') { this.phase = null; then(); } };
+    let text = '';
+    try { text = await t.textFor(item.view, item.unit); } catch (err) { this.trProblem(err.message || 'The translation could not be fetched.'); }
+    if (ticket !== this.ticket || this.state !== 'playing') return;
+    if (!text) { goOn(); return; }
+    const spoken = speech.speakTranslation(text, t.lang, {
+      onEnd: goOn,
+      onError: (e) => { this.trProblem(`The ${t.name} voice stopped (${e.error || 'error'}).`); goOn(); },
+      onFallback: (v) => { if (!this.saidOffline) toast(`No internet: reading with ${v.name}`); this.saidOffline = true; },
+    });
+    if (!spoken) { this.trProblem(`No voice on this device reads ${t.name}. Choose another browser (Microsoft Edge has most languages).`); goOn(); }
+  }
+
+  /** Tell once per reading why a translation was not read (the sentences go on). */
+  trProblem(message) {
+    if (!this.saidTrProblem) toast(message);
+    this.saidTrProblem = true;
   }
 
   /**
@@ -93,12 +179,14 @@ class Reader {
    * CHUNK_UNITS units of the same page are therefore spoken in one go; the voice's word
    * positions tell which sentence is being read, so the highlight still moves along.
    * One unit at a time is used when a pause between sentences is wanted, when sentences are
-   * repeated, in word mode, and for voices that do not report word positions.
+   * repeated, when their translations are read too, in word mode, and for voices that do not
+   * report word positions.
    */
   speakFrom(pos, from) {
     const first = this.queue[pos];
     const view = first.view, text0 = view.text;
-    const single = first.unit.mode === 'word' || Number(settings.gap) > 0 || repeatTimes() !== 1 || !speech.reportsWords();
+    const single = first.unit.mode === 'word' || Number(settings.gap) > 0 || repeatTimes() !== 1 || !speech.reportsWords()
+      || this.trOrder !== 'off';
     const parts = []; // [{k: queue index, at: start in the spoken text}]
     const starts = []; // word start positions in the spoken text
     let text = '';
@@ -112,8 +200,10 @@ class Reader {
       if (text) text += ' ';
       const base = text.length;
       for (const s of sp.starts) starts.push({ w: s.w, at: base + s.at });
-      // End every sentence (and heading) with a stop, so the voice makes its normal short pause.
-      text += /[.!?;:…]["'”’)\]]*$/.test(sp.text) || first.unit.mode !== 'sentence' ? sp.text : `${sp.text}.`;
+      // End every sentence (and heading) with a stop, so the voice makes its normal short pause
+      // (a Chinese one after Chinese: the Chinese voice would read "." after 。).
+      text += /[.!?;:…。！？；：]["'”’)\]）」』》]*$/.test(sp.text) || first.unit.mode !== 'sentence' ? sp.text
+        : `${sp.text}${/[㐀-鿿]$/u.test(sp.text) ? '。' : '.'}`;
     }
     const lastK = parts[parts.length - 1].k;
     this.lastWord = from;
@@ -142,7 +232,18 @@ class Reader {
       },
       onError: (e) => { toast(`The voice stopped (${e.error || 'error'}). Try another voice.`); this.stop(); },
       onFallback: (v) => { if (!this.saidOffline) toast(`No internet: reading with ${v.name}`); this.saidOffline = true; },
+      onSkipped: (language) => this.tellOnce(`skip-${language}`, language === 'zh'
+        ? 'The Chinese is not read: “EN” (English only) is chosen in the top bar. Choose 中+EN or 中 to hear it.'
+        : 'The English is not read: “中” (Chinese only) is chosen in the top bar. Choose 中+EN or EN to hear it.'),
+      onNoVoice: (language) => this.tellOnce(`voice-${language}`, language === 'zh' ? NO_CHINESE_VOICE : 'No English voice on this device.'),
     });
+  }
+
+  /** Tell something once per reading (a sentence skipped, no voice for its language), as a message that stays a while. */
+  tellOnce(key, message) {
+    if (this.told.has(key)) return;
+    this.told.add(key);
+    toast(message, 6000);
   }
 
   /**
@@ -153,6 +254,8 @@ class Reader {
   finished() {
     const item = this.queue[this.pos];
     if (item) this.app.showWord(item.view, -1);
+    if (item && this.trOrder === 'after' && !this.trSaid) { this.sayTranslation(item, () => this.finished()); return; }
+    this.trSaid = false; // (a sentence and its translation are repeated together)
     if (item && this.round < repeatTimes()) this.round++; // once more (the setting is read each time, so it can change while reading)
     else {
       this.round = 1;
@@ -205,6 +308,7 @@ class Reader {
       this.waitUntil = 0;
       this.betweenUnits = true;
     }
+    this.ticket++;
     speech.stop();
     this.app.readingChanged(this.state, this.label());
   }
@@ -214,6 +318,13 @@ class Reader {
     const item = this.queue[this.pos];
     if (!item) { this.stop(); return; }
     this.state = 'playing';
+    if (this.phase === 'translation') { // paused during a translation: read it again
+      this.phase = null;
+      this.trSaid = false;
+      if (this.trOrder === 'before') this.next();
+      else this.finished();
+      return;
+    }
     if (this.betweenUnits) { // the last sentence was finished: go on with the next one
       this.betweenUnits = false;
       this.next();
@@ -241,6 +352,9 @@ class Reader {
   clear() {
     speech.stop();
     clearTimeout(this.waitTimer);
+    this.ticket++;
+    this.trSaid = false;
+    this.phase = null;
     this.waitUntil = 0;
     this.betweenUnits = false;
     this.setActive(null);
@@ -283,6 +397,8 @@ class App {
     this.editor = new TextEditor(this);
     this.recordings = new Recordings(this);
     this.translator = new Translator(this);
+    this.words = new Words(this); // new words: collecting them, flashcards
+    this.breakdown = new Breakdown(this); // a sentence broken down: each word and its meaning
     this.library = new Library(this);
     this.follower = new Follower(this);
     initDialog();
@@ -292,16 +408,20 @@ class App {
     this.bindFollow();
     this.bindDrawer();
     this.bindPanel();
+    this.bindDevice();
     this.bindTouch();
     this.bindKeys();
     this.setMode(store.get('mode', 'sentence'));
     this.setPanelOpen(store.get('panel', true));
 
-    new ResizeObserver(() => this.applyZoom()).observe($('#stage'));
+    new ResizeObserver(() => { // (fit paragraph, sentence or word: fitted again, and in the middle again)
+      if (FIT_UNITS.includes(this.zoom.mode) && this.fitted && this.views.includes(this.fitted.view)) this.fitTo(this.fitted);
+      else this.applyZoom();
+    }).observe($('#stage'));
     window.addEventListener('hashchange', () => this.route());
-    // No address of a page: the book read last, else the library.
+    // No address of a page (or of the library): the book read last, else the library.
     const last = store.get('last', null);
-    if (!this.parseHash() && last && location.hash !== '#/') history.replaceState(null, '', `#/${last.book}/${last.page}`);
+    if (!this.parseHash() && last && location.hash !== '#/' && !location.hash.startsWith('#/@/')) history.replaceState(null, '', `#/${last.book}/${last.page}`);
     this.route();
   }
 
@@ -336,8 +456,10 @@ class App {
     if (this.book && !this.library.isOpen) this.reloadBook();
   }
 
+  /** The library, in the branch it was in last. */
   goHome() {
-    if (location.hash !== '#/') history.pushState(null, '', '#/');
+    const home = this.library.homeHash();
+    if (location.hash !== home) history.pushState(null, '', home);
     return this.route();
   }
 
@@ -360,7 +482,8 @@ class App {
     this.pendingOpts = null;
     if (!r) { this.library.open(); return; }
     const book = await this.loadBook(r.book);
-    if (this.parseHash()?.book !== r.book) return; // went somewhere else meanwhile
+    const current = this.parseHash();
+    if (current?.book !== r.book || current?.page !== r.page) return; // a newer navigation won the race
     if (!book) {
       toast('This book does not exist, or is not shared any more.');
       store.set('last', null);
@@ -413,6 +536,7 @@ class App {
       const hooks = {
         onHover: (v, u) => this.hover(v, u),
         onClick: (v, u, e) => this.pageClick(v, u, e),
+        onHold: (v, u) => this.holdUnit(v, u),
         onHotspot: (v, a) => this.hotspot(v, a),
       };
       if (newBook) this.bookShown(book);
@@ -421,6 +545,7 @@ class App {
       const spread = $('#spread');
       spread.classList.toggle('two', this.views.length === 2);
       spread.replaceChildren(...this.views.map((v) => v.el));
+      this.setSlack();
       this.applyZoom();
       $('#stage').scrollTo(0, 0);
       this.marked = {};
@@ -428,7 +553,10 @@ class App {
       if (this.audio.asset) this.markPlaying(this.audio.asset, !this.audio.audio.paused);
       this.preload();
     }
-    this.updateToolbar();
+    this.updateToolbar(true);
+    this.recordings.syncPageOfflineVoice();
+    this.recordings.renderPageOfflineFiles();
+    this.updateVoiceOfflineStatus?.(); // do not retain the preceding page's badge while text loads
     store.set('last', { book: book.id, page: book.pages[idx].n });
     store.set('page.' + book.id, book.pages[idx].n);
 
@@ -436,9 +564,18 @@ class App {
     this.pageReady = Promise.all(views.map((v) => v.ready)).then(() => {
       if (this.views !== views) return;
       if (!same) {
+        if (FIT_UNITS.includes(this.zoom.mode)) { // fit paragraph, sentence or word: the one being read, else the first one
+          const a = this.reader.active, kind = this.zoom.mode;
+          const u = (a && views.includes(a.view) && this.fitUnitAt(a.view, a.unit.a, kind))
+            || views.map((view) => (view.text?.sent.length ? this.fitUnitAt(view, view.text.sent[0][0], kind) : null)).find(Boolean);
+          if (u) this.fitTo(u);
+        }
         if (this.editor.active) this.editor.pagesChanged();
         this.renderPanelText();
         this.recordings.pageShown();
+        this.translator?.pageShown();
+        this.words.pageShown();
+        this.breakdown.place();
       }
       if (opts.find) this.findOnPage(opts.find);
     });
@@ -453,8 +590,13 @@ class App {
   }
 
   /** Another book is opened: its name, what may be done with it, its details. */
+  /** Where the "read which language" choice is kept: one for Chinese books, one for the others. */
+  languageModeKey() { return (this.book?.language || '').startsWith('zh') ? 'speechLanguageMode.zh' : 'speechLanguageMode'; }
+
   bookShown(book) {
     $('#book-name').textContent = book.type;
+    this.setLanguageMode?.(store.get(this.languageModeKey(), 'both')); // (this book's kind: Chinese or not)
+    this.translator.setBook(book); // (translated from its language: a Chinese book into English, unless another is chosen)
     document.body.classList.toggle('readonly', book.canEdit === false); // only the owner corrects the text
     document.body.classList.toggle('disc-book', !!book.disc);
     this.library.renderAbout(book);
@@ -476,33 +618,71 @@ class App {
 
   /** A click on the text of a page image. */
   pageClick(view, unit, e) {
-    if (this.editor.active) this.editor.selectAtWord(view, unit.a);
+    if (this.audio.wordMapSelection) this.audio.mapBookWord(view, Number(e.target.dataset.w));
+    else if (this.audio.mapCueIndex != null) this.audio.mapSentence(view, unit);
+    else if (this.words.collecting) this.words.toggle(view, unit); // adding new words: no reading
+    else if (this.editor.active) this.editor.selectAtWord(view, unit.a, e);
     else if (this.recordings.picking) this.recordings.pageClick(view, unit, e);
+    else if (e.detail > 1 && !view.touch) return; // (the second click of a double click: the sentence broken down, holdUnit)
     else {
       this.unitClick(view, unit, true);
-      // A touch screen cannot point at a sentence: a tap also shows its translation (if shown on the page).
-      if (view.touch) this.translator.showTip(view, unit);
+      // A tap has to show translations on touch screens; in Word mode a click also pins the gloss.
+      if (view.touch || unit.mode === 'word') this.translator.showTip(view, unit);
     }
   }
 
-  /**
-   * A click on a sentence (or clause, or word) to hear it: from a My audio MP3 that reads it
-   * (no internet needed), else with the live voice (the reader falls back to an offline
-   * voice without internet).
-   */
-  async unitClick(view, unit, fromPage) {
-    const a = this.reader.active;
-    if (this.reader.busy && a?.view === view && a.unit.a === unit.a && a.unit.b === unit.b) {
-      this.reader.toggle(); // the sentence being read live: pause / continue
+  /** A sentence double-clicked (a finger held on it, on a phone or tablet): broken down — each word, its meaning (and pinyin). */
+  holdUnit(view, unit) {
+    if (this.editor.active || this.recordings.picking || this.words.collecting || this.audio.wordMapSelection || this.audio.mapCueIndex != null) return;
+    window.getSelection()?.removeAllRanges(); // (a double click selects a word)
+    const s = this.breakdown.sentenceOf(view, unit);
+    if (s) this.breakdown.open(s);
+  }
+
+  /** A text click follows an active saved recording when it contains the sentence; otherwise it reads normally. */
+  unitClick(view, unit, fromPage) {
+    const clickId = ++this.recordings.pageClickId;
+    if (this.recordings.deselectFromPage(view, unit)) return;
+    const readNormally = () => {
+      if (clickId !== this.recordings.pageClickId) return;
+      const readLive = () => {
+        if (clickId !== this.recordings.pageClickId) return;
+        const a = this.reader.active;
+        if (this.reader.busy && a?.view === view && a.unit.a === unit.a && a.unit.b === unit.b) {
+          this.reader.toggle(); // the sentence being read live: pause / continue
+          return;
+        }
+        this.reader.click(view, unit, fromPage);
+      };
+      // Prefer an imported copy when its saved voice matches the selected live voice.
+      this.recordings.playOfflineForUnit(view, unit, fromPage).then((playedOffline) => {
+        if (!playedOffline) readLive();
+      }).catch(() => readLive());
+    };
+    if (this.recordings.modeId) {
+      const id = this.recordings.modeId;
+      const selectedRec = this.recordings.selectedRec;
+      if (selectedRec?.id === id && !this.recordings.containsUnit(view, unit, selectedRec)) {
+        this.recordings.stopModeForLiveRead(id);
+        readNormally();
+        return;
+      }
+      this.recordings.locate(view, unit, id).then((hit) => {
+        if (clickId !== this.recordings.pageClickId || this.recordings.modeId !== id) return;
+        if (hit) {
+          this.recordings.playFrom(hit, fromPage);
+          return;
+        }
+        this.recordings.stopModeForLiveRead(id);
+        readNormally();
+      }).catch(() => {
+        if (clickId !== this.recordings.pageClickId || this.recordings.modeId !== id) return;
+        this.recordings.stopModeForLiveRead(id);
+        readNormally();
+      });
       return;
     }
-    const hit = await this.recordings.locate(view, unit);
-    if (hit) {
-      this.reader.stop();
-      await this.recordings.playFrom(hit, fromPage);
-      return;
-    }
-    this.reader.click(view, unit, fromPage);
+    readNormally();
   }
 
   // ---------- Toolbar ----------
@@ -544,11 +724,11 @@ class App {
     $('#btn-panel').addEventListener('click', () => this.setPanelOpen(document.body.classList.contains('panel-closed')));
   }
 
-  updateToolbar() {
+  updateToolbar(forcePage = false) {
     if (!this.book) return;
     const pages = this.book.pages;
     const first = pages[this.group[0]].n, last = pages[this.group[this.group.length - 1]].n;
-    if (document.activeElement !== $('#page-input')) $('#page-input').value = first === last ? first : `${first}–${last}`;
+    if (forcePage || document.activeElement !== $('#page-input')) $('#page-input').value = first === last ? first : `${first}–${last}`;
     $('#page-input').style.width = `${Math.max(3.2, String($('#page-input').value).length * 0.62 + 1)}em`;
     $('#page-total').textContent = `/ ${pages.length}`;
     $('#btn-prev').disabled = this.group[0] === 0;
@@ -571,6 +751,7 @@ class App {
     store.set('mode', mode);
     $$('#mode-seg button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.mode === mode)));
     this.applyMode();
+    if (this.words?.collecting) this.words.renderMarks(); // ("click words / clauses / sentences")
   }
 
   /** Apply the click mode to the pages. While correcting text, clicks always pick sentences. */
@@ -589,12 +770,14 @@ class App {
     const n = Math.max(1, this.views.length);
     const cs = getComputedStyle($('#spread')); // the space around the pages (smaller on phones)
     const availW = this.fitWidth() * n;
-    const availH = stage.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 22;
+    const sl = this.slack || {};
+    const availH = stage.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) + (sl.t || 0) + (sl.b || 0) - 22;
     let w;
     const pg = this.views[0]?.page;
     const ratio = pg?.w && pg?.h ? pg.w / pg.h : RATIO; // pages of library books have their own size
     if (this.zoom.mode === 'page') w = Math.min(availH * ratio, availW / n);
     else if (this.zoom.mode === 'width') w = availW / n;
+    else if (FIT_UNITS.includes(this.zoom.mode)) w = this.fitZoom() || availW / n; // (nothing fitted yet: the width)
     else w = this.zoom.w;
     w = Math.round(Math.max(160, Math.min(5000, w)));
     $('#spread').style.setProperty('--page-w', `${w}px`);
@@ -604,7 +787,8 @@ class App {
   /** The width of one page for "fit width" (the stage minus the space around the pages). */
   fitWidth() {
     const cs = getComputedStyle($('#spread'));
-    const avail = $('#stage').clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const sl = this.slack || {};
+    const avail = $('#stage').clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) + (sl.l || 0) + (sl.r || 0);
     return avail / Math.max(1, this.views.length);
   }
 
@@ -616,16 +800,189 @@ class App {
     store.set('zoomMode', 'custom');
     store.set('zoomW', this.zoom.w);
     this.applyZoom();
+    // The sentence you are on stays in the middle of the screen (without one, the middle stays the middle).
+    const s = this.activeSentence();
+    if (s && this.centerOn(s)) return;
+    this.setSlack();
     st.scrollLeft = cx * st.scrollWidth - st.clientWidth / 2;
     st.scrollTop = cy * st.scrollHeight - st.clientHeight / 2;
   }
 
+  /**
+   * The sentence you are on — being read (or played from an MP3), else read, clicked or corrected
+   * last — while its page is shown: {view, a, b} (its words), or null.
+   */
+  activeSentence() {
+    const r = this.reader.active, f = r ? { view: r.view, w: r.unit.a } : this.focus;
+    const t = f && this.views.includes(f.view) ? f.view.text : null, s = t?.w2s[f.w];
+    return s >= 0 ? { view: f.view, a: t.sent[s][0], b: t.sent[s][1] } : null;
+  }
+
+  /**
+   * Scroll so `y` (a part of a page: {view, a, b}) is in the middle of the screen up and down (its
+   * top, if it is taller than the screen), and `x` (the same, or another part) from side to side.
+   */
+  centerOn(y, x = y, ms = 0, { sideways = true } = {}) {
+    const by = this.fitBox(y), bx = this.fitBox(x);
+    if (!by || !bx) return false;
+    const st = $('#stage');
+    /** The scroll that puts them there. */
+    const want = () => {
+      const sr = st.getBoundingClientRect();
+      const place = (u, b) => {
+        const pr = u.view.el.getBoundingClientRect(), s = pr.width / u.view.W;
+        return { left: pr.left - sr.left + st.scrollLeft + b.x0 * s, top: pr.top - sr.top + st.scrollTop + b.y0 * s, w: (b.x1 - b.x0) * s, h: (b.y1 - b.y0) * s };
+      };
+      const Y = place(y, by), X = place(x, bx);
+      return { top: Y.h > st.clientHeight - 32 ? Y.top - 16 : Y.top + Y.h / 2 - st.clientHeight / 2, left: X.left + X.w / 2 - st.clientWidth / 2 };
+    };
+    // Near the edge of a page (or with the page smaller than the screen) there is no scrolling far
+    // enough: room is made past the edge, as much as needed. (Centred pages move half as far: again.)
+    this.setSlack();
+    let to = want();
+    for (let k = 0; k < 8; k++) {
+      const maxT = st.scrollHeight - st.clientHeight, maxL = st.scrollWidth - st.clientWidth;
+      const need = { t: Math.max(0, -to.top), b: Math.max(0, to.top - maxT),
+        l: sideways ? Math.max(0, -to.left) : 0, r: sideways ? Math.max(0, to.left - maxL) : 0 };
+      if (need.t + need.b + need.l + need.r < 1) break;
+      this.setSlack({ t: this.slack.t + need.t, r: this.slack.r + need.r, b: this.slack.b + need.b, l: this.slack.l + need.l });
+      to = want();
+    }
+    this.follower.stage.scrollTo(to.top, sideways ? to.left : st.scrollLeft, ms);
+    return true;
+  }
+
+  /**
+   * Room past the edges of the pages ({t, r, b, l} pixels; none by default), so that the sentence
+   * you are on can be in the middle of the screen while zooming, also near the edge of a page.
+   */
+  setSlack(s = { t: 0, r: 0, b: 0, l: 0 }) {
+    this.slack = { t: Math.ceil(s.t), r: Math.ceil(s.r), b: Math.ceil(s.b), l: Math.ceil(s.l) };
+    for (const k of ['t', 'r', 'b', 'l']) $('#spread').style.setProperty(`--slack-${k}`, `${this.slack[k]}px`);
+  }
+
+  /**
+   * The fit button (or 0) zooms in step by step — the whole page → the page width → the paragraph →
+   * the sentence → the word you are on — and then out again the same way: the sentence, the
+   * paragraph (those of that word), the page width, the whole page; then in again …
+   */
   toggleFit() {
-    const mode = this.zoom.mode === 'page' ? 'width' : 'page';
+    const steps = ['page', 'width', ...FIT_UNITS], was = this.zoom.mode;
+    let k = steps.indexOf(was);
+    if (k < 0) { k = -1; this.fitOut = false; } // (zoomed with + or −: from the whole page)
+    else if (k === steps.length - 1) this.fitOut = true; // the closest: back out
+    else if (k === 0) this.fitOut = false; // the whole page: in again
+    let mode = steps[k + (this.fitOut ? -1 : 1)];
+    let unit = null;
+    if (FIT_UNITS.includes(mode)) {
+      // The one you are on; from a paragraph, sentence or word: the one in it (or around it).
+      const f = this.currentFocus(), u = FIT_UNITS.includes(was) && this.fitted && this.views.includes(this.fitted.view) ? this.fitted : null;
+      const at = u ? (f && f.view === u.view && f.w >= u.a && f.w < u.b ? f : { view: u.view, w: u.a }) : null;
+      unit = at ? this.fitUnitAt(at.view, at.w, mode) : this.pickFitUnit(mode);
+      if (!unit) { mode = 'page'; this.fitOut = false; } // (no text on the page)
+    }
     this.zoom = { mode, w: this.pageW };
     store.set('zoomMode', mode);
+    if (unit) this.fitTo(unit);
+    else {
+      this.setSlack();
+      this.applyZoom();
+      // The width of the page: the sentence you are on in the middle, up and down. (The whole page: all of it.)
+      const s = mode === 'width' && this.activeSentence();
+      if (s) this.centerOn(s, s, 0, { sideways: false });
+    }
+    const out = this.fitOut && mode !== 'page' ? 'Zoom out: ' : '';
+    toast(out + { page: 'Fit whole page', width: 'Fit page width', paragraph: 'Fit the paragraph', sentence: 'Fit the sentence', word: 'Zoom to the word' }[mode], 1200);
+  }
+
+  // Fit paragraph, sentence or word: the one you are on is as wide as the screen (a short one as if
+  // it were FIT_MIN of the page wide), in the middle of it. While reading (with "Follow the
+  // reading" on), the next paragraph or sentence is fitted when the reading gets there; zoomed to
+  // the word, the page goes along when the word being read is about to leave the screen.
+
+  /** The paragraph, sentence or word (kind) of word w: {view, kind, a, b} (its words), or null. */
+  fitUnitAt(view, w, kind) {
+    const t = view.text, s = t?.w2s[w];
+    if (!(s >= 0)) return null;
+    if (kind === 'word') return { view, kind, a: w, b: w + 1 };
+    if (kind === 'sentence') return { view, kind, a: t.sent[s][0], b: t.sent[s][1] };
+    const block = t.blocks.find(([sa, sb]) => s >= sa && s < sb);
+    return block ? { view, kind, a: t.sent[block[0]][0], b: t.sent[block[1] - 1][1] } : null;
+  }
+
+  /** Its box in page pixels {x0, y0, x1, y1}, or null. */
+  fitBox(u) {
+    const rs = u?.view.text ? u.view.text.rects(u.a, u.b) : [];
+    if (!rs.length) return null;
+    return { x0: Math.min(...rs.map((r) => r.x)), y0: Math.min(...rs.map((r) => r.y)),
+      x1: Math.max(...rs.map((r) => r.x + r.w)), y1: Math.max(...rs.map((r) => r.y + r.h)) };
+  }
+
+  /** What to fit (kind): the one being read, clicked or corrected last, else the one in the middle of the screen. */
+  pickFitUnit(kind) {
+    const f = this.currentFocus();
+    if (f) return this.fitUnitAt(f.view, f.w, kind);
+    const sr = $('#stage').getBoundingClientRect(), cx = sr.left + sr.width / 2, cy = sr.top + sr.height / 2;
+    let best = null, bestD = Infinity;
+    for (const view of this.views) {
+      const t = view.text;
+      if (!t) continue;
+      const pr = view.el.getBoundingClientRect(), s = pr.width / view.W;
+      const starts = kind === 'word' ? t.words.map((_, w) => w) : kind === 'sentence' ? t.sent.map(([a]) => a) : t.blocks.map(([sa]) => t.sent[sa][0]);
+      for (const w of starts) {
+        const u = this.fitUnitAt(view, w, kind), b = this.fitBox(u);
+        const d = b ? Math.hypot(pr.left + ((b.x0 + b.x1) / 2) * s - cx, pr.top + ((b.y0 + b.y1) / 2) * s - cy) : Infinity;
+        if (d < bestD) { bestD = d; best = u; }
+      }
+    }
+    return best;
+  }
+
+  /** The page width that makes the fitted paragraph, sentence or word as wide as the screen (0: none). */
+  fitZoom() {
+    const u = this.fitted?.kind === this.zoom.mode && this.views.includes(this.fitted.view) ? this.fitted : null;
+    const b = this.fitBox(u);
+    if (!b) return 0;
+    return ($('#stage').clientWidth - 32) * u.view.W / Math.max(b.x1 - b.x0, u.view.W * FIT_MIN[u.kind]);
+  }
+
+  /**
+   * Zoom to a paragraph, sentence or word and put it in the middle of the screen (its top, if it is
+   * taller). A paragraph: up and down, the sentence you are on in it is in the middle.
+   */
+  fitTo(u, ms = 0) {
+    this.fitted = u;
     this.applyZoom();
-    toast(mode === 'page' ? 'Fit whole page' : 'Fit page width', 1200);
+    const s = u.kind === 'paragraph' ? this.activeSentence() : null;
+    this.centerOn(s && s.view === u.view && s.a >= u.a && s.b <= u.b ? s : u, u, ms);
+  }
+
+  /** Is that part of a page on the screen (above the reading bar), with `margin` pixels to spare? */
+  onScreen(view, a, b, margin = 0) {
+    const box = view.unitBox({ a, b }), st = $('#stage').getBoundingClientRect(), pr = view.el.getBoundingClientRect();
+    return !!box && pr.top + box.y >= st.top + margin && pr.top + box.y + box.h <= st.bottom - 60 - margin
+      && pr.left + box.x >= st.left + margin && pr.left + box.x + box.w <= st.right - margin;
+  }
+
+  /**
+   * Fitted to a paragraph, sentence or word, and the reading has come to a sentence: fit its
+   * paragraph if it is another one (while the sentence is on the screen, nothing else moves), its
+   * sentence, or its first word. True when the page needs no other scrolling.
+   */
+  followFit(view, unit) {
+    const kind = this.zoom.mode;
+    const u = this.fitUnitAt(view, unit.a, kind);
+    if (!u) return false;
+    const same = this.fitted?.view === u.view && this.fitted.kind === kind && this.fitted.a === u.a && this.views.includes(u.view);
+    if (kind === 'paragraph' && same) return this.onScreen(view, unit.a, unit.b);
+    if (!same) this.fitTo(u);
+    return true;
+  }
+
+  /** Zoomed to the word: the word being read (w) is about to leave the screen: the page goes along. */
+  followWord(view, w) {
+    if (this.zoom.mode !== 'word' || w < 0 || this.onScreen(view, w, w + 1, 40)) return;
+    this.fitTo({ view, kind: 'word', a: w, b: w + 1 }, followSettings.speed);
   }
 
   layoutChanged() { requestAnimationFrame(() => this.applyZoom()); }
@@ -701,6 +1058,7 @@ class App {
   }
 
   markPanel(cls, view, unit) {
+    if (cls === 'hover' || cls === 'active') this.breakdown?.track(cls, view, unit); // (its button goes there)
     (this.marked[cls] || []).forEach((s) => s.classList.remove(cls));
     const list = [];
     const spans = view && unit ? this.panelWords.get(view) : null;
@@ -740,8 +1098,9 @@ class App {
   // ---------- Hotspots ----------
 
   hotspot(view, a) {
-    if (a.t === 'audio') this.audio.play(a, { book: view.book.slug });
-    else if (a.t === 'video') openVideo(this, a, view.book.slug);
+    const language = view.book.language || 'en';
+    if (a.t === 'audio') this.audio.play(a, { book: view.book.slug, language });
+    else if (a.t === 'video') openVideo(this, a, view.book.slug, language);
     else if (a.t === 'swf') openSwf(this, a);
     else if (a.t === 'link') {
       this.go(a.book || this.book.id, a.page, { fromLink: true });
@@ -761,6 +1120,31 @@ class App {
   }
 
   toast(msg) { toast(msg); }
+
+  // ---------- Phone, tablet or computer ----------
+
+  /** The layout's choosers (Settings → Screen, the foot of the library): Automatic (what this device looks like) or one chosen. */
+  bindDevice() {
+    const device = window.linguaDevice;
+    if (!device) return;
+    const name = (d) => device.NAMES[d].toLowerCase();
+    const fill = () => {
+      const found = name(device.detect()), now = name(device.get()), chosen = device.choice();
+      $$('.device-select').forEach((sel) => {
+        sel.replaceChildren(...device.CHOICES.map((c) => el('option', { value: c }, c === 'auto' ? `Automatic (${found})` : device.NAMES[c])));
+        sel.value = chosen;
+      });
+      $('#device-hint').textContent = chosen === 'auto' ? `This device looks like a ${found}: the app has the ${now}’s layout.`
+        : `The ${now}’s layout, as you chose (Automatic would give the ${found}’s).`;
+    };
+    $$('.device-select').forEach((sel) => sel.addEventListener('change', () => {
+      device.set(sel.value);
+      fill();
+      toast(`The ${name(device.get())}’s layout.`);
+    }));
+    device.onChange(fill);
+    fill();
+  }
 
   // ---------- Side panel ----------
 
@@ -791,7 +1175,23 @@ class App {
       if (hit) this.hover(hit.view, hit.unit);
     });
     tv.addEventListener('pointerleave', () => { if (!this.editor.active) this.hover(null, null); });
-    let pending = null, tapLine = null, tapAt = 0;
+    let pending = null, tapLine = null, tapAt = 0, hold = null;
+    // A finger held on a sentence (a phone, a tablet; not on its number, which moves it): the
+    // sentence broken down, as on the page.
+    const letGo = () => { clearTimeout(hold?.timer); if (hold && !hold.fired) hold = null; };
+    tv.addEventListener('pointerdown', (e) => {
+      letGo();
+      hold = null;
+      const hit = e.pointerType !== 'mouse' && !this.editor.active && !e.target.closest('.grip') && unitFromEvent(e);
+      if (!hit) return;
+      hold = { x: e.clientX, y: e.clientY, id: e.pointerId };
+      hold.timer = setTimeout(() => { hold.fired = true; clearTimeout(pending); this.holdUnit(hit.view, hit.unit); }, HOLD_MS);
+    });
+    tv.addEventListener('pointermove', (e) => {
+      if (hold && !hold.fired && e.pointerId === hold.id && Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > 10) letGo();
+    });
+    for (const type of ['pointerup', 'pointercancel']) tv.addEventListener(type, letGo);
+    tv.addEventListener('contextmenu', (e) => { if (hold) e.preventDefault(); }); // (not the phone's menu)
     // Double click (or double tap on a phone) on a sentence: correct its text right here.
     const correct = (line) => {
       clearTimeout(pending);
@@ -801,6 +1201,12 @@ class App {
       this.editor.editInline(this.views[Number(line.dataset.v)], Number(line.dataset.b), Number(line.dataset.s));
     };
     tv.addEventListener('click', (e) => {
+      if (hold?.fired) { hold = null; return; } // (the finger was held: not a tap)
+      if (this.words.collecting) { // adding new words: a click adds one (or takes it out)
+        const hit = unitFromEvent(e);
+        if (hit) this.words.toggle(hit.view, hit.unit);
+        return;
+      }
       const line = !this.editor.active && e.target.closest('.w') && e.target.closest('.sline');
       const now = performance.now();
       // Phones do not always report a double tap as a double click, so taps are timed too.
@@ -826,6 +1232,7 @@ class App {
       if (!v) { toast('There is no text to read on this page.'); return; }
       this.reader.start(v, v.text.unit(this.mode === 'clause' ? 'clause' : 'sentence', 0));
     });
+    $('#read-area').addEventListener('click', () => (this.areaReading ? this.areaReading() : this.readArea()));
     $('#copy-text').addEventListener('click', () => this.copyText());
     $('#save-text').addEventListener('click', () => {
       const pages = this.views.map((v) => v.page.n).join('-');
@@ -841,6 +1248,7 @@ class App {
   showTab(name) {
     $$('.panel [role=tab]').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === name)));
     $$('.panel .tab-body').forEach((b) => { b.hidden = b.dataset.tab !== name; });
+    this.recordings?.setCoverageVisible(name === 'audio');
   }
 
   setPanelOpen(open) {
@@ -943,8 +1351,20 @@ class App {
     st.addEventListener('touchcancel', () => { pinch = null; swipe = null; }, { passive: true });
   }
 
+  /**
+   * The top bar's "read which language" switch (中+EN, 中, EN), for books in Chinese and pages with
+   * Chinese and English. Elsewhere everything is read, whatever was chosen there.
+   */
+  updateLangSeg() {
+    const text = this.views.map((v) => v.text?.fullText() || '').join(' ');
+    const both = (this.book?.language || '').startsWith('zh') || (/[㐀-鿿]/u.test(text) && /[A-Za-z]{2}/.test(text));
+    $('#lang-seg').hidden = !both;
+    speech.languageChoice = both;
+  }
+
   renderPanelText() {
     this.recordings.renderSpots();
+    this.updateLangSeg();
     if (this.editor.active) { this.editor.render(); return; }
     this.panelWords = new Map();
     this.marked = {};
@@ -997,6 +1417,45 @@ class App {
     if (!unit || !this.views.includes(view)) return;
     this.setFocus(view, unit, false);
     translated?.then(() => { if (this.focus?.view === view && this.focus.w === unit.a) this.centerPanel(view, unit, false); });
+  }
+
+  /**
+   * Read an area aloud (the button next to Read page aloud): draw a box on the page; the sentences
+   * in it (clauses, in Clause mode) are read one after the other, each highlighted while it is read.
+   * A sentence is in the box when most of its words are. Esc (or the button again) cancels the box.
+   */
+  readArea() {
+    const views = this.views.filter((v) => v.text && !v.text.empty);
+    if (!views.length) { toast('There is no text to read on this page.'); return; }
+    this.reader.stop();
+    if (this.editor.active) this.editor.stop();
+    if (this.recordings.picking) this.recordings.stopPicking();
+    if (this.words.collecting) this.words.setCollecting(false);
+    const btn = $('#read-area');
+    const stop = () => {
+      views.forEach((v) => v.stopMarking());
+      document.body.classList.remove('marking');
+      btn.setAttribute('aria-pressed', 'false');
+      this.areaReading = null;
+    };
+    this.areaReading = stop;
+    btn.setAttribute('aria-pressed', 'true');
+    document.body.classList.add('marking');
+    toast('Draw a box on the page around the sentences to read (Esc: cancel).', 2500);
+    for (const view of views) {
+      view.startMarking((rect) => {
+        stop();
+        if (!rect) return;
+        const t = view.text, mode = this.mode === 'clause' ? 'clause' : 'sentence', queue = [];
+        const inside = ([x, y, w, h]) => x + w / 2 >= rect.x && x + w / 2 <= rect.x + rect.w && y + h / 2 >= rect.y && y + h / 2 <= rect.y + rect.h;
+        for (let i = 0; i < t.count(mode); i++) {
+          const unit = t.unit(mode, i), placed = t.words.slice(unit.a, unit.b).filter((w) => w[2] > 0 || w[3] > 0);
+          if (placed.length && placed.filter(inside).length / placed.length >= 0.5) queue.push({ view, unit });
+        }
+        if (!queue.length) { toast('No sentence is in that box: draw it around the sentences to read.'); return; }
+        this.reader.startList(queue);
+      });
+    }
   }
 
   pageText() {
@@ -1107,7 +1566,8 @@ class App {
 
   bindVoice() {
     const pop = $('#voice-pop'), btn = $('#btn-voice');
-    const sel = $('#voice-select'), rate = $('#rate-input'), out = $('#rate-out'), follow = $('#follow-input');
+    const sel = $('#voice-select'), zhSel = $('#chinese-voice-select'), mode = $('#speech-language-mode');
+    const rate = $('#rate-input'), out = $('#rate-out'), follow = $('#follow-input');
     const place = () => {
       const r = btn.getBoundingClientRect();
       pop.style.left = `${Math.max(8, Math.min(innerWidth - 348, r.right - 340))}px`;
@@ -1120,8 +1580,9 @@ class App {
     btn.addEventListener('click', (e) => { e.stopPropagation(); setOpen(pop.hidden); });
     document.addEventListener('click', (e) => { if (!pop.hidden && !pop.contains(e.target)) setOpen(false); });
     this.closeVoice = () => setOpen(false);
-    // Two tabs: Voice and Translation (the last one used opens again).
+    // Settings tabs (the last one used opens again).
     const showTab = (name) => {
+      if (!$$('#voice-pop .pop-body[data-ptab]').some((x) => x.dataset.ptab === name)) name = 'voice';
       $$('#voice-pop [data-ptab]').forEach((x) => {
         if (x.matches('[role=tab]')) x.setAttribute('aria-selected', String(x.dataset.ptab === name));
         else x.hidden = x.dataset.ptab !== name;
@@ -1130,8 +1591,38 @@ class App {
     };
     $$('#voice-pop [role=tab]').forEach((t) => t.addEventListener('click', () => showTab(t.dataset.ptab)));
     showTab(store.get('settingsTab', 'voice'));
-    /** Open the settings on one tab ('voice' or 'translation'). */
+    /** Open the settings on a tab such as 'voice' or 'translation'. */
     this.openSettings = (tab) => { showTab(tab); setOpen(true); };
+    const updateVoiceAvailability = () => {
+      const en = speech.currentVoice('en'), zh = speech.currentVoice('zh');
+      fillVoices(sel, zhSel, this.recordings);
+      const availability = this.recordings?.voiceAvailability(en);
+      const selectedVoiceCached = !!(en?.localService || this.recordings?.hasOfflineVoiceForCurrentPage(en));
+      const pageHasOfflineAudio = !!this.recordings?.hasAnyOfflineVoiceOnCurrentPage();
+      const badge = $('#voice-offline-status');
+      badge.textContent = en?.localService ? (availability?.canGenerate ? 'Windows offline · generate without internet' : 'Device voice works offline')
+        : selectedVoiceCached ? 'Offline available on this page' : 'Online for this voice on this page';
+      badge.classList.toggle('available', selectedVoiceCached);
+      badge.classList.toggle('online', !selectedVoiceCached);
+      const modeBadge = $('#offline-voice-badge');
+      modeBadge.hidden = !this.book || !this.views.length;
+      modeBadge.textContent = pageHasOfflineAudio ? 'OFFLINE' : 'ONLINE';
+      modeBadge.title = pageHasOfflineAudio
+        ? 'Offline voice audio exists for this page. Delete it from My audio; other cached voices remain until their files are deleted too.'
+        : 'No offline voice audio is saved for this page.';
+      modeBadge.classList.toggle('offline', pageHasOfflineAudio);
+      modeBadge.classList.toggle('online', !pageHasOfflineAudio);
+      modeBadge.setAttribute('aria-label', pageHasOfflineAudio ? 'Offline audio available for this page' : 'This page has no offline audio');
+      this.recordings?.setOfflineVoiceMode(selectedVoiceCached);
+      const generate = $('#offline-import');
+      generate.hidden = !availability?.canGenerate;
+      if (availability?.canGenerate) {
+        generate.innerHTML = `${icon('download')}Generate`;
+        generate.title = `Generate ${availability.neural.name} English audio for the chosen scope${en?.localService ? ' — no internet needed' : ' — requires internet once'}`;
+        generate.setAttribute('aria-label', generate.title);
+      }
+    };
+    this.updateVoiceOfflineStatus = updateVoiceAvailability;
     // With a login: "Log out" at the bottom of the settings.
     fetch('/api/session').then((r) => r.json()).then((d) => { $('#logout-row').hidden = !d.login; }).catch(() => {});
     $('#btn-logout').addEventListener('click', async () => {
@@ -1141,19 +1632,63 @@ class App {
 
     speech.onVoices((voices) => {
       if (!speech.supported) {
-        sel.replaceChildren(el('option', {}, 'Not available'));
+        [sel, zhSel].forEach((s) => s.replaceChildren(el('option', {}, 'Not available')));
         $('#voice-hint').textContent = 'This browser cannot read text aloud. Use Microsoft Edge or Google Chrome.';
         return;
       }
-      if (!voices.length) { sel.replaceChildren(el('option', {}, 'Loading voices…')); return; }
-      const current = speech.currentVoice();
-      sel.replaceChildren(...voices.map((v) => el('option', { value: v.voiceURI, selected: v === current },
-        `${v.name.replace(/^Microsoft /, '').replace(/ - English.*$/, '')} (${v.lang})`)));
-      $('#voice-hint').textContent = voices.some((v) => /natural/i.test(v.name))
-        ? 'Voices marked “Natural” sound best but need an internet connection.'
-        : 'Tip: open this app in Microsoft Edge for more natural-sounding voices.';
+      if (!voices.length) { [sel, zhSel].forEach((s) => s.replaceChildren(el('option', {}, 'Loading voices…'))); return; }
+      fillVoices(sel, zhSel);
+      this.fillTranslationVoice?.(); // (not yet the first time: it is set up below)
+      updateVoiceAvailability();
     });
-    sel.addEventListener('change', () => speech.setVoice(sel.value));
+    sel.addEventListener('change', () => {
+      speech.setVoice(sel.value);
+      const id = this.recordings.neuralVoiceFor(speech.currentVoice('en'))?.id?.toLowerCase();
+      this.recordings.pageOfflineId = this.recordings.pageOfflineItems().find(({ recording: rec }) => [rec.voice, rec.voiceB].some((v) => v?.toLowerCase() === id))?.id || null;
+      updateVoiceAvailability();
+    });
+    zhSel.addEventListener('change', () => { speech.setChineseVoice(zhSel.value); fillVoices(sel, zhSel); updateVoiceAvailability(); });
+    // Read each sentence's translation too (into the language of the Translation tab), before or
+    // after it, with a voice of that language.
+    const trRead = $('#tr-read'), trSel = $('#tr-voice-select');
+    this.fillTranslationVoice = () => {
+      const code = this.translator?.lang || '', name = this.translator?.name || code;
+      const list = code ? speech.translationVoices(code) : [], current = code ? speech.translationVoice(code) : null;
+      const short = (v) => v.name.replace(/^Microsoft /, '').replace(/ - .*$/, '');
+      trSel.replaceChildren(...(list.length
+        ? list.map((v) => el('option', { value: v.voiceURI, selected: v === current }, `${short(v)} (${v.lang})${v.localService ? ' · offline' : ''}`))
+        : [el('option', { value: '' }, code ? `No ${name} voice on this device` : 'Choose a language first')]));
+      $('#tr-voice-label').textContent = name ? `${name} voice` : 'Translation voice';
+      $('#tr-voice-field').hidden = settings.trOrder === 'off';
+      const hint = $('#tr-read-hint');
+      hint.textContent = settings.trOrder === 'off' ? ''
+        : !code ? 'Choose the language in the Translation tab.'
+          : !list.length ? `No voice on this device reads ${name}. Microsoft Edge has Natural voices for most languages.` : '';
+      hint.hidden = !hint.textContent;
+    };
+    trRead.value = settings.trOrder;
+    this.fillTranslationVoice();
+    trRead.addEventListener('change', () => {
+      speech.setTranslationOrder(trRead.value);
+      this.fillTranslationVoice();
+      updateVoiceAvailability(); // offline audio is made (and used) with or without the translation
+    });
+    trSel.addEventListener('change', () => speech.setTranslationVoice(this.translator.lang, trSel.value));
+    // Read which language (books with Chinese and English): in the settings and in the top bar.
+    // Chinese books keep their own (中+EN at first): "EN" chosen in an English book does not
+    // silence them.
+    const langSeg = $$('#lang-seg button');
+    this.setLanguageMode = (m) => {
+      speech.setLanguageMode(m, this.languageModeKey());
+      mode.value = m;
+      langSeg.forEach((b) => b.setAttribute('aria-checked', String(b.dataset.lang === m)));
+    };
+    mode.addEventListener('change', () => this.setLanguageMode(mode.value));
+    langSeg.forEach((b) => b.addEventListener('click', () => {
+      this.setLanguageMode(b.dataset.lang);
+      toast({ both: 'Reading the Chinese and the English', zh: 'Reading only the Chinese', en: 'Reading only the English' }[b.dataset.lang], 1500);
+    }));
+    this.setLanguageMode(settings.languageMode);
     rate.value = settings.rate;
     out.textContent = `${Number(settings.rate).toFixed(2).replace(/0$/, '')}×`;
     rate.addEventListener('input', () => {
@@ -1180,6 +1715,7 @@ class App {
       rpOut.textContent = text;
       for (const btn of new Set([...$$('.repeat-btn'), ...(extra ? [extra] : [])])) {
         const badge = btn.querySelector('.count-badge');
+        btn.querySelector('.i use')?.setAttribute('href', n === 1 ? '#i-repeat' : '#i-repeat-fill');
         badge.hidden = n === 1;
         badge.textContent = n === 0 ? '∞' : String(n);
         badge.classList.toggle('inf', n === 0);
@@ -1202,8 +1738,9 @@ class App {
     $('#btn-repeat').addEventListener('click', () => this.cycleRepeat());
     $('#voice-test').addEventListener('click', () => {
       this.reader.stop();
-      speech.speak('Hello! This is how I will read the book to you.');
+      speech.speak(VOICE_SAMPLES[settings.languageMode] || VOICE_SAMPLES.both);
     });
+    $('#offline-import').addEventListener('click', () => this.recordings.generateOfflineVoice(speech.currentVoice('en'), $('#offline-scope').value));
   }
 
   // ---------- Keyboard ----------
@@ -1214,6 +1751,9 @@ class App {
       if (e.key === 'Escape') {
         if (this.editor.escape()) return;
         if (this.recordings.picking) { this.recordings.stopPicking(); return; }
+        if (this.words.closeCategories()) return; // (the panel of categories first)
+        if (this.words.collecting) { this.words.setCollecting(false); return; }
+        if (this.areaReading) { this.areaReading(); return; } // (drawing the area to read: not any more)
         if (this.reader.busy) this.reader.stop();
         else if (!$('#voice-pop').hidden) this.closeVoice();
         else if (!$('#drawer').hidden) this.setDrawer(false);
@@ -1225,7 +1765,20 @@ class App {
       if (this.editor.active) {
         if (!e.ctrlKey && !e.metaKey && !e.altKey) {
           if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); this.editor.step(e.key === 'ArrowDown' ? 1 : -1); return; }
+          if (e.key === 'Delete' && this.editor.anyChecked()) { e.preventDefault(); this.editor.tool('delete-checked'); return; }
           if (e.key === 'Delete' && this.editor.sel) { e.preventDefault(); this.editor.tool('delete'); return; }
+          // Enter: split the sentence before the words marked (Split).
+          if (e.key === 'Enter' && this.editor.splitting) {
+            e.preventDefault();
+            this.editor.tool('split-apply');
+            return;
+          }
+          // Enter: read the boxes drawn to re-read text by area.
+          if (e.key === 'Enter' && this.editor.readingAreas?.areas.length && !e.target.closest?.('button, a, select')) {
+            e.preventDefault();
+            this.editor.tool('ocr-read');
+            return;
+          }
           // Enter (or F2): change the text of the selected sentence (not when a button has the focus).
           if ((e.key === 'Enter' || e.key === 'F2') && this.editor.sel && !e.defaultPrevented && !e.target.closest?.('button, a, select')) {
             e.preventDefault();
@@ -1251,6 +1804,9 @@ class App {
       else if (k === 'l' || k === 'L') this.translator.setList(!(this.translator.listOn && this.translator.lang));
       else if (k === 'r' || k === 'R') this.cycleRepeat();
       else if (k === 'f' || k === 'F') this.follower.toggle();
+      else if (k === 'n' || k === 'N') this.words.setCollecting(!this.words.collecting);
+      else if (k === 'c' || k === 'C') this.words.openCards();
+      else if (k === 'b' || k === 'B') this.breakdown.openCurrent();
       else if (k === '/') { e.preventDefault(); $('#search-input').focus(); }
       else if (k === ' ') {
         if (this.reader.busy) { e.preventDefault(); this.reader.toggle(); }
