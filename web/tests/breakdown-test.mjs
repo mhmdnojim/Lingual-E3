@@ -149,6 +149,39 @@ try {
   assert.deepEqual(await now(), { sentence: [], translation: '[and]', row: -1 }, '“and”: the meaning of no part, only itself');
   console.log('PASS: heard, the word being said is marked with what it is in the other line (sentence → meaning, translation → words)');
   await close(page);
+
+  // Offline mode (Settings → Translation): nothing saved yet — said, with the way back online; one
+  // click switches it off and translates the sentence with the internet.
+  const asked = []; // (cachedOnly of each request: true, only what is saved)
+  meaning = (k) => `online ${k}`;
+  sentenceTr = 'Online sentence.';
+  const saved = (req, b) => (b.cachedOnly ? { wordContext: true, translations: (b.items || []).map(() => ''), text: '' } : null);
+  page.removeAllListeners('request');
+  page.on('request', (req) => {
+    if (!req.url().includes('/api/translate')) { req.continue().catch(() => {}); return; }
+    const b = JSON.parse(req.postData());
+    asked.push(!!b.cachedOnly);
+    const body = req.url().includes('/api/translate-word')
+      ? saved(req, b) || (b.items ? { wordContext: true, translations: b.items.map((_, k) => meaning(k)) } : { wordContext: true, text: `alone: ${b.word}` })
+      : { translations: b.paragraphs.map((p) => p.map(() => (b.cachedOnly ? '' : sentenceTr))) };
+    req.respond({ status: 200, contentType: 'application/json', body: JSON.stringify(body) }).catch(() => {});
+  });
+  await page.evaluate(() => { window.aef.translator.setLang('es', false); window.aef.translator.setOfflineOnly(true); });
+  await page.mouse.click(at.x, at.y, { clickCount: 1 });
+  await page.mouse.click(at.x, at.y, { clickCount: 2 });
+  await page.waitForFunction(() => !document.querySelector('.bd-offline')?.hidden, { timeout: 5000 });
+  const offline = await page.evaluate(() => ({ cells: [...document.querySelectorAll('.bd-tr span[dir]')].map((s) => s.textContent),
+    note: document.querySelector('.bd-offline').textContent }));
+  assert.ok(offline.cells.every((c) => c === 'not saved offline yet') && /Offline mode is on/.test(offline.note), JSON.stringify(offline));
+  assert.ok(asked.length && asked.every((c) => c === true), 'offline: only what is saved asked');
+  await page.click('.bd-offline .btn');
+  await page.waitForFunction(() => document.querySelector('.bd-tr span[dir]')?.textContent.startsWith('online'), { timeout: 5000 });
+  await page.waitForFunction(() => document.querySelector('.bd-translation .bd-text').textContent === 'Online sentence.', { timeout: 5000 });
+  assert.deepEqual(await page.evaluate(() => ({ off: window.aef.translator.offlineOnly, box: document.querySelector('#tr-offline').checked,
+    note: document.querySelector('.bd-offline').hidden })), { off: false, box: false, note: true }, 'offline mode off (also in Settings)');
+  assert.ok(asked.includes(false), 'the internet asked');
+  await close(page);
+  console.log('PASS: offline mode: “not saved offline yet” said with the way back online; Translate online gets the meanings');
   page.removeAllListeners('request');
   await page.setRequestInterception(false);
 

@@ -35,6 +35,19 @@ Do not change the records that are already there (they keep the Dolingual site w
 Then set up the server (step 2) with `books.dolingual.com`. A link to it can be added in the
 Dolingual site (in Lovable).
 
+## With dolinguabooks.com (Hostinger)
+
+The domain `dolinguabooks.com` and the VPS (**KVM 4**) are both at Hostinger. Buy no web hosting
+plan (Single, Premium, Unlimited, Cloud): those are shared hosting and cannot run the app.
+
+1. The VPS's operating system: hPanel → **VPS** → Manage → **OS & Panel** → **Plain OS** →
+   **Ubuntu 24.04** (not a template with an app or a control panel).
+2. Its address: hPanel → **VPS** → Manage → Overview → **IPv4** (e.g. `82.25.x.x`).
+3. The domain to it: hPanel → **Domains** → dolinguabooks.com → **DNS / Nameservers** → the
+   **A** record with Name **@**: Points to **the VPS's IPv4** (instead of Hostinger's default
+   page). Keep the **CNAME** `www` → `dolinguabooks.com`. It works within minutes to an hour.
+4. Step 2 below with `dolinguabooks.com` (www.dolinguabooks.com then leads there too).
+
 ## 1. Code to GitHub
 
 Already done: https://github.com/mhmdnojim/Lingual-E3 (the old address,
@@ -132,7 +145,8 @@ reader; it does not automatically rewrite an arbitrary application's code or Fla
 - **Backups**: `/opt/lingua-books/deploy/backup.sh` makes one file with everything; copy it to
   your computer now and then (`scp root@SERVER-IP:/root/lingua-books-*.tar.gz .`).
 - **Limits** for each account (in `web/library.py`, `LIMITS`): 100 books, 600 MB, PDFs up to
-  60 MB and 300 pages, 200 photos per book, 30 new books and 40 MP3s a day. Admins have no limits.
+  60 MB and 300 pages, 200 photos per book, 30 new books and 40 MP3s a day. Admins have no limits
+  of books and space, and their PDFs can be up to 500 MB (`ADMIN_PDF_MB`: a whole textbook).
 - **Reports**: a book reported by three different people is hidden at once until an admin looks
   at it (Admin tab). Answer copyright complaints quickly: hide or delete the book.
 - Photos of pages are read with **Tesseract** on the server; translations use Google's free

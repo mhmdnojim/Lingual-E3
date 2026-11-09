@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import threading
+import time
 
 import db
 
@@ -149,6 +150,18 @@ def _windows(pngs, language='en-US'):
     with _windows_ocr_lock:
         os.makedirs(src, exist_ok=True)
         os.makedirs(out, exist_ok=True)
+        # Only these pictures: the script reads every one in the folder (the 168 pages of a book read
+        # before, still there, made each area read again take a minute and a half).
+        for folder in (src, out):
+            for name in os.listdir(folder):
+                try:
+                    os.remove(os.path.join(folder, name))
+                except OSError:
+                    pass
+        if os.listdir(src):  # (one Windows still holds: a folder of their own)
+            src, out = os.path.join(tmp, f'in-{os.getpid()}-{time.monotonic_ns()}'), os.path.join(tmp, f'out-{os.getpid()}-{time.monotonic_ns()}')
+            os.makedirs(src)
+            os.makedirs(out)
         for i, p in enumerate(pngs):
             shutil.copy(p, os.path.join(src, f'{i:04d}.png'))
         r = subprocess.run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', WINDOWS_OCR,

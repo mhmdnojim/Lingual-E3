@@ -99,6 +99,16 @@ $DOMAIN {
 	reverse_proxy 127.0.0.1:8765
 }
 EOF
+# A whole domain (example.com, not books.example.com): www.example.com leads to it too
+# (its DNS: a CNAME "www" to the domain, or an A record to this server).
+if [ "$(echo "$DOMAIN" | tr -cd . | wc -c)" -eq 1 ]; then
+  cat >> /etc/caddy/Caddyfile <<EOF
+
+www.$DOMAIN {
+	redir https://$DOMAIN{uri} permanent
+}
+EOF
+fi
 systemctl reload caddy || systemctl restart caddy
 if command -v ufw >/dev/null && ufw status | grep -q active; then ufw allow 80,443/tcp; fi
 

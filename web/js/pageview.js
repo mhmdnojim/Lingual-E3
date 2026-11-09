@@ -134,6 +134,72 @@ export class PageView {
     this.gMark.replaceChildren();
   }
 
+  /**
+   * Correction mode → Play buttons (js/playbuttons.js): the page's audio and video buttons are
+   * dragged to another place (hooks.moved(view, a, x, y)) and taken away by their ×
+   * (hooks.removed(view, a)), instead of playing. hooks null: as usual.
+   */
+  editHotspots(hooks) {
+    this.hsEdit = hooks;
+    this.el.classList.toggle('hs-editing', !!hooks);
+    this.setHotspots(this.page.a || []);
+  }
+
+  /** The page's buttons as they are now (put, moved or taken away by hand). */
+  setHotspots(list) {
+    this.page.a = list;
+    this.hotspots.replaceChildren();
+    this.renderHotspots();
+  }
+
+  /** The next click on the page: done({x, y}) — where a play button shows its middle there. */
+  pickPoint(done) {
+    this.stopMarking();
+    const layer = el('div', { class: 'mark-layer pick-layer' });
+    layer.addEventListener('click', (e) => {
+      const r = this.el.getBoundingClientRect();
+      this.stopMarking();
+      // (a play button is drawn 10 px above its place: --hs-y-offset)
+      done({ x: ((e.clientX - r.left) / r.width) * this.W, y: ((e.clientY - r.top + 10) / r.height) * this.H });
+    });
+    this.markLayer = layer;
+    this.el.append(layer);
+  }
+
+  /** A play button dragged to another place (correction mode → Play buttons). */
+  dragHotspot(b, a) {
+    b.addEventListener('pointerdown', (e) => {
+      if (!this.hsEdit || e.target.closest('.hs-x') || e.button > 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const r = this.el.getBoundingClientRect(), kx = this.W / r.width, ky = this.H / r.height;
+      const start = { x: e.clientX, y: e.clientY };
+      const at = (ev) => ({ x: Math.min(Math.max(a.x + (ev.clientX - start.x) * kx, 0), this.W), y: Math.min(Math.max(a.y + (ev.clientY - start.y) * ky, 0), this.H) });
+      let moved = false;
+      b.setPointerCapture(e.pointerId);
+      const move = (ev) => {
+        if (!moved && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 4) return;
+        moved = true;
+        b.classList.add('dragging');
+        const p = at(ev);
+        b.style.left = `${(p.x / this.W) * 100}%`;
+        b.style.top = `${(p.y / this.H) * 100}%`;
+      };
+      const up = (ev) => {
+        b.removeEventListener('pointermove', move);
+        b.removeEventListener('pointerup', up);
+        b.removeEventListener('pointercancel', up);
+        b.classList.remove('dragging');
+        if (!moved || ev.type === 'pointercancel') { b.style.left = `${(a.x / this.W) * 100}%`; b.style.top = `${(a.y / this.H) * 100}%`; return; }
+        const p = at(ev);
+        this.hsEdit?.moved(this, a, Math.round(p.x), Math.round(p.y));
+      };
+      b.addEventListener('pointermove', move);
+      b.addEventListener('pointerup', up);
+      b.addEventListener('pointercancel', up);
+    });
+  }
+
   renderHotspots() {
     this.buttons = new Map();
     for (const a of this.page.a || []) { // (only the disc's pages have them)
@@ -149,7 +215,18 @@ export class PageView {
         style: `left:${(a.x / this.W) * 100}%;top:${(a.y / this.H) * 100}%`,
         html: icon(kind.icon) + (label ? `<span>${label}</span>` : ''),
       });
-      b.addEventListener('click', (e) => { e.stopPropagation(); this.hooks.onHotspot(this, a, b); });
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (this.hsEdit) { // (changed by hand: they do not play)
+          if (e.target.closest('.hs-x')) this.hsEdit.removed(this, a);
+          return;
+        }
+        this.hooks.onHotspot(this, a, b);
+      });
+      if (this.hsEdit && (a.t === 'audio' || a.t === 'video')) {
+        b.append(el('span', { class: 'hs-x', title: 'Take this button away from the page', 'aria-label': `Take the button of ${a.title} away` }, '×'));
+        this.dragHotspot(b, a);
+      }
       this.buttons.set(a, b);
       this.hotspots.append(b);
     }

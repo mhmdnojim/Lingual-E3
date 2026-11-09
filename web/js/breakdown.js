@@ -307,6 +307,15 @@ export class Breakdown {
       if (all.isConnected) { delete all.dataset.on; all.innerHTML = `${icon('play')}Play all`; mark(null); }
     });
     const count = el('span', { class: 'bd-count' }, `${words.length} word${words.length === 1 ? '' : 's'}`);
+    // Offline (Settings → Translation): what is not saved yet is not asked of the internet. Shown
+    // when something is missing, with the way back online (this sentence asked again so).
+    const offlineNote = el('p', { class: 'hint bd-offline', hidden: true },
+      'Offline mode is on: only translations saved on this computer are shown. ',
+      el('button', {
+        class: 'btn small', type: 'button', title: 'Switch offline mode off (Settings → Translation) and translate what is missing with the internet',
+        onclick: () => { tr.setOfflineOnly(false); this.open({ view, a, b }); },
+      }, 'Translate online'));
+    const missing = () => { offlineNote.hidden = !(tr.offlineOnly && (words.some((w) => !w.meaning) || !sentenceTr)); };
 
     const body = el('div', { class: 'bd' },
       el('div', { class: 'bd-line bd-sentence' }, hear('Hear the sentence', () => {
@@ -317,7 +326,7 @@ export class Breakdown {
         mark(null);
         sayMeaning(sentenceTr, followTranslation).then(() => mark(null));
       }) : null, translationText),
-      pinyinNote,
+      pinyinNote, offlineNote,
       lang ? null : el('p', { class: 'hint' }, 'Choose the language of the meanings: ',
         el('button', { class: 'btn small', type: 'button', onclick: () => this.app.openSettings?.('translation') }, 'Settings → Translation')),
       el('div', { class: 'bd-tools' }, count, el('label', { class: 'bd-speed' }, el('span', {}, 'Speed '), speed, speedOut), all),
@@ -345,7 +354,7 @@ export class Breakdown {
     if (!lang) return;
 
     // The translations: the sentence (as on the page), and each word in this sentence — one request.
-    tr.forView(view).then((trs) => {
+    const sentenceDone = tr.forView(view).then((trs) => {
       sentenceTr = trs?.[t.w2s[a]] || '';
       if (translationText.isConnected) translationText.textContent = sentenceTr || (tr.offlineOnly ? 'Not saved offline yet' : 'No translation (no internet?)');
     }).catch((err) => { translationText.textContent = err.message; });
@@ -357,6 +366,7 @@ export class Breakdown {
     }
     parts = groupParts(words, t, a, b);
     drawParts();
+    sentenceDone.then(missing);
   }
 
 }

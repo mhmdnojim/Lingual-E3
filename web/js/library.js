@@ -3,6 +3,8 @@
 // Everything is kept by the server (web/library.py, web/accounts.py).
 import { $, $$, el, icon, store, toast } from './util.js';
 import { openDialog as showDialog, closeDialog } from './media.js';
+import { designEditor, framed } from './designs.js';
+import { speechDialog } from './transcription.js';
 
 /** The library's dialogs (adding a book, settings, names, accounts …) stay open when the page outside them is clicked. */
 const openDialog = (title, body) => showDialog(title, body, null, { keep: true });
@@ -66,6 +68,21 @@ function upload(url, file, onProgress) {
     x.onerror = () => reject(new Error('The upload was cut off. Check the connection and try again.'));
     x.send(file);
   });
+}
+
+/**
+ * What is wrong with the size of the files of a new book, or '' (limits: of this user, from
+ * /api/me: an admin's PDF can be bigger). Photos the server takes as they are (JPEG, PNG, WebP);
+ * others are made into a smaller JPEG first (serverPhoto).
+ */
+function tooBig(kind, files, limits = {}) {
+  const mb = (f) => (f.size / 2 ** 20).toFixed(f.size < 10 * 2 ** 20 ? 1 : 0);
+  if (kind === 'pdf' && files[0].size > (limits.pdf_mb || 60) * 2 ** 20) {
+    return `This PDF is ${mb(files[0])} MB: at most ${limits.pdf_mb || 60} MB can be added. Make the PDF smaller `
+      + '(for example “Reduce file size” in a PDF program), or split it into parts and add each as a book.';
+  }
+  const photo = kind === 'images' && files.find((f) => /^image\/(jpeg|png|webp)$/.test(f.type) && f.size > (limits.image_mb || 15) * 2 ** 20);
+  return photo ? `The photo “${photo.name}” is ${mb(photo)} MB: at most ${limits.image_mb || 15} MB each. Take it again smaller, or make it smaller.` : '';
 }
 
 /** The next step of adding a book in the dialog (opened if it was closed), without closing it in between. */
@@ -698,7 +715,8 @@ export class Library {
       null,
       ...(item.kind === 'branch' ? [['New sub-branch…', 'plus', () => this.branchDialog(f)],
         ['New parent branch…', 'merge-up', () => this.parentDialog(f)], null, ['Delete…', 'trash', () => this.deleteBranch(f)]]
-        : [own && !b.disc ? ['Settings and sharing…', 'sliders', () => this.settings(own)] : null, null,
+        : [own && !b.disc ? ['Settings and sharing…', 'sliders', () => this.settings(own)] : null,
+          b.disc && this.me.disc ? ['Scripts of its audio and video…', 'transcribe', () => this.discScripts(b)] : null, null,
           b.link ? ['Delete this copy', 'trash', () => this.removeLink(item)] : b.disc ? null : ['Delete the book…', 'trash', () => this.remove(b)]]),
     ];
     return rows.filter((r, i, all) => r || (all.slice(0, i).some(Boolean) && all.slice(i + 1).some(Boolean) && all[i - 1]));
@@ -992,7 +1010,7 @@ export class Library {
     const parts = {
       text: el('div', {}, el('label', { class: 'field' }, el('span', {}, 'Text'), text),
         el('label', { class: 'field' }, el('span', {}, 'A picture at the top (optional)'), picture)),
-      pdf: el('div', {}, el('label', { class: 'field' }, el('span', {}, `PDF file (at most ${this.me.limits?.pages || 300} pages are used)`), pdf),
+      pdf: el('div', {}, el('label', { class: 'field' }, el('span', {}, `PDF file (at most ${this.me.limits?.pdf_mb || 60} MB; ${this.me.limits?.pages || 300} pages are used)`), pdf),
         el('p', { class: 'hint' }, 'Pages with text are read from the PDF; scanned pages are read with OCR.')),
       images: el('div', {}, el('label', { class: 'field' }, el('span', {}, 'Photos or scans of the pages'), photos), photoNote,
         el('p', { class: 'hint' }, 'Tip: photograph each page straight from above, in good light.')),
@@ -1030,6 +1048,10 @@ export class Library {
       if (!title.value.trim()) { msg.textContent = 'Please give a title.'; title.focus(); return; }
       if (kind === 'text' && !text.value.trim()) { msg.textContent = 'Please add the text.'; text.focus(); return; }
       if (kind !== 'text' && !files.length) { msg.textContent = kind === 'pdf' ? 'Please choose the PDF file.' : 'Please choose the photos.'; return; }
+      // (said before sending: the server would stop reading it; its limits asked now: it may have been started again since this page was opened)
+      const limits = (await api('GET', '/api/me').catch(() => null))?.limits || this.me.limits;
+      const big = tooBig(kind, files, limits);
+      if (big) { msg.textContent = big; return; }
       const options = kind === 'text' ? undefined : questions.value();
       if (options) store.set('addOptions', { language: options.language, english: options.english, pinyin: options.pinyin }); // (the next book is likely the same)
       go.disabled = true;
@@ -1063,6 +1085,7 @@ export class Library {
         }
       }
     } catch (err) {
+      await api('DELETE', `/api/books/${book.id}`).catch(() => {}); // (no empty book left behind: add it again)
       form.replaceChildren(el('p', { class: 'form-msg' }, err.message),
         el('div', { class: 'form-buttons' }, el('button', { class: 'btn', type: 'button', onclick: () => { closeDialog(); this.setScope('mine'); } }, 'Close')));
       return;
@@ -1073,16 +1096,17 @@ export class Library {
 
   /**
    * Make a sample of the pages of a book with these options (same: of the pages of the last
-   * sample, to compare; start false: only follow the one being made), then show it to check.
+   * sample, to compare; start false: only follow the one being made; again: find the designs of
+   * the pages again, js/designs.js), then show it to check.
    */
-  async sample(book, options, { same = false, start = true } = {}) {
+  async sample(book, options, { same = false, start = true, again = false } = {}) {
     const bar = el('div', { class: 'rec-progress' }, el('div'));
     const stage = el('p', { class: 'hint' }, 'Making a sample of the pages…');
     const view = el('div', { class: 'lib-form' }, el('h3', { class: 'lib-progress-title' }, book.title), bar, stage);
     step(`Sample: ${book.title}`, view);
     let s;
     try {
-      s = start ? await api('POST', `/api/books/${book.id}/preview`, { options, same }) : await api('GET', `/api/books/${book.id}/preview`);
+      s = start ? await api('POST', `/api/books/${book.id}/preview`, { options, same, again }) : await api('GET', `/api/books/${book.id}/preview`);
       while (s.state === 'working') {
         bar.firstChild.style.width = `${s.total ? Math.round((s.done / s.total) * 100) : 0}%`;
         stage.textContent = s.stage === 'Waiting…' ? 'Waiting for the books before it…' : s.stage || 'Making a sample of the pages…';
@@ -1102,21 +1126,35 @@ export class Library {
     const q = this.pageQuestions(book.kind, ready ? s.options : options, true);
     const again = (same) => this.sample(book, q.value(), { same });
     const page = book.kind === 'images' ? 'Photo' : 'Page';
+    const areas = (p) => (s.designs ? el('button', { class: 'btn small', type: 'button', onclick: () => this.designs(book, s, q, p.n) },
+      p.design == null ? 'Give it a design' : `Change the areas of design ${p.design + 1}`) : null);
     const pages = ready && el('div', { class: 'sample-pages' }, ...s.pages.map((p) => el('figure', { class: 'sample-page' },
-      el('figcaption', {}, el('b', {}, `${page} ${p.n}`), ` · ${HOW[p.how] || ''} · ${p.words} word${p.words === 1 ? '' : 's'}`),
-      el('a', { href: p.img, target: '_blank', rel: 'noopener', title: 'See it bigger' }, el('img', { src: p.img, alt: `${page} ${p.n}` })),
+      el('figcaption', {}, el('b', {}, `${page} ${p.n}`), ` · ${HOW[p.how] || ''} · ${p.words} word${p.words === 1 ? '' : 's'}`,
+        p.design != null ? ` · design ${p.design + 1}${p.areas?.length && !p.framed ? ' (its areas suggested; read whole)' : ''}` : '', ' ', areas(p)),
+      el('a', { href: p.img, target: '_blank', rel: 'noopener', title: 'See it bigger' },
+        p.areas?.length ? framed(p.img, p.areas, `${page} ${p.n}, with the areas of its design`) : el('img', { src: p.img, alt: `${page} ${p.n}` })),
       el('div', { class: 'sample-text', lang: s.options.language }, p.text || 'No words were found on this page.'))));
+    // The designs of the pages: on each, the app reads its areas in their order (web/designs.py).
+    // Its areas are used once the owner has checked them (saved): laid on pages that only look alike they could cut them wrongly.
+    const designs = ready && s.designs > 0 && el('div', { class: 'sample-tips design-note' },
+      el('h4', {}, `The app found ${s.designs} design${s.designs === 1 ? '' : 's'} of page`),
+      el('p', {}, 'Pages that look alike (as the units of a textbook) have the same design. On every page of a design the app can read '
+        + 'the same areas, in their numbered order, and leave out those marked “Don’t read”. '
+        + (s.checked ? 'The pages of each design are read so, as you saved them.'
+          : 'The frames on the pages below are its suggestion. Check them, change them if needed, and save: then the pages of each design are read by them. Until then every page is read whole, as before.')),
+      el('button', { class: 'btn small', type: 'button', onclick: () => this.designs(book, s, q) }, s.checked ? 'See and change the designs' : 'Check the designs'));
     const tips = ready && s.tips.length > 0 && el('div', { class: 'sample-tips' }, el('h4', {}, 'The app noticed'),
       ...s.tips.map((t) => el('div', { class: 'sample-tip' }, el('p', {}, t.text),
         t.set ? el('button', { class: 'btn small', type: 'button', onclick: () => { q.set(t.set); again(true); } }, 'Change it and try again') : null)));
     const intro = ready
-      ? `The app made ${s.pages.length} of the ${s.chosen} pages${s.chosen < s.total ? ` you chose (of ${s.total})` : ''}, chosen at random. `
+      ? `The app made ${s.pages.length} of the ${s.chosen} pages${s.chosen < s.total ? ` you chose (of ${s.total})` : ''}, `
+        + `${s.designs ? 'a page of each design (and others chosen at random)' : 'chosen at random'}. `
         + 'Check that the words were read right: they are what you can click, hear and translate.'
       : 'The sample could not be made. Change what is needed below, and try again.';
     const panel = el('div', { class: 'lib-form sample-review' },
       el('p', { class: 'hint' }, intro),
       ready ? null : el('p', { class: 'form-msg', role: 'alert' }, s.error || 'Something went wrong.'),
-      pages, tips,
+      designs, pages, tips,
       el('h4', {}, ready ? 'Something to change?' : 'What to change'), q.node,
       el('div', { class: 'form-buttons' },
         ready ? el('button', { class: 'btn', type: 'button', onclick: () => again(true) }, 'Try again on these pages') : null,
@@ -1126,6 +1164,27 @@ export class Library {
         ready ? el('button', { class: 'btn primary', type: 'button', onclick: () => this.makeAll(book, q.value()) },
           `Make all ${s.chosen} page${s.chosen === 1 ? '' : 's'}`) : null));
     step(`Check the sample: ${book.title}`, panel);
+  }
+
+  /**
+   * See and change the designs of the pages of a book (js/designs.js), from the check of its sample
+   * s (q: its questions, whose answers the sample made after saving keeps), showing page n first.
+   */
+  async designs(book, s, q, n) {
+    let info;
+    try { info = await api('GET', `/api/books/${book.id}/designs`); } catch (err) { toast(err.message); return; }
+    const sharp = Object.fromEntries(s.pages.map((p) => [p.n, p.img])); // (the pages of the sample: drawn big)
+    const back = () => this.review(book, s, q.value());
+    step(`Designs of the pages: ${book.title}`, designEditor({
+      info, first: n,
+      picture: (k, small) => (!small && sharp[k]) || `/lib/${book.id}/designs/${k}.webp?v=${info.token}`,
+      onCancel: back,
+      onAgain: () => this.sample(book, q.value(), { again: true }),
+      onSave: async (designs) => {
+        await api('PUT', `/api/books/${book.id}/designs`, { designs });
+        this.sample(book, q.value(), { same: true });
+      },
+    }));
   }
 
   /** Make all the pages of the book (with these options: those of its last sample), then open it. */
@@ -1198,6 +1257,7 @@ export class Library {
       el('label', { class: 'field' }, el('span', {}, 'Author'), author),
       place.node,
       el('label', { class: 'field' }, el('span', {}, 'About this book (optional)'), about),
+      b.status === 'ready' ? this.mediaBox(b) : null,
       el('label', { class: 'check share-toggle' }, pub, el('b', {}, ' Share with everyone'), ' — it appears in the public library'),
       share,
       b.hidden ? el('p', { class: 'form-msg' }, 'An admin has hidden this book after a report. Only you can see it.') : null,
@@ -1207,6 +1267,7 @@ export class Library {
         ['new', 'error'].includes(b.status) && b.kind !== 'text'  // change how they are made, with a sample
           ? el('button', { class: 'btn', type: 'button', onclick: () => this.resume(b) }, b.sample ? 'Check the sample' : 'Make a sample') : null,
         b.status === 'error' && b.kind === 'text' ? el('button', { class: 'btn', type: 'button', onclick: () => this.makeAgain(b) }, 'Try again') : null,
+        b.pdf ? el('a', { class: 'btn', href: b.pdf, download: '', title: 'The book’s PDF, with the pictures you replaced' }, 'Download the PDF') : null,
         el('span', { class: 'push' }),
         el('button', { class: 'btn', type: 'button', onclick: closeDialog }, 'Cancel'),
         el('button', { class: 'btn primary', type: 'submit' }, 'Save')));
@@ -1228,6 +1289,117 @@ export class Library {
       this.changed(b.id);
     });
     openDialog(`Settings: ${b.title}`, form);
+  }
+
+  /**
+   * A book's audio and video (web/tracks.py): a folder of them (or some files) added, each with a
+   * play button where its number is printed on the pages ("⊙1.26" → …_1.26.mp3); taken out again.
+   */
+  mediaBox(b) {
+    const MEDIA = /\.(mp3|m4a|wav|ogg|mp4|webm)$/i;
+    const state = el('p', { class: 'hint', 'aria-live': 'polite' }, '…');
+    const bar = el('div', { class: 'rec-progress', hidden: true }, el('div'));
+    const folder = el('input', { type: 'file', multiple: true, webkitdirectory: true, hidden: true });
+    const files = el('input', { type: 'file', multiple: true, accept: 'audio/*,video/*,.mp3,.m4a,.wav,.ogg,.mp4,.webm', hidden: true });
+    const buttons = [
+      el('button', { class: 'btn', type: 'button', onclick: () => folder.click() }, 'Add a folder…'),
+      el('button', { class: 'btn', type: 'button', onclick: () => files.click() }, 'Add files…'),
+      el('button', { class: 'btn danger-btn', type: 'button', hidden: true, onclick: () => removeAll() }, 'Take them all out')];
+    // Their scripts written by speech recognition (transcription.py: ElevenLabs or this computer).
+    const said = el('p', { class: 'hint', 'aria-live': 'polite', hidden: true });
+    const transcribe = el('button', { class: 'btn', type: 'button', hidden: true, onclick: () => transcribeAll() }, 'Transcribe them all');
+    let polling = null;
+    const show = (d) => {
+      buttons[2].hidden = !d.files;
+      const lost = d.unplaced.length ? ` Not found on a page: ${d.unplaced.slice(0, 6).join(', ')}${d.unplaced.length > 6 ? ` and ${d.unplaced.length - 6} more` : ''}.` : '';
+      state.textContent = d.files ? `${d.files} recording${d.files === 1 ? '' : 's'} (${Math.round(d.bytes / 2 ** 20)} MB): ${d.placed} with a play button on their page.${lost}`
+        : 'None yet. Add the folder of the book’s audio (and video), for example its Student’s Book CD: a play button goes where each one’s number is printed on the pages (⊙1.26 → …_1.26.mp3).';
+      const t = d.transcripts || { done: 0, running: 0, failed: 0 };
+      said.hidden = !d.files || !(t.done || t.running || t.failed);
+      said.textContent = `Their scripts: ${t.done} of ${d.files} written down${t.running ? `, ${t.running} still being transcribed…` : '.'}`
+        + `${t.failed ? ` ${t.failed} could not be: Transcribe them all again to try them again.` : ''}`;
+      transcribe.hidden = !d.files || !d.canTranscribe || t.done >= d.files || t.running > 0;
+      clearTimeout(polling);
+      if (t.running) {
+        polling = setTimeout(() => { if (box.isConnected) api('GET', `/api/books/${b.id}/tracks`).then(show).catch(() => {}); }, 3000);
+      }
+    };
+    const transcribeAll = async () => {
+      if (!confirm('Write down what is said in every recording of this book not transcribed yet? '
+        + 'With ElevenLabs each hour of sound costs some of your credits; on this computer it takes long.')) return;
+      transcribe.disabled = true;
+      try { show(await api('POST', `/api/books/${b.id}/tracks/transcribe`)); } catch (err) { toast(err.message); }
+      transcribe.disabled = false;
+    };
+    const changed = () => { if (this.app.book?.id === b.id) this.app.reloadBook(); };
+    const add = async (list) => {
+      const chosen = [...list].filter((f) => MEDIA.test(f.name)).sort((x, y) => naturally(x.name, y.name));
+      if (!chosen.length) { state.textContent = 'There is no audio or video in it (MP3, M4A, WAV, OGG, MP4, WebM).'; return; }
+      buttons.forEach((x) => { x.disabled = true; });
+      bar.hidden = false;
+      const failed = [];
+      for (const [k, f] of chosen.entries()) {
+        const at = (x) => { bar.firstChild.style.width = `${Math.round(((k + x) / chosen.length) * 100)}%`; };
+        state.textContent = `Adding ${k + 1} of ${chosen.length}: ${f.name}`;
+        try { await upload(`/api/books/${b.id}/tracks?name=${encodeURIComponent(f.name)}`, f, at); } catch (err) { failed.push(`${f.name}: ${err.message}`); }
+      }
+      state.textContent = 'Putting their buttons on the pages…';
+      try { show(await api('POST', `/api/books/${b.id}/tracks/place`)); } catch (err) { state.textContent = err.message; }
+      if (failed.length) state.append(el('br'), `${failed.length} could not be added: ${failed.slice(0, 3).join('; ')}`);
+      bar.hidden = true;
+      buttons.forEach((x) => { x.disabled = false; });
+      folder.value = files.value = '';
+      changed();
+    };
+    const removeAll = async () => {
+      if (!confirm(`Take all the audio and video added to “${b.title}” out of it (with their buttons on the pages)?`)) return;
+      try { show(await api('DELETE', `/api/books/${b.id}/tracks`)); } catch (err) { toast(err.message); return; }
+      changed();
+    };
+    folder.addEventListener('change', () => add(folder.files));
+    files.addEventListener('change', () => add(files.files));
+    const box = el('div', { class: 'media-box' }, el('h4', {}, 'Audio and video'), state, bar, el('div', { class: 'form-buttons' }, ...buttons), folder, files,
+      said, el('div', { class: 'form-buttons' }, transcribe, el('button', { class: 'link-btn', type: 'button', onclick: () => speechDialog(this.app), title: 'ElevenLabs or this computer' }, 'Speech recognition…')));
+    api('GET', `/api/books/${b.id}/tracks`).then(show).catch(() => { state.textContent = ''; });
+    return box;
+  }
+
+  /**
+   * A disc book's recordings and videos (any level's) that came without a script: their scripts,
+   * written by speech recognition, all written (again) — with ElevenLabs better than the ones this
+   * computer wrote before, with the speakers (server: disc_scripts). The disc's own scripts stay.
+   */
+  discScripts(b) {
+    const url = `/api/disc-scripts/${encodeURIComponent(b.id)}`;
+    const state = el('p', { class: 'hint', 'aria-live': 'polite' }, 'Counting its recordings…');
+    const go = el('button', { class: 'btn primary', type: 'button', hidden: true }, 'Transcribe them all');
+    let polling = null;
+    const box = el('div', { class: 'lib-form disc-scripts' },
+      el('p', {}, 'Its recordings and videos that have no script on the disc get one written by speech recognition. '
+        + 'With ElevenLabs (Speech recognition…) they are written again, better, with the speakers told apart. '
+        + 'The scripts that came on the disc stay as they are.'),
+      state, el('div', { class: 'form-buttons' },
+        el('button', { class: 'link-btn', type: 'button', onclick: () => speechDialog(this.app), title: 'ElevenLabs or this computer' }, 'Speech recognition…'),
+        el('span', { class: 'push' }), go));
+    const show = (d) => {
+      const t = d.transcripts;
+      state.textContent = !d.files ? 'All its recordings and videos have their scripts on the disc.'
+        : `${d.files} of its recordings and videos have no script on the disc: ${t.done} of them written by `
+          + `${d.engine === 'eleven' ? 'ElevenLabs' : 'speech recognition'}${t.running ? `, ${t.running} being transcribed now…` : '.'}`
+          + `${t.failed ? ` ${t.failed} could not be: Transcribe them all again to try them again.` : ''}`;
+      go.hidden = !d.files || t.done >= d.files || t.running > 0;
+      clearTimeout(polling);
+      if (t.running) polling = setTimeout(() => { if (box.isConnected) api('GET', url).then(show).catch(() => {}); }, 3000);
+    };
+    go.addEventListener('click', async () => {
+      if (!confirm(`Write the scripts of the recordings and videos of “${b.title}” that have none on the disc? `
+        + 'With ElevenLabs each hour of sound costs some of your credits; on this computer it takes long.')) return;
+      go.disabled = true;
+      try { show(await api('POST', url)); } catch (err) { state.textContent = err.message; }
+      go.disabled = false;
+    });
+    openDialog(`Scripts: ${b.title}`, box);
+    api('GET', url).then(show).catch((err) => { state.textContent = err.message; });
   }
 
   async remove(b) {

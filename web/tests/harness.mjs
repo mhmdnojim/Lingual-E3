@@ -29,6 +29,7 @@ export async function startServer({ port = PORT, args = [], env: extraEnv = {} }
     AEF_TRANSLATIONS_DIR: path.join(data, 'translations'), AEF_TRANSCRIPTS_DIR: path.join(data, 'transcripts'),
     LB_DATA_DIR: path.join(data, 'library'),
     AEF_LEVELS_FILE: path.join(data, 'levels.json'), // (none: this folder's books only, whatever other levels are here)
+    AEF_CONFIG_FILE: path.join(data, 'server-config.json'), // (the PIN, the AI key: never the real ones)
     ...extraEnv };
   delete env.AEF_PASSWORD;
   // A test server left on this port is replaced (server.py stops older copies of the app).

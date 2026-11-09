@@ -78,6 +78,9 @@ CODES = {c for c, *_ in LANGUAGES}
 # The languages books are in (the languages of their pages: ocr.LANGUAGES) as the translator knows them.
 SOURCES = {'en': 'en', 'zh-Hans': 'zh-CN', 'zh-Hant': 'zh-TW', 'es': 'es', 'fr': 'fr', 'de': 'de',
            'ja': 'ja', 'ko': 'ko', 'ar': 'ar'}
+# … and of a file transcribed (transcription.spoken_language): its lines translated from it.
+SOURCES.update({c: c for c in ('it', 'pt', 'ru', 'tr', 'fa', 'ur', 'hi', 'nl', 'pl', 'id', 'vi', 'th')})
+FILES = 'files'  # the "book" of the files transcribed (Transcribe a file): their scripts' translations
 
 
 def source(book_language):
@@ -317,7 +320,8 @@ def translate_page(lang, book, page, paragraphs, cached_only=False, refresh=Fals
     of them again, replacing the saved ones; a sentence it cannot translate keeps its old one).
     book_language: the language of the book's pages ('zh-Hans' …), which it is translated from."""
     src = source(book_language)
-    if lang not in CODES or not ids.BOOK_RE.match(book) or not (ids.PAGE_RE.match(page) or ids.SCRIPT_RE.match(page)):
+    if (lang not in CODES or not (ids.BOOK_RE.match(book) or book == FILES and ids.SCRIPT_RE.match(page))
+            or not (ids.PAGE_RE.match(page) or ids.SCRIPT_RE.match(page))):
         raise ValueError('bad language or page')
     _same(lang, src)
     if not (isinstance(paragraphs, list) and all(isinstance(p, list) and all(isinstance(s, str) and len(s) < 3000 for s in p) for p in paragraphs)):

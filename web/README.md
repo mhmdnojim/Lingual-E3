@@ -71,7 +71,7 @@ chosen (or the books next to it are tapped).
 | Kind | What happens |
 |---|---|
 | **Text** | Paste or type a text (an empty line starts a paragraph; a line starting with `#` is a heading), add a picture if you like. It is set into pages. |
-| **PDF** | Up to 300 pages are used (choose which ones: **Pages to use**, e.g. `3-120`). Text in the PDF is used as it is; scanned pages, and pages whose text is broken, are read with OCR. |
+| **PDF** | Up to 300 pages are used (choose which ones: **Pages to use**, e.g. `3-120`). At most 500 MB on this computer (and for a website's admins: a whole textbook is often 80–220 MB), 60 MB for the other accounts of a website; a bigger file is refused before it is sent, with its size. Text in the PDF is used as it is; scanned pages, and pages whose text is broken, are read with OCR. |
 | **Photos of pages** | One photo per page (in the order of the file names). The words are read with OCR. Photograph straight from above, in good light. |
 
 For a PDF or photos the app first asks about the pages: their **language** (OCR reads that
@@ -98,6 +98,37 @@ and try again** does that. Under **Something to change?**:
 **Try again on these pages** shows the same pages made with the changes (to compare), **Show other
 pages** others. When it looks right, **Make all … pages** makes the book the same way. **Finish
 later** keeps it in **My books** (“Not finished”): click it to go on.
+
+**Designs of the pages.** A textbook repeats a few designs of page: in every unit the same page of
+dialogues with their new words beside them, the same page of grammar, of exercises … Before the
+first sample the app looks at all the pages (drawn small: some seconds for 200 pages) and groups
+those that look alike (web/designs.py): *“The app found 4 designs of page”*. Only pages much more
+alike than two pages of the book usually are make a design: a book whose pages all look different
+(magazine-like) has few designs, or none. The first sample is a page of each design (and others at
+random up to its size). What is read on it becomes the design's suggested **areas** (frames), drawn
+on the page and numbered in the order they are read; their colour says what is in them:
+
+| Area | How it is read |
+|---|---|
+| Text (blue) | As the app finds it. |
+| Dialogue (green) | Also without the speakers' names at the start of the lines (“A:”, “王方：”, “Wang Fang:”). Found by itself when two lines start so. |
+| New words (purple) | Each row: the word, then its meaning (number, pinyin, part of speech left out), also when the app cannot find the list's columns. Found by itself under a heading “生词”, “New Words”, “Vocabulary”. |
+| Don't read (grey, dashed) | Left out (the speakers' pictures, the page headings, an English version …). |
+
+The frames are only a suggestion until you check them: until then every page is read whole, as
+before (an example page's frames laid on other pages that only look alike could cut their text
+wrongly). **Check the designs** (or **Change the areas of design …** on a page of the sample) opens
+the designs: a tab for each, the page with its frames, its pages below (each shows the same frames).
+Drag on the page where there is no frame to draw one; drag a frame to move it, its corners to change
+its size; the Delete key removes the one selected. Beside the page: what is in each area, ↑ ↓ to read
+it earlier or later, ✕ to remove it; **Its design** moves the page to another design, to **No design**
+(the whole page read as before) or to **a new design** of its own. A change is for every page of the
+design. **Use these designs, and read the sample again**: from now on the pages of each design are
+read by its frames, the sample first; **Find the designs again** starts over. Then **Make all …
+pages** reads each page of a design area by area, in their order. A
+page's text a little longer than its example's is not lost: words outside every frame go with the
+nearest one. Without frames (a design whose page was not read yet, or **No design**) a page is read
+whole, as before.
 
 Pinyin in scans and photos can be read with wrong tone marks. When Chinese is the main language,
 the app keeps Chinese and English and filters detected pinyin from the extracted text. Check the
@@ -334,10 +365,45 @@ that does not fit it (for example **Merge ↑** on the first sentence) is greyed
 | Start or join a paragraph | **New paragraph** / **Join paragraph**. |
 | Add a missing sentence | **Add after**, type it, press **Enter**. Then **Mark on page** and drag a box around it on the page, so it can be clicked there too. |
 | Remove a sentence | **Delete**. |
-| Missing or badly read text in one place (or several) | **Re-read text by area**: drag a box around it on the page, then the next one, as many as you need, one after the other (they are numbered on the page; **Take back the last box** if one is wrong). Then **Read** them (or press **Enter**): check what was found in each, then add it or let it replace the words there (for each area). While you check, each sentence found is outlined on the page in its own color with its number, as in the list (unticked: grey), so you can see what the boxes missed: **+ Draw more areas** adds more boxes to the same review (your changes in it stay), and everything is added together. Either way it goes where it is on the page (replacing: where the old words were, in the middle of their paragraph), so the sentences stay numbered one after the other. One **Undo** takes back all the areas. Paragraphs read in an area (the rows of a list of new words) stay paragraphs. |
+| Missing or badly read text in one place (or several) | **Re-read text by area**: drag a box around it on the page, then the next one, as many as you need, one after the other (they are numbered on the page; **Take back the last box** if one is wrong). Then **Read** them (or press **Enter**): check what was found in each, then add it or let it replace the words there (for each area). While you check, each sentence found is outlined on the page in its own color with its number, as in the list (unticked: grey), so you can see what the boxes missed: **+ Draw more areas** adds more boxes to the same review (your changes in it stay), and everything is added together. Either way it goes where it is on the page (replacing: where the old words were, in the middle of their paragraph), so the sentences stay numbered one after the other. One **Undo** takes back all the areas. Paragraphs read in an area (the rows of a list of new words) stay paragraphs. Each line is read across first: where OCR cut it in pieces — at a blank to fill in (“work for a ¹______ called…”: the blank's small number is left out), after a speaker's name or a number at the start of the line (“1 Jenny Don't forget the chocolates.”) — the pieces are put back together, and the lines are read column by column, each from the top (also with **Read the whole page again**). Two columns side by side stay apart. |
 | Read the whole page again | **Read the whole page again**. The steps are shown one after the other with a bar (**Stop** or **Esc** stops it; nothing changes). The sentences you corrected (changed, split, joined, typed, re-read by area, placed on the page) stay as they are: what is read in their places is left out. Text you deleted before comes back unticked. Check what was found; it then takes the place of the rest of the page's text, in the order the page has now. |
+| Replace a picture (your own books) | **Replace a picture**: drag a box around it on the page. Then give the new one: **A picture of yours** (a file, or a photo taken with the phone), or **Made by AI**: **Make a picture** — without a description the AI draws the old picture again, as a new one (with the page's text around it, to go with it). Each picture is shown first, nothing changes yet: not liked, **Make another**, as often as you like; or **Describe it** (what it should show; **Start from the old picture**: the AI changes that one as you say) and make another. Every try stays in a row under it: click one to see it again, and use the one you like. It **fills the box** (its edges cut) or shows **the whole picture** (white around it). **Replace the picture** puts it in the page and, for a PDF, in the book's PDF (**Download the PDF** in the book's Settings): a picture of the PDF inside the box is taken out, a scanned page gets the new one over that part. The words read from the old picture leave the page's text. Each one can be taken back (**Take it back**, in the same window over that page): the page and the PDF as they were. |
 | Undo | The undo arrow, or **Ctrl+Z**. |
 | Go back to the original text of the page | The restore button (circle arrow). |
+
+**Audio and video of your own books** (the book's **Settings** → **Audio and video**): **Add a
+folder…** (for example the folder of the Student's Book audio) or **Add files…**. The app copies the
+audio and video into the book (MP3, M4A, WAV, OGG, MP4, WebM; other files are left out) and puts a
+play button on every page where a recording's number is printed: `AEF3e_Level_3_SB_1.26.mp3` is
+track 1.26, and goes where the page says "⊙1.26 Watch or listen…" (also in the audioscripts at the
+back). It says how many have a button, and which ones were not found on a page (a number OCR
+misread). **Take them all out** removes them and their buttons. They play like the disc's recordings;
+a recording without a script can be transcribed in the **Script** tab, or all of them with **Transcribe
+them all** (see *Speech recognition with ElevenLabs*). Add one book's folder to that
+book: the Workbook's audio (1.1, 1.2 …) has the same numbers as the Student's Book's (1.01, 1.02 …).
+
+**Changing the play buttons by hand** (correction mode, the pencil → **Play buttons**): the page's
+audio and video buttons get a dashed outline and a ×; **Add a play button…** and **Done with play
+buttons** show right under the tools at the top of the panel (they stay there while the sentences
+scroll), with what to do under them.
+
+| To | Do this |
+|---|---|
+| Move a button (it covers the number) | Drag it. |
+| Take away a button in a wrong place | Click its **×** (the recording stays in the book). |
+| Add a button (a recording on no page, e.g. 4.01 that OCR misread) | **Add a play button…**, choose the recording (those on no page are first; type to find one), then click on the page where it goes. **Another file…** adds a new audio or video file first. |
+
+**Done with play buttons** ends it. What you change by hand stays when buttons are placed again (after **Add
+files…**): a button you moved stays where you put it, and one you took away does not come back
+on that page.
+
+**Pictures made by AI** use OpenAI's image service: each picture costs a few cents, so only an admin
+(on this computer: you) can make them. The first time, the window asks for its key
+(platform.openai.com → API keys): it is kept in `web\server-config.json`, on this computer only,
+never sent to the page again; **Change the key** (under **Made by AI**) replaces it. It must be a key
+of OpenAI: keys of other AIs (Kimi, DeepSeek …) are refused, as they cannot make pictures. On a website, the key can also be set as `OPENAI_API_KEY` in the
+server's settings (`/etc/lingua-books.env`); `imageModel` in `server-config.json` chooses another
+model of the service (`gpt-image-1` to begin with).
 
 In this mode you can also use **↑ / ↓** to select the next sentence, **Enter** to change it and
 **Delete** to remove it.
@@ -474,7 +540,9 @@ The translations come from **Google Translate** (free, no account needed) and ar
 each word on its own (**word by word**) — so the breakdown panel works offline too. Preparing explicitly
 downloads missing translations, even when **Read using saved translations only (offline)** is
 checked; that checkbox controls reading, not preparation. The selected text is sent to the
-translation service. No extra confirmation dialog is needed.
+translation service. No extra confirmation dialog is needed. With that checkbox on, what is not
+saved yet shows *not saved offline yet*; the breakdown panel then says so, with **Translate
+online**: it unticks the checkbox and gets the missing meanings with the internet.
 
 **Prepare** first checks what is saved already (on this computer only; nothing is sent), then
 downloads **only what is missing**. Under the button there is a bar for all of it and one for
@@ -625,9 +693,38 @@ English model `base.en`), one line per sentence, and kept in `web\transcripts\<i
    delete a file in `web\transcripts` to make it again). Restart the app.
 
 Others do **not** need step 1: give them `web\data` (and `web\transcripts`, so a rebuild keeps
-the scripts). Step 1 is only needed for the **Transcribe** button, which a recording without any
-script shows on the Script tab (or next to a video): it transcribes that one in the background
-(`/api/transcribe`; never on the public website).
+the scripts). Step 1 is only needed for the **Transcribe** button on this computer, which a
+recording without any script shows on the Script tab (or next to a video): it transcribes that one
+in the background (`/api/transcribe`).
+
+**Speech recognition with ElevenLabs** (better: it tells the speakers apart, knows 90+ languages,
+needs no setup, and works on a website too). Make a key at elevenlabs.io → **Developers → API
+keys** (with *Speech to Text* allowed). In the app: the **Script** tab → **Transcribe a file…**
+(or the sliders button next to **Transcribe**) → **Add a key of ElevenLabs** → paste it → **Save
+the key**. It is kept in `web\server-config.json` (`speechKey`; or the `ELEVENLABS_API_KEY`
+environment variable), never sent back to a page. From then on ElevenLabs makes every
+transcription (model `scribe_v2`); **This computer (Whisper)** in the same window goes back to
+faster-whisper. Each hour of sound costs ElevenLabs credits, so on a website only an admin can
+transcribe (readers see the scripts made). With it:
+
+- **Transcribe** in the Script tab (the disc's recordings and videos without a script, and the
+  recordings added to a book) writes that one down.
+- A book's **Settings → Audio and video → Transcribe them all** does all its recordings not done
+  yet (three at a time), and says how many are done.
+- The books **On this computer** (Levels 1–3): the **⋮** menu of a book → **Scripts of its audio and
+  video…** → **Transcribe them all** writes again, with ElevenLabs, the scripts of its recordings and
+  videos that had none on the disc (those this computer wrote before; the disc's own scripts stay).
+  Level 1: 325 of them (5.2 hours of sound), Level 2: 249 (3.9 hours), Level 3: 204 (3.0 hours). The
+  new lines are shown instead of the old ones (kept in `web\transcripts`).
+- **Transcribe a file…** takes any audio or video file of your computer (MP3, M4A, WAV, FLAC, MP4,
+  MOV …, up to 1000 MB; of a video only its sound is sent when ffmpeg is installed by Setup
+  transcription.bat). Its language is found by itself. Its lines are shown under it with the
+  speakers, as a book's script: click one to hear it (again: pause), repeat, and the two
+  translation buttons (under every line, or when pointing at a line) with **Translate into**.
+  **Copy the text**, **Download the text** (`[0:03] Speaker A: …`) or **Download subtitles (SRT)**.
+  The file is not kept (its lines' translations are, under its content).
+- The recordings added to a book are translated in the Script tab like the disc's (the same two
+  buttons).
 
 Text corrections are stored separately in `web\edits\<book>\<page>.json` (same format as
 `web\data\text`). The local server (`server.py`) reads and writes them through `/api/text/…`

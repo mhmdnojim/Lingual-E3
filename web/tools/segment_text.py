@@ -267,14 +267,110 @@ def _ring(gray, x0, y0, x1, y1, s):
     return not ink[middle] and len(ring) < 0.75 * bw * bh  # (empty in its middle: a ring, not a dot)
 
 
-def make_lines(raw, ocr=True, image=None, stops=False):
+def _blank_under(gray, x0, x1, y0, y1, h):
+    """A blank to fill in between x0 and x1 (a line drawn under the gap, "for a ¹_______ called"):
+    a row of ink across most of it, at the bottom of the line or just under it."""
+    if gray is None or x1 - x0 < 4:
+        return False
+    top, bottom = max(0, round(y0 + 0.3 * h)), min(gray.height, round(y1 + 0.5 * h))
+    left, right = max(0, round(x0)), min(gray.width, round(x1))
+    if bottom - top < 1 or right - left < 4:
+        return False
+    px = gray.crop((left, top, right, bottom)).tobytes()
+    w = right - left
+    paper = sorted(px)[len(px) * 9 // 10]
+    return any(sum(p < paper - 80 for p in px[r * w:(r + 1) * w]) >= 0.5 * w for r in range(bottom - top))
+
+
+def join_rows(lines, gray=None):
+    """OCR's lines of one row of the page put together, across, where they are one line of text OCR
+    cut: at a blank to fill in (a line drawn under the gap: "work for a ¹_______ called"; its small
+    number goes), after a short label at the start of the row (a speaker's name, a number: "1  Jenny
+    Don't forget …"), or with no more than a word's space between them. Not two columns side by side.
+    Then in the order they are read (_reading_order), not OCR's (its columns of names, of numbers)."""
+    parts = [(k, ln, _box(ln)) for k, ln in enumerate(lines) if ln['words']]
+    rows = []  # [[(order, line, box), ...]]: the lines one beside the other (overlapping up and down, as tall)
+    for part in sorted(parts, key=lambda p: (p[2][1], p[2][0])):
+        b = part[2]
+        short = len(part[1]['words']) <= 2  # (a word or two: as tall as its letters, "an" less than "Rob")
+        for row in rows:
+            r = (min(p[2][1] for p in row), max(p[2][3] for p in row))
+            h, rh = b[3] - b[1], r[1] - r[0]
+            if min(b[3], r[1]) - max(b[1], r[0]) >= 0.6 * min(h, rh) and (short or 0.6 <= h / max(1, rh) <= 1.6):
+                row.append(part)
+                break
+        else:
+            rows.append([part])
+    out = []
+    for row in rows:
+        row.sort(key=lambda p: p[2][0])
+        hs = sorted(w['h'] for _, ln, _ in row for w in ln['words'])
+        u = hs[len(hs) // 2]
+        _, cur, cb = row[0]
+        label = len(cur['words']) <= 2 and len(' '.join(w['t'] for w in cur['words'])) <= 15  # (the row's start: a name, a number)
+        for _, nxt, nb in row[1:]:
+            gap = nb[0] - cb[2]
+            blank = gap > 0.9 * u and _blank_under(gray, cb[2], nb[0], min(cb[1], nb[1]), max(cb[3], nb[3]), u)
+            if gap <= 0.9 * u or blank or label and gap <= 3 * u:
+                words = cur['words']
+                if blank and re.fullmatch(r'\d{1,2}', words[-1]['t']) and words[-1]['h'] <= 0.8 * u and len(words) > 1:
+                    words = words[:-1]  # (the blank's small number)
+                cur = {**cur, 'words': words + nxt['words']}
+                cb = (min(cb[0], nb[0]), min(cb[1], nb[1]), max(cb[2], nb[2]), max(cb[3], nb[3]))
+            else:
+                out.append(_without_blank_number(cur, cb, u, gray))
+                cur, cb = nxt, nb
+            label = label and len(cur['words']) <= 2
+        out.append(_without_blank_number(cur, cb, u, gray))
+    return _reading_order(out)
+
+
+def _without_blank_number(line, b, u, gray):
+    """A line that ends with a blank to fill in ("misses his friends and ⁸_______."): without its small number."""
+    w = line['words'][-1]
+    if len(line['words']) > 1 and re.fullmatch(r'\d{1,2}', w['t']) and w['h'] <= 0.8 * u \
+            and _blank_under(gray, b[2] + 0.2 * u, b[2] + 4 * u, b[1], b[3], u):
+        return {**line, 'words': line['words'][:-1]}
+    return line
+
+
+def _box(ln):
+    ws = ln['words']
+    return (min(w['x'] for w in ws), min(w['y'] for w in ws), max(w['x'] + w['w'] for w in ws), max(w['y'] + w['h'] for w in ws))
+
+
+def _reading_order(lines):
+    """Lines in the order they are read: column by column, each from the top. A line goes on the
+    column of the nearest line above it that it is under (across: half of the narrower at least);
+    the columns one after the other by where they start (the top, then the left)."""
+    boxes = [_box(ln) for ln in lines]
+    cols = []
+    for i in sorted(range(len(lines)), key=lambda i: (boxes[i][1], boxes[i][0])):
+        b, best = boxes[i], None
+        for c in cols:
+            last = boxes[c[-1]]
+            if last[3] > (b[1] + b[3]) / 2:  # (not above it)
+                continue
+            if min(last[2], b[2]) - max(last[0], b[0]) >= 0.5 * min(last[2] - last[0], b[2] - b[0]):
+                if best is None or boxes[best[-1]][3] < last[3]:
+                    best = c
+        if best is None:
+            cols.append([i])
+        else:
+            best.append(i)
+    cols.sort(key=lambda c: (boxes[c[0]][1], boxes[c[0]][0]))
+    return [lines[i] for c in cols for i in c]
+
+
+def make_lines(raw, ocr=True, image=None, stops=False, rows=False):
     """Lines with their words and box. ocr=False (text from a PDF): only blank words are dropped,
     not what looks like an OCR slip on the original disc. A line with a bullet in front ('item':
     where its text starts) begins a list item; image (the page picture) finds the bullets OCR missed,
-    and with stops (words read by OCR, in their places on it) the full stops of Chinese it missed."""
+    and with stops (words read by OCR, in their places on it) the full stops of Chinese it missed.
+    rows: OCR's pieces of a line put together first (join_rows: at a blank, after a speaker's name)."""
     gray = image.convert('L') if image is not None else None
     lines = []
-    for ln in raw.get('lines', []):
+    for ln in (join_rows(raw.get('lines', []), gray) if rows else raw.get('lines', [])):
         bullet = len(ln['words']) > 1 and ln['words'][0]['t'].strip() in BULLETS
         words = []
         for w in ln['words'][1 if bullet else 0:]:
@@ -767,12 +863,12 @@ def split_clauses(tokens, a, b):
     return merged
 
 
-def segment(raw, ocr=True, image=None, lists=(), stops=False):
+def segment(raw, ocr=True, image=None, lists=(), stops=False, rows=False):
     """The page text document of raw OCR (or PDF) lines: paragraphs found from the layout.
     image: the page picture (in the places of the words), for the bullets OCR did not read (and with
     stops, the full stops of Chinese). lists: the page's lists of new words (word_lists), each row a
-    paragraph: its word, then its meaning."""
-    blocks = group_blocks(make_lines(raw, ocr, image, stops))
+    paragraph: its word, then its meaning. rows: OCR's pieces of a line put together (join_rows)."""
+    blocks = group_blocks(make_lines(raw, ocr, image, stops, rows))
     last = None  # (the list put in before, and where its rows end)
     for found in sorted(lists, key=lambda f: (f['box'][0], f['box'][1])):
         x0, y0, x1, y1 = found['box']

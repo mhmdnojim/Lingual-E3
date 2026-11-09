@@ -13,9 +13,22 @@ Accounts (accounts.py) and the library (library.py: books made from a text, a PD
     DELETE /api/books/<id>
     PUT    /api/books/<id>/source/<part>   upload: pdf, image-<k>, text ({text}), picture
     GET    /api/page-languages             the languages of pages, and which OCR reads here
-    POST   /api/books/<id>/preview         make a sample of 1-5 pages first {options, same}
+    POST   /api/books/<id>/preview         make a sample of 1-5 pages first {options, same, again: find the designs again}
     GET    /api/books/<id>/preview         the sample (with tips), or how far making it is
     GET    /lib/<id>/preview/<n>.webp?token=…   a page of the sample
+    GET    /api/books/<id>/designs         the designs of the pages and their areas (designs.py)
+    PUT    /api/books/<id>/designs         change them {designs: [{pages, example, areas}]}
+    GET    /lib/<id>/designs/<n>.webp      a page drawn small (to see its design)
+    GET    /api/books/<id>/pictures?n=     the pictures replaced (on page n) (pictures.py)
+    POST   /api/books/<id>/pictures/<n>?x=&y=&w=&h=&fit=   replace the picture in that box (the body: the new one)
+    DELETE /api/books/<id>/pictures/<id>   take a replaced picture back
+    GET    /lib/<id>/book.pdf              the book's PDF, with the pictures replaced (its owner)
+    GET    /api/books/<id>/tracks          its recordings (audio, video) added: how many, on their pages (tracks.py)
+    PUT    /api/books/<id>/tracks?name=    add one (the body: the file)   POST …/tracks/place: their buttons on the pages
+    DELETE /api/books/<id>/tracks          take them all out
+    POST   /api/books/<id>/buttons/<n>     a play button put by hand {file, x, y}   PUT {src, from: [x, y], x, y}: moved
+    DELETE /api/books/<id>/buttons/<n>?src=&x=&y=   taken away (each: the page's buttons)
+    GET    /api/picture-ai   PUT (admins: {key, model})   POST {book, page, box, prompt, like}: a picture made by AI
     POST   /api/books/<id>/make            make all the pages (in the background) {options}
     GET    /api/books/<id>/job             how far that is
     POST   /api/books/<id>/report          report a public book {reason, note}
@@ -48,8 +61,13 @@ Translations (translate.py)
     (each with {lang, from}: from the book's language, 'zh-Hans' …; '' = English, into lang)
     POST   /api/pinyin {texts}   the pinyin of every character of each text (pinyin.py)
 
-Speech recognition of the disc's recordings without a script (transcription.py; this computer only)
+Speech recognition (transcription.py: on this computer, or ElevenLabs with its key; a website: admins)
     POST   /api/transcribe {src}    GET /api/transcript?src=…   the lines, or how far it is
+    GET    /api/speech-ai           how it is done   PUT (admins: {key, engine: eleven | local})
+    POST   /api/transcribe-file?name=          any audio or video (the body)   GET …?job=: its lines
+    POST   /api/books/<id>/tracks/transcribe      all the recordings added to a book
+    GET    /api/disc-scripts/<disc book>          its recordings' scripts made by speech recognition: how many
+    POST   /api/disc-scripts/<disc book>          all of them made (again, with ElevenLabs: better)
 
 Where it can be reached:
 
@@ -63,6 +81,7 @@ Where it can be reached:
 Other options: --port 8765, --no-browser, --host, --password (the PIN of --lan).
 """
 import argparse
+import base64
 import json
 import os
 import re
@@ -87,6 +106,7 @@ import ids
 import library
 import migration
 import ocr
+import pictures
 import pinyin
 import subscriptions
 import transcription
@@ -96,7 +116,7 @@ import words
 
 # Raise when the app needs new server features; web/js/main.js checks it (NEEDS_API) and asks
 # to restart the app if an older server is still running.
-API_VERSION = 26  # 23: optional subscription codes and time-limited book access; 24: translations from the book's language; 25: pinyin; 26: a page's original text, reading a page again step by step
+API_VERSION = 30  # 23: optional subscription codes and time-limited book access; 24: translations from the book's language; 25: pinyin; 26: a page's original text, reading a page again step by step; 27: the designs of a book's pages; 28: pictures replaced; 29: a book's audio and video; 30: its play buttons changed by hand
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 WEB = os.path.join(ROOT, 'web')
@@ -114,7 +134,8 @@ API_WORD = re.compile(r'^/api/words/(w[0-9a-f]{12})$')
 API_WORD_CATEGORY = re.compile(r'^/api/words/categories(?:/(def|common|c[0-9a-f]{8}))?$')
 API_JOB = re.compile(r'^/api/jobs/([0-9a-f]{12})$')
 API_BOOK = re.compile(r'^/api/books/(\w{1,20})$')
-API_BOOK_PART = re.compile(r'^/api/books/(L[0-9a-f]{10})/(source|make|job|report|preview)(?:/([\w-]{1,20}))?$')
+API_BOOK_PART = re.compile(r'^/api/books/(L[0-9a-f]{10})/(source|make|job|report|preview|designs|pictures|tracks|buttons)(?:/([\w-]{1,20}))?$')
+LIB_PDF = re.compile(r'^/lib/(L[0-9a-f]{10})/book\.pdf$')
 API_ADMIN_BOOK = re.compile(r'^/api/admin/books/(L[0-9a-f]{10})$')
 API_BRANCH = re.compile(r'^/api/branches(?:/(\d{1,9})(/copy)?)?$')
 API_LINK = re.compile(r'^/api/links(?:/(\d{1,9}))?$')
@@ -122,9 +143,12 @@ API_ADMIN_SUBSCRIPTION_CODE = re.compile(r'^/api/admin/subscription-codes(?:/(\d
 API_ADMIN_SUBSCRIPTION = re.compile(r'^/api/admin/subscriptions/(\d{1,9})$')
 LIB_FILE = re.compile(r'^/lib/(L[0-9a-f]{10})/(pages|thumbs)/(\d{1,4}\.webp)$')
 LIB_PREVIEW_FILE = re.compile(r'^/lib/(L[0-9a-f]{10})/preview/(\d{1,4}\.webp)$')
+LIB_DESIGN_FILE = re.compile(r'^/lib/(L[0-9a-f]{10})/designs/(\d{1,4})\.webp$')
 LIB_MIGRATION_MEDIA = re.compile(r'^/lib/(L[0-9a-f]{10})/migration-media/([0-9a-f]{64}\.(?:mp3|wav|ogg|m4a|mp4|webm|json))$')
 API_MIGRATION = re.compile(r'^/api/migrations/(M[0-9a-f]{16})(?:/(source|analyze|sample|convert|cancel|discard|preview|export|report)(?:/([a-zA-Z0-9_.-]+))?)?$')
 MAX_BODY = 5 * 1024 * 1024        # JSON
+TRANSCRIBE_FILE_MB = 1000          # a file to transcribe (ElevenLabs takes up to 3 GB)
+API_DISC_SCRIPTS = re.compile(r'^/api/disc-scripts/([\w-]{1,40})$')  # a disc book's scripts by speech recognition
 MAX_UPLOAD = 61 * 1024 * 1024     # one uploaded file
 write_lock = threading.Lock()
 _ocr_region_lock = threading.Lock()
@@ -693,6 +717,22 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.denied()
             sample = library.sample(b['id'])
             return self.send_json(sample) if sample else self.send_json({'error': 'There is no sample yet.'}, 404)
+        if m and m.group(2) == 'pictures':
+            b = library.get(m.group(1))
+            if not library.can_edit(b, u):
+                return self.denied()
+            return self.send_json({'pictures': library.pictures_of(b, query.get('n', [None])[0])})
+        if m and m.group(2) == 'tracks':
+            b = library.get(m.group(1))
+            if not library.can_edit(b, u):
+                return self.denied()
+            return self.send_json(self.tracks_info(b))
+        if m and m.group(2) == 'designs':
+            b = library.get(m.group(1))
+            if not library.can_edit(b, u):
+                return self.denied()
+            found = library.designs_info(b)
+            return self.send_json(found) if found else self.send_json({'error': 'The designs of the pages are not found yet.'}, 404)
         if path == '/api/admin/reports':
             if not (u and u['admin']):
                 return self.denied()
@@ -826,8 +866,8 @@ class Handler(SimpleHTTPRequestHandler):
             if part is None and method == 'DELETE':
                 library.delete(b)
                 return self.send_json({'ok': True})
-            if part == 'source' and method == 'PUT' and m.group(3):
-                data = self.read_body(MAX_UPLOAD, raw=True)
+            if part == 'source' and method == 'PUT' and m.group(3):  # (an admin's PDF can be bigger)
+                data = self.read_body(max(MAX_UPLOAD, (library.limits(u)['pdf_mb'] + 1) * 1024 * 1024), raw=True)
                 if data is None:
                     return None
                 library.save_source(b, u, m.group(3), data)
@@ -849,7 +889,52 @@ class Handler(SimpleHTTPRequestHandler):
                 if not u['admin'] and accounts.limited('sample', str(u['id']), 100, 86400):
                     return self.send_json({'error': 'You made many samples today. Try again tomorrow.'}, 429)
                 body = body if isinstance(body, dict) else {}
-                return self.send_json(library.start_sample(b, body.get('options'), body.get('same')))
+                return self.send_json(library.start_sample(b, body.get('options'), body.get('same'), body.get('again') is True))
+            if part == 'designs' and method == 'PUT':
+                body = self.read_body()
+                if body is None:
+                    return None
+                return self.send_json(library.save_designs(b, body))
+            if part == 'pictures' and method == 'POST' and m.group(3):  # (the new picture is the body; its box in the address)
+                q = {k: v[0] for k, v in parse_qs(urlsplit(self.path).query).items()}
+                data = self.read_body((library.LIMITS['image_mb'] + 1) * 1024 * 1024, raw=True)
+                if data is None:
+                    return None
+                return self.send_json(library.replace_picture(b, m.group(3), [q.get(k) for k in ('x', 'y', 'w', 'h')], data, q.get('fit', 'cover')))
+            if part == 'pictures' and method == 'DELETE' and m.group(3):
+                return self.send_json(library.restore_picture(b, m.group(3)))
+            if part == 'tracks' and method == 'PUT' and not m.group(3):  # (a recording: the body; its name in the address)
+                name = parse_qs(urlsplit(self.path).query).get('name', [''])[0]
+                data = self.read_body((library.limits(u)['pdf_mb'] + 1) * 1024 * 1024, raw=True)
+                if data is None:
+                    return None
+                return self.send_json(library.add_track(b, u, name, data))
+            if part == 'tracks' and method == 'POST' and m.group(3) == 'place':
+                library.place_tracks(b)
+                return self.send_json(self.tracks_info(library.get(b['id'])))
+            if part == 'tracks' and method == 'POST' and m.group(3) == 'transcribe':  # (all not done yet)
+                if not self.may_transcribe():
+                    return self.denied('Only an admin can transcribe here.')
+                how = transcription.speech_settings(auth.config())
+                for src, file in library.track_files(b):
+                    transcription.start(src, Path(file), b.get('lang') or 'en', False, how)
+                return self.send_json(self.tracks_info(b))
+            if part == 'buttons' and m.group(3):  # (a page's play buttons changed by hand: correction mode)
+                if method == 'DELETE':
+                    q = {k: v[0] for k, v in parse_qs(urlsplit(self.path).query).items()}
+                    return self.send_json({'buttons': library.remove_button(b, m.group(3), q.get('src'), q.get('x'), q.get('y'))})
+                body = self.read_body()
+                if body is None:
+                    return None
+                body = body if isinstance(body, dict) else {}
+                if method == 'POST':
+                    return self.send_json({'buttons': library.add_button(b, m.group(3), str(body.get('file', '')), body.get('x'), body.get('y'))})
+                if method == 'PUT':
+                    return self.send_json({'buttons': library.move_button(b, m.group(3), str(body.get('src', '')), body.get('from'),
+                                                                          body.get('x'), body.get('y'))})
+            if part == 'tracks' and method == 'DELETE' and not m.group(3):
+                library.remove_tracks(b)
+                return self.send_json(self.tracks_info(library.get(b['id'])))
         except (library.LibraryError, branches.BranchError) as e:
             return self.send_json({'error': str(e)}, 400)
         return self.denied()
@@ -930,7 +1015,19 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json({'mode': MODE, 'user': accounts.public_user(user), 'disc': bool(disc()),
                                    'contact': os.environ.get('LB_CONTACT_EMAIL', ''),
                                    'licenses': library.LICENSES, 'reasons': library.REPORT_REASONS,
-                                   'limits': library.LIMITS, 'subscription': subscription})
+                                   'limits': library.limits(user), 'subscription': subscription})
+        if path == '/api/picture-ai':  # (is there a key for the AI image service: never the key itself)
+            u = self.user()
+            key, model = pictures.ai_settings(auth.config())
+            return self.send_json({'ready': bool(key), 'model': model, 'admin': bool(u and u['admin'])})
+        if path == '/api/speech-ai':  # (how transcriptions are made: never the key itself)
+            return self.send_json(self.speech_info())
+        if path == '/api/transcribe-file':
+            if not self.may_transcribe():
+                return self.denied()
+            return self.send_json(transcription.file_status(query.get('job', [''])[0]))
+        if API_DISC_SCRIPTS.match(path):
+            return self.disc_scripts(API_DISC_SCRIPTS.match(path).group(1))
         if path == '/api/page-languages':
             return self.send_json(library.page_languages())
         if path == '/api/session':  # (older pages)
@@ -1051,6 +1148,21 @@ class Handler(SimpleHTTPRequestHandler):
             if not f:
                 return self.send_error(404)
             return self.send_file(f, 'image/webp', private=True)
+        m = LIB_PDF.match(path)
+        if m:  # the book's PDF, with the pictures replaced: only its owner
+            b = library.get(m.group(1))
+            f = library.pdf_file(b) if library.can_edit(b, self.user()) else None
+            if not f:
+                return self.send_error(404)
+            name = re.sub(r'[^\w.-]+', '-', b['title'], flags=re.ASCII).strip('-')[:80] or 'book'
+            return self.send_migration_file(f, 'application/pdf', download=f'{name}.pdf')
+        m = LIB_DESIGN_FILE.match(path)
+        if m:  # a page drawn small, to see its design: only its owner
+            b = library.get(m.group(1))
+            f = library.design_picture(m.group(1), int(m.group(2))) if library.can_edit(b, self.user()) else None
+            if not f:
+                return self.send_error(404)
+            return self.send_file(f, 'image/webp', private=True)
         m = LIB_FILE.match(path)
         if m:
             b = library.get(m.group(1))
@@ -1154,6 +1266,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.change_links('POST', path)
         if path in ('/api/translate', '/api/translate-word'):
             return self.post_translate(path)
+        if path == '/api/picture-ai':
+            return self.picture_ai('POST')
         if path == '/api/pinyin':
             body = self.read_body()
             if body is None:
@@ -1164,6 +1278,21 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json({'error': str(e)}, 400)
             except pinyin.Missing as e:
                 return self.send_json({'error': str(e)}, 503)
+        if API_DISC_SCRIPTS.match(path):
+            return self.disc_scripts(API_DISC_SCRIPTS.match(path).group(1), start=True)
+        if path == '/api/transcribe-file':  # (any audio or video: the body; its name in the address)
+            if not self.may_transcribe():
+                return self.denied('Only an admin can transcribe here.') if self.user() else self.need_account()
+            q = {k: v[0] for k, v in parse_qs(urlsplit(self.path).query).items()}
+            data = self.read_body(TRANSCRIBE_FILE_MB * 2 ** 20, raw=True)
+            if data is None:
+                return None
+            try:
+                how = transcription.speech_settings(auth.config())
+                return self.send_json({'job': transcription.start_file(q.get('name'), data, q.get('language'), how),
+                                       'engine': how[2]})
+            except ValueError as e:
+                return self.send_json({'error': str(e)}, 400)
         if path == '/api/transcribe':
             body = self.read_body()
             return None if body is None else self.transcription(body.get('src') if isinstance(body, dict) else None, True,
@@ -1191,33 +1320,145 @@ class Handler(SimpleHTTPRequestHandler):
         except ValueError as e:
             return self.send_json({'error': str(e)}, 400)
 
-    def transcription(self, src, start=False, language='en', force=False, delete=False):
-        """Start or check transcription for an indexed disc recording or private imported book asset."""
-        if MODE == 'public':
+    def tracks_info(self, b):
+        """library.tracks_info, with how far their transcription is ({'transcripts': {done, running,
+        failed}}) and whether this user may start it."""
+        info = library.tracks_info(b)
+        info['transcripts'] = transcription.counts([src for src, _ in library.track_files(b)])
+        info['canTranscribe'] = self.may_transcribe()
+        return info
+
+    def disc_scripts(self, bid, start=False):
+        """The scripts of a disc book's recordings and videos (any level's) that speech recognition
+        writes (none on the disc, or written by it before: 'auto'): how many, how far it is
+        ({files, transcripts: {done, running, failed}, engine, canTranscribe}); start: all not
+        done yet the way chosen now (with ElevenLabs: the ones this computer wrote, again)."""
+        b = disc_book(bid)
+        if not b or not self.may_transcribe():
             return self.denied()
+        how = transcription.speech_settings(auth.config())
+        media = {}  # src: has a script speech recognition wrote ('auto')
+        for p in b['pages']:
+            for a in p.get('a', []):
+                src = a.get('src')
+                if a.get('t') in ('audio', 'video') and transcription.asset_id(src) and (not a.get('script') or a.get('auto')):
+                    media[src] = media.get(src, False) or bool(a.get('auto'))
+        # On this computer: a script it wrote before is done; with ElevenLabs only one ElevenLabs wrote.
+        todo = [src for src, auto in media.items() if how[2] == 'eleven' or not auto]
+        if start:
+            for src in todo:
+                if transcription.done_by(transcription.asset_id(src), how[2]):
+                    continue
+                root, rel = disc_location(src)
+                path = (Path(root) / rel.lstrip('/')).resolve()
+                if path.is_relative_to(Path(root).resolve()) and path.is_file():
+                    transcription.start(src, path, 'en', True, how)
+        counts = transcription.counts(todo, how[2])
+        counts['done'] += len(media) - len(todo)
+        return self.send_json({'files': len(media), 'transcripts': counts, 'engine': how[2], 'canTranscribe': True})
+
+    def may_transcribe(self):
+        """Starting a transcription: on a website only admins (ElevenLabs costs money)."""
+        u = self.user()
+        return MODE != 'public' or bool(u and u['admin'])
+
+    def transcription(self, src, start=False, language='en', force=False, delete=False):
+        """Start or check transcription for an indexed disc recording or private imported book asset.
+        On a website: its lines seen by the book's readers; made by admins, taken out by its editors."""
+        if start and not self.may_transcribe():
+            return self.denied('Only an admin can transcribe here.') if self.user() else self.need_account()
         try:
             imported = LIB_MIGRATION_MEDIA.fullmatch(src or '')
             if imported:
                 bid, name = imported.groups()
                 book = library.get(bid)
-                if not self.book_access(bid):
+                if not self.book_access(bid, write=delete and MODE == 'public'):
                     return self.send_json({'error': 'You do not have access to this book.'}, 404)
                 media = Path(library.folder(bid, 'migration-media', name)).resolve()
                 if not media.is_file():
                     return self.send_json({'error': 'The recording file could not be found.'}, 404)
                 language = language or (book or {}).get('lang') or 'en'
             else:
+                if MODE == 'public' and not self.may_transcribe():  # (the disc's: admins only)
+                    return self.denied()
                 media = transcription.resolve(src, disc(), disc_location)
             if delete:
                 transcription.delete(src)
                 return self.send_json({'ok': True})
             if start:
-                return self.send_json(transcription.start(src, media, language, force))
+                return self.send_json(transcription.start(src, media, language, force, transcription.speech_settings(auth.config())))
             return self.send_json(transcription.status(src, media, language))
         except ValueError as e:
             return self.send_json({'error': str(e)}, 400)
         except OSError:
             return self.send_json({'error': 'The saved transcript could not be deleted.'}, 409)
+
+    def speech_info(self):
+        """How transcriptions are made here: {ready: a key of ElevenLabs saved, engine: 'eleven' |
+        'local', local: Whisper installed on this computer, admin, can: may this user start one}."""
+        u = self.user()
+        key, model, engine = transcription.speech_settings(auth.config())
+        return {'ready': bool(key), 'engine': engine, 'model': model, 'local': transcription.local_ready(),
+                'admin': bool(u and u['admin']), 'can': self.may_transcribe() and bool(u)}
+
+    def speech_ai(self):
+        """Admins: ElevenLabs's key ({key}: kept in web/server-config.json, never sent back; '' takes
+        it out) and the way used ({engine: 'eleven' | 'local'})."""
+        u = self.user()
+        if not u:
+            return self.need_account()
+        if not u['admin']:
+            return self.denied('Only an admin can change how recordings are transcribed.')
+        body = self.read_body()
+        if body is None:
+            return None
+        if not isinstance(body, dict):
+            return self.send_json({'error': 'bad request'}, 400)
+        changes = {}
+        if 'key' in body:
+            changes['speechKey'] = str(body.get('key') or '').strip()[:200] or None
+        if body.get('engine') in ('eleven', 'local'):
+            changes['speechEngine'] = None if body['engine'] == 'eleven' else 'local'
+        auth.set_config(**changes)
+        return self.send_json(self.speech_info())
+
+    def picture_ai(self, method):
+        """The AI image service (pictures.py), only for admins (each picture costs money): PUT its key
+        ({key, model}: kept in web/server-config.json, never sent back); POST a picture made for a
+        box of a page of a book ({book, page, box, prompt (none: the old picture made again), like:
+        from the old picture, context: the page's text around it}): {image: a data address}."""
+        u = self.user()
+        if not u:
+            return self.need_account()
+        if not u['admin']:
+            return self.denied('Only an admin can use the AI image service: each picture costs money.')
+        body = self.read_body()
+        if body is None:
+            return None
+        if not isinstance(body, dict):
+            return self.send_json({'error': 'bad request'}, 400)
+        if method == 'PUT':
+            changes = {'imageKey': str(body.get('key') or '').strip() or None}
+            if 'model' in body:
+                changes['imageModel'] = str(body.get('model') or '').strip()[:60] or None
+            auth.set_config(**changes)
+            key, model = pictures.ai_settings(auth.config())
+            return self.send_json({'ready': bool(key), 'model': model, 'admin': True})
+        b = library.get(str(body.get('book', '')))
+        if not library.can_edit(b, u):
+            return self.denied()
+        try:
+            box = [float(v) for v in body.get('box')][:4]
+            prompt = pictures.ai_prompt(body.get('prompt'), body.get('context'), bool(body.get('like')))
+            like = library.old_picture(b, str(body.get('page', '')), box) if body.get('like') else None
+            key, model = pictures.ai_settings(auth.config())
+            data = pictures.ai_picture(prompt, key, model, pictures.ai_size(box[2], box[3]), like)
+        except (library.LibraryError, pictures.PictureError) as e:
+            return self.send_json({'error': str(e)}, 400)
+        except (TypeError, ValueError, IndexError):
+            return self.send_json({'error': 'Draw a box around the picture first.'}, 400)
+        kind = 'image/png' if data[:4] == b'\x89PNG' else 'image/webp' if data[8:12] == b'WEBP' else 'image/jpeg'
+        return self.send_json({'image': f'data:{kind};base64,{base64.b64encode(data).decode("ascii")}'})
 
     def post_ocr_region(self, book, page):
         """OCR one user-drawn rectangle on a page and return normal editable page text. With
@@ -1296,7 +1537,8 @@ class Handler(SimpleHTTPRequestHandler):
                     word['x'] += x
                     word['y'] += y
             raw['w'], raw['h'] = image.size
-            doc, _info = library._doc(raw, options, image, stops=True)  # (the page picture: the full stops and bullets OCR did not read)
+            # (the page picture: the full stops and bullets OCR did not read, the blanks between the pieces of a line)
+            doc, _info = library._doc(raw, options, image, stops=True, rows=True)
             if stream:
                 return tell(doc=doc)
             return self.send_json(doc)
@@ -1320,7 +1562,7 @@ class Handler(SimpleHTTPRequestHandler):
             src = str(req.get('from') or 'en')  # the book's language: what is translated from
             if path == '/api/translate':
                 book = str(req.get('book', ''))
-                if not self.book_access(book):
+                if not (self.book_access(book) or book == translate.FILES and self.may_transcribe()):
                     return self.denied()
                 out, fetched, missing = translate.translate_page(str(req.get('lang', '')), book,
                     str(req.get('page', '')), req.get('paragraphs'), bool(req.get('cachedOnly')), bool(req.get('refresh')), src)
@@ -1361,6 +1603,10 @@ class Handler(SimpleHTTPRequestHandler):
             return self.denied()
         if path.startswith('/api/migrations/'):
             return self.migration_api('PUT', path)
+        if path == '/api/picture-ai':
+            return self.picture_ai('PUT')
+        if path == '/api/speech-ai':
+            return self.speech_ai()
         if path.startswith('/api/books/'):
             return self.change_library('PUT', path)
         if API_BRANCH.match(path):

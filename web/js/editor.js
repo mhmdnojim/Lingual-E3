@@ -3,6 +3,8 @@
 // server (web/edits/), so corrections survive a rebuild of web/data.
 import { $, $$, el, icon, toast, forgetJSON } from './util.js';
 import { clauseRanges, tokenize } from './segment.js';
+import { replacePicture } from './pictures.js';
+import { PlayButtons } from './playbuttons.js';
 
 const MAX_UNDO = 80;
 
@@ -815,6 +817,8 @@ export class TextEditor {
     this.commitText();
     // Go back to reading on the same sentence.
     const keep = this.sel ? { view: this.sel.view, unit: this.unitOf(this.sel) } : null;
+    this.playButtons?.stop();
+    this.playButtons = null;
     this.cancelMarking();
     this.stopOrdering();
     this.stopPageRead(false);
@@ -862,6 +866,10 @@ export class TextEditor {
 
   /** Esc: cancel what is in progress. Returns true if something was cancelled. */
   escape() {
+    if (this.playButtons) { // (putting a button: not any more; else the tool stops)
+      if (!this.playButtons.escape()) { this.playButtons.stop(); this.playButtons = null; this.render(); }
+      return true;
+    }
     if (this.mergeSequence) { this.mergeSequence = null; this.render(); toast('Merge sequence canceled.'); return true; }
     if (this.moveByClick) { this.moveByClick = null; this.render(); toast('Move sequence ended. Use Undo to reverse the moves.'); return true; }
     if (this.pageRead) { this.cancelPageRead(); return true; }
@@ -1792,6 +1800,21 @@ export class TextEditor {
         this.drawBox(op, 'Drag a box around existing sentence entries to select them. This does not read text. To recognize missing words, use “Re-read text by area.” Esc cancels.',
           (view, rect) => { if (view) this.checkArea(view, rect); });
         return true;
+      case 'buttons': // the page's play buttons moved, taken away, put by hand (js/playbuttons.js)
+        this.commitText();
+        if (this.playButtons) { this.playButtons.stop(); this.playButtons = null; } else {
+          this.cancelMarking();
+          this.stopOrdering();
+          this.playButtons = new PlayButtons(this);
+        }
+        this.render();
+        return true;
+      case 'picture': // a picture of the page replaced (js/pictures.js): its box first
+        this.commitText();
+        if (this.boxing?.op === op) { this.cancelMarking(); this.render(); return true; } // pressed again: cancel
+        this.drawBox(op, 'Drag a box around the picture to replace. Esc cancels.',
+          (view, rect) => { if (view) replacePicture(this.app, view, rect); });
+        return true;
       case 'check-all':
         for (const view of this.app.views) view.doc?.sent.forEach((_, s) => this.checkSet(view).add(s));
         this.render();
@@ -1993,6 +2016,8 @@ export class TextEditor {
     if (!this.active) return;
     const shown = this.box.querySelector('.ocr-preview');
     if (this.ocrPreview && shown?.preview === this.ocrPreview) this.ocrPreview.restore = this.reviewState(shown); // (drawn again: as it was)
+    this.playButtons?.attach(); // (the page turned: its buttons too)
+    this.playButtons?.draw(); // (under the tools at the top: always in sight)
     const out = this.ordering ? [this.renderOrdering()] : this.readingAreas ? [this.renderReadingAreas()] : [el('p', { class: `edit-hint${this.boxing || this.marking || this.moveByClick || this.mergeSequence ? ' now' : ''}` }, this.mergeSequence
       ? `Merge order: ${this.mergeSequence.list.map((p) => this.flatIndex({ view: this.mergeSequence.view, ...p }) + 1).join(' → ')}. Click sentences to add them in order, then click Finish merge. Esc cancels.` : this.moveByClick
       ? 'Click sentences in the order you want them placed after the reference. Each moves after the previous one; Esc ends the sequence.' : this.boxing ? this.boxing.hint : this.marking
@@ -2111,6 +2136,12 @@ export class TextEditor {
       : 'Use the selected sentence as the start, then click following sentences in the order they should be joined';
     $$('#edit-bulk .bulk-chosen').forEach((x) => { x.hidden = !n; });
     $('#edit-bulk [data-op="check-area"]').setAttribute('aria-pressed', String(this.boxing?.op === 'check-area'));
+    const picture = $('#edit-bulk [data-op="picture"]'); // (pictures: of the library's books, by their owner)
+    picture.hidden = !(this.app.book?.library && this.app.book?.canEdit);
+    picture.setAttribute('aria-pressed', String(this.boxing?.op === 'picture'));
+    const buttons = $('#edit-bulk [data-op="buttons"]'); // (play buttons: of the library's books, by their owner)
+    buttons.hidden = picture.hidden;
+    buttons.setAttribute('aria-pressed', String(!!this.playButtons));
     $('#edit-bulk [data-op="order-areas"]').setAttribute('aria-pressed', String(!!this.ordering));
     $$('[data-op="ocr"]').forEach((b) => b.setAttribute('aria-pressed', String(!!this.readingAreas)));
   }

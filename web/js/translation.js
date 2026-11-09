@@ -96,16 +96,7 @@ export class Translator {
     $('#tr-show').addEventListener('change', (e) => this.setList(e.target.checked));
     $('#tr-page').addEventListener('change', (e) => this.setPage(e.target.checked));
     $('#tr-lang').addEventListener('change', (e) => this.setLang(e.target.value));
-    $('#tr-offline').addEventListener('change', (e) => {
-      this.offlineOnly = e.target.checked;
-      store.set('trOfflineOnly', this.offlineOnly);
-      this.byDoc = new WeakMap();
-      this.done = new WeakMap();
-      this.words.clear();
-      this.hideTip();
-      if (this.listOn) this.app.renderPanelText();
-      this.updateStatus();
-    });
+    $('#tr-offline').addEventListener('change', (e) => this.setOfflineOnly(e.target.checked));
     $('#tr-scope').addEventListener('change', () => { this.refreshPicker(); this.updatePrepareButton(); this.showPrepared(); });
     for (const level of LEVELS) {
       const input = $(`#tr-level-${level}`);
@@ -141,6 +132,22 @@ export class Translator {
     tg.setAttribute('aria-label', list ? 'Hide translations' : 'Show translations');
     $('#tr-show').checked = this.listOn;
     $('#tr-page').checked = this.pageOn;
+  }
+
+  /**
+   * Read using saved translations only (offline: nothing asked of the internet), or not (what is
+   * not saved yet is translated online). Settings → Translation; also the breakdown's Translate online.
+   */
+  setOfflineOnly(on) {
+    this.offlineOnly = on;
+    store.set('trOfflineOnly', on);
+    $('#tr-offline').checked = on;
+    this.byDoc = new WeakMap();
+    this.done = new WeakMap();
+    this.words.clear();
+    this.hideTip();
+    if (this.listOn) this.app.renderPanelText();
+    this.updateStatus();
   }
 
   updateStatus() {
@@ -372,7 +379,7 @@ export class Translator {
   async request(book, path, paragraphs, options = {}) {
     const r = await fetch('/api/translate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lang: options.lang ?? this.lang, from: this.from, book, page: path, paragraphs,
+      body: JSON.stringify({ lang: options.lang ?? this.lang, from: options.from ?? this.from, book, page: path, paragraphs,
         words: options.words, cachedOnly: options.cachedOnly ?? this.offlineOnly, refresh: options.refresh || undefined }),
     }).catch(() => null);
     if (!r) throw new Error('The app’s server is not running. Start the app with Start Lingua Books.bat.');
@@ -838,6 +845,7 @@ export class ScriptTranslation {
     this.tr = translator;
     this.transcript = transcript;
     this.book = this.id = null;
+    this.from = null; // the language of the lines, when not the book's (a file transcribed)
     this.under = store.get('cueTrUnder', false);
     this.point = store.get('cueTrPoint', false);
     this.byLang = new Map(); // lang -> Promise of one translation per line
@@ -929,7 +937,7 @@ export class ScriptTranslation {
       const lines = this.transcript.cues.map((c) => (/\p{L}/u.test(c.x) ? c.x : '')); // not the track numbers
       const paragraphs = [];
       for (let i = 0; i < lines.length; i += 6) paragraphs.push(lines.slice(i, i + 6));
-      const p = this.tr.request(this.book, this.id, paragraphs).then((d) => d.translations.flat());
+      const p = this.tr.request(this.book, this.id, paragraphs, this.from ? { from: this.from } : {}).then((d) => d.translations.flat());
       p.catch(() => this.byLang.delete(lang)); // try again next time
       this.byLang.set(lang, p);
     }

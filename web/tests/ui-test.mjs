@@ -232,7 +232,7 @@ function makePdf(lines) {
  * and shared books (text, PDF, photos), reports and the admin; the disc's content is never served.
  */
 async function websiteChecks(browser, problems) {
-  const port = 8797, base = `http://127.0.0.1:${port}`;
+  const port = (Number(process.env.PORT) || 8799) - 2, base = `http://127.0.0.1:${port}`;
   const srv = await startServer({ port, args: ['--public'], env: { LB_ADMIN_EMAIL: 'boss@example.com', LB_CONTACT_EMAIL: 'help@example.com' } });
   const tmp = mkdtempSync(path.join(os.tmpdir(), 'lb-files-'));
   try {
@@ -356,7 +356,7 @@ async function websiteChecks(browser, problems) {
     await page.click('#lib-account .btn.primary'); // Sign up
     await page.type('.lib-form input[type=email]', 'cara@example.com');
     await page.type('.lib-form input[autocomplete=name]', 'Cara');
-    await page.type('.lib-form input[type=password]', 'cara-pass-1');
+    await page.type('.lib-form input[type=password][required]', 'cara-pass-1');
     await page.click('.lib-form button[type=submit]');
     await page.waitForFunction(() => /Cara/.test(document.querySelector('#lib-account').textContent), { timeout: 10000 }).catch(() => {});
     const signedUp = /Cara/.test(await page.$eval('#lib-account', (a) => a.textContent));
@@ -407,7 +407,7 @@ async function websiteChecks(browser, problems) {
     await adminPage.goto(`${base}/web/#/`, { waitUntil: 'networkidle0' });
     await adminPage.click('#lib-account .btn:not(.primary)'); // Log in
     await adminPage.type('.lib-form input[type=email]', 'boss@example.com');
-    await adminPage.type('.lib-form input[type=password]', 'secret-123');
+    await adminPage.type('.lib-form input[type=password][required]', 'secret-123');
     await adminPage.click('.lib-form button[type=submit]');
     await adminPage.waitForFunction(() => !document.querySelector('#library [data-scope="admin"]').hidden, { timeout: 10000 }).catch(() => {});
     await adminPage.click('#library [data-scope="admin"]');

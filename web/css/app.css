@@ -331,6 +331,27 @@ body.panel-closed .panel { display: none; }
 .hs.playing { animation: ring 1.4s ease-out infinite; }
 @keyframes ring { 0% { box-shadow: 0 0 0 0 rgba(196,18,47,.55); } 100% { box-shadow: 0 0 0 12px rgba(196,18,47,0); } }
 body.hide-hotspots .hotspots { display: none; }
+/* Correction mode → Play buttons (js/playbuttons.js): dragged, taken away by their ×. */
+body.editing .hs-editing .hotspots { display: block; }
+.hs-editing .hs-audio, .hs-editing .hs-video { cursor: grab; touch-action: none; outline: 2px dashed rgba(37, 99, 235, .9); outline-offset: 2px; }
+.hs-editing .hs.dragging { cursor: grabbing; opacity: .85; transition: none; }
+.hs-x {
+  position: absolute; top: -9px; right: -9px; width: 18px; height: 18px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 13px; line-height: 1; font-weight: 700;
+  background: #fff; color: #b42318; border: 1px solid #b42318; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.3);
+}
+.pick-layer { cursor: crosshair; }
+/* Under the tools at the top of the Text panel (sticky with them): Add a play button…, Done, what to do. */
+.pb-bar { flex-basis: 100%; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+.pb-bar .form-buttons { justify-content: flex-start; flex-wrap: wrap; gap: 4px; margin: 0; }
+.pb-bar .pb-add[aria-pressed="true"] { background: rgba(37, 99, 235, .14); border-color: #2563eb; }
+.pb-bar .hint, .pb-bar .edit-hint { margin: 6px 0 0; font-size: 12.5px; line-height: 1.45; }
+.pb-chooser { display: grid; gap: 6px; margin-top: 6px; }
+.pb-list { max-height: 28vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 4px; display: grid; gap: 2px; }
+.pb-item { text-align: left; padding: 6px 8px; border-radius: 6px; background: none; border: 0; cursor: pointer; color: inherit; font: inherit; }
+.pb-item:hover, .pb-item:focus-visible { background: var(--surface-3); }
+.pb-item small { color: var(--muted); }
+.pb-item.unplaced small { color: var(--accent); }
 
 .reading-pill {
   position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
@@ -974,6 +995,8 @@ body.editing .bd-btn, body.picking .bd-btn, body.collecting .bd-btn, body.markin
 .bd-en .bd-py, .bd-py { font: 400 13.5px var(--font-read); color: var(--muted); margin-left: 8px; }
 .bd-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin: 12px 0 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 .bd-count { color: var(--muted); font-size: 13px; margin-right: auto; }
+.bd-offline { margin: 8px 0 0; } /* (offline mode: what is missing, and the way back online) */
+.bd-offline .btn { margin-left: 4px; }
 .bd-speed { display: flex; align-items: center; gap: 6px; font-size: 13px; }
 .bd-speed input { width: 130px; }
 .bd-scroll { max-height: 46vh; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
@@ -1188,6 +1211,75 @@ textarea.input, .lib-form textarea.input { height: auto; resize: vertical; line-
 .sample-tips h4 { margin: 0 0 6px; }
 .sample-tip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 4px 0; }
 .sample-tip p { flex: 1 1 320px; margin: 0; font-size: 13.5px; }
+/* The designs of the pages (js/designs.js): a page with the areas the app reads on it, numbered in
+   their order (the colour: what is in them; dashed: not read), and the editor of them. */
+.design-note { margin: 0 0 12px; }
+.design-note p { margin: 0 0 6px; font-size: 13.5px; }
+.sample-page figcaption .btn { margin-left: 6px; }
+svg.framed { display: block; width: 100%; height: auto; max-height: 440px; background: var(--surface-3); border-radius: 4px; }
+svg.framed.big { max-height: min(62vh, 900px); touch-action: none; user-select: none; -webkit-user-select: none; }
+svg.framed.big:not(.off) { cursor: crosshair; }
+.frame.text, .design-area.text { --c: #2563eb; }
+.frame.dialogue, .design-area.dialogue { --c: #16a34a; }
+.frame.words, .design-area.words { --c: #7c3aed; }
+.frame.skip, .design-area.skip { --c: #6b7280; }
+.frame rect { fill: var(--c); fill-opacity: .07; stroke: var(--c); stroke-width: 3; vector-effect: non-scaling-stroke; }
+.frame.skip rect { fill-opacity: .22; stroke-dasharray: 8 6; }
+.frame.on rect { fill-opacity: .2; stroke-width: 5; }
+.frame circle { fill: var(--c); }
+.frame text { fill: #fff; font: 700 30px system-ui, sans-serif; text-anchor: middle; pointer-events: none; }
+svg.framed.big .frame { cursor: move; }
+svg.framed .handle { fill: #fff; stroke: #111827; stroke-width: 2; vector-effect: non-scaling-stroke; cursor: nwse-resize; }
+svg.framed .handle[data-h="10"], svg.framed .handle[data-h="01"] { cursor: nesw-resize; }
+.design-editor { width: min(1180px, 96vw); }
+.design-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.design-tabs [aria-selected="true"] { border-color: var(--focus); box-shadow: inset 0 0 0 1px var(--focus); font-weight: 600; }
+.design-main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; align-items: start; }
+:where([data-device="phone"]) .design-main { grid-template-columns: 1fr; }
+.design-side h4 { margin: 0 0 6px; font-size: 14px; }
+.design-areas { display: grid; gap: 4px; margin: 4px 0 8px; padding: 0; list-style: none; }
+.design-area { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto auto auto; gap: 4px; align-items: center; padding: 3px 4px; border-radius: 6px; }
+.design-area.on { background: var(--surface-2); box-shadow: inset 0 0 0 2px var(--c); }
+.design-area .n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 11px; background: var(--c); color: #fff; font: 700 12px/1 system-ui, sans-serif; cursor: pointer; }
+.design-area .select { min-width: 0; }
+.design-strip { display: flex; gap: 6px; align-items: end; min-height: 104px; margin-top: 8px; padding: 8px 2px; overflow-x: auto; border-top: 1px solid var(--line); } /* (a box that scrolls: else squeezed) */
+.design-strip .hint { flex: none; align-self: center; margin: 0 4px 0 0; }
+.design-thumb { flex: none; display: grid; justify-items: center; gap: 2px; padding: 3px; border: 2px solid transparent; border-radius: 6px; background: none; color: var(--muted); font-size: 11.5px; cursor: pointer; }
+.design-thumb img { display: block; width: 54px; height: auto; border-radius: 3px; background: var(--surface-3); }
+.design-thumb[aria-current="page"] { border-color: var(--focus); color: var(--text); }
+/* Replacing a picture on a page (js/pictures.js): the old one and the new one, side by side, in the box's shape. */
+a.btn { text-decoration: none; } /* (a link that looks like a button: Download the PDF) */
+.media-box { margin: 10px 0 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; } /* (a book's audio and video: its Settings) */
+.media-box h4 { margin: 0 0 4px; font-size: 14px; }
+.media-box .form-buttons { justify-content: flex-start; flex-wrap: wrap; }
+/* Speech recognition (transcription.js): how, and any file transcribed — its lines under it. */
+.speech-dialog { width: min(640px, 92vw); padding: 16px 20px 20px; overflow: auto; }
+.speech-dialog h4 { margin: 14px 0 6px; font-size: 14px; }
+.speech-dialog h4:first-child { margin-top: 0; }
+.speech-dialog .form-buttons { justify-content: flex-start; flex-wrap: wrap; }
+.speech-ways { margin-bottom: 4px; }
+.speech-player { display: block; width: 100%; max-height: 40vh; margin: 8px 0; }
+.speech-lines { max-height: 45vh; overflow: auto; padding: 0; border: 1px solid var(--line); border-radius: 8px; margin-top: 8px; }
+.speech-tools { margin-top: 8px; }
+.hint.err, .speech-file .hint.err { color: var(--danger, #b42318); }
+.pic-dialog { width: min(760px, 94vw); }
+.pic-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 10px; }
+.pic-compare figure { margin: 0; }
+.pic-compare figcaption { margin-bottom: 4px; color: var(--muted); font-size: 12.5px; }
+.pic-frame { display: grid; place-items: center; width: 100%; max-height: 300px; overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-3); }
+.pic-frame > canvas, .pic-frame > img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.pic-frame > img.pic-new { background: #fff; }
+.pic-empty { margin: 8px; text-align: center; }
+.pic-ways { margin: 4px 0 8px; }
+.pic-fit { display: grid; gap: 2px; margin: 8px 0 4px; }
+.pic-tries { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 6px; } /* (each picture the AI made: choose one) */
+.pic-try { display: grid; justify-items: center; gap: 2px; padding: 3px; border: 2px solid transparent; border-radius: 6px; background: none; color: var(--muted); font-size: 11.5px; cursor: pointer; }
+.pic-try img { display: block; width: 72px; height: 48px; object-fit: cover; border-radius: 3px; background: var(--surface-3); }
+.pic-try[aria-pressed="true"] { border-color: var(--focus); color: var(--text); }
+.pic-before { margin-top: 8px; }
+.pic-before h4 { margin: 6px 0 4px; font-size: 13.5px; }
+.pic-before-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; padding: 3px 0; font-size: 13px; }
+:where([data-device="phone"]) .pic-compare { grid-template-columns: 1fr; }
 .danger-btn { color: var(--accent); }
 .add-kind { justify-self: start; margin-bottom: 12px; }
 .share-toggle { margin-top: 8px; }

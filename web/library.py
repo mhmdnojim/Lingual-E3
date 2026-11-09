@@ -21,7 +21,13 @@ Before a PDF or photos are made into pages, the owner tells the app about them (
 pinyin, which pages …: the import options), and a sample of 1 to 5 pages chosen at random is
 made first (preview/). The owner checks it, changes the options if needed (the app suggests
 what to change: tips), tries again, and then has all pages made with the same options.
+
+Before the first sample, the app also finds the designs of the pages (designs.py: the pages that
+look alike, as the units of a textbook), and the first sample is a page of each design: what is
+read on it becomes the design's areas, which the owner changes (designs.json, designs/). Then the
+pages of a design are read area by area, in their order.
 """
+import io
 import json
 import os
 import queue
@@ -38,13 +44,16 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 import branches
 import db
+import designs
 import ids
 import ocr
+import pictures
+import tracks
 
 WEB = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(WEB, 'tools'))
-from segment_text import (CJK, SENTENCE_RULES, cut_after, doc_from_blocks, missed_stops, page_text,  # noqa: E402
-                          resegment, segment, split_languages, word_lists)
+from segment_text import (CJK, PART_OF_SPEECH, PINYIN_MARK, SENTENCE_RULES, _other_writing, cut_after,  # noqa: E402
+                          doc_from_blocks, missed_stops, page_text, resegment, segment, split_languages, word_lists)
 
 BOOKS = os.path.join(db.DATA, 'books')
 FONTS = os.path.join(WEB, 'fonts')
@@ -62,6 +71,12 @@ LIMITS = {
     'pdf_mb': 60, 'image_mb': 15, 'images': 200, 'pages': 300, 'text_chars': 80000,
     'books_per_user': 100, 'user_mb': 600,
 }
+ADMIN_PDF_MB = 500  # an admin's PDF (on this computer you are the admin): a whole textbook, often 80-220 MB
+
+
+def limits(user):
+    """The limits of what this user adds (an admin's PDFs can be much bigger)."""
+    return {**LIMITS, 'pdf_mb': ADMIN_PDF_MB} if user and user['admin'] else dict(LIMITS)
 PAGE_W = 1600            # PDF pages and photos are made this wide (photos: at most 2000)
 TEXT_W, TEXT_H, MARGIN = 1200, 1700, 100
 INK = (24, 27, 34)
@@ -113,8 +128,9 @@ def summary(b, user):
         'canEdit': can_edit(b, user), 'created': b['created'], 'updated': b['updated'],
         'cover': f"/lib/{b['id']}/thumbs/1.webp?v={v}" if pages else None, 'job': job(b['id']),
     }
-    if out['canEdit']:  # how its pages are made, and is there a sample to check
-        out.update(importOptions=_options(b), sample=os.path.isfile(folder(b['id'], 'preview', 'preview.json')))
+    if out['canEdit']:  # how its pages are made, is there a sample to check, its PDF (with the pictures replaced)
+        out.update(importOptions=_options(b), sample=os.path.isfile(folder(b['id'], 'preview', 'preview.json')),
+                   pdf=f"/lib/{b['id']}/book.pdf?v={v}" if b['kind'] == 'pdf' and b['status'] == 'ready' else None)
     return out
 
 
@@ -339,8 +355,9 @@ def save_source(b, user, part, data):
     if part == 'pdf' and b['kind'] == 'pdf':
         if not data.startswith(b'%PDF'):
             raise LibraryError('This is not a PDF file.')
-        if len(data) > LIMITS['pdf_mb'] * 2 ** 20:
-            raise LibraryError(f"The PDF is too big (at most {LIMITS['pdf_mb']} MB).")
+        most = limits(user)['pdf_mb']
+        if len(data) > most * 2 ** 20:
+            raise LibraryError(f"The PDF is too big (at most {most} MB).")
         name = 'book.pdf'
     elif part == 'text' and b['kind'] == 'text':
         try:
@@ -446,9 +463,10 @@ def sample_size(n):
     return 1 if n <= 2 else 2 if n <= 5 else 3 if n <= 15 else 4 if n <= 40 else 5
 
 
-def start_sample(b, raw_options, same=False):
+def start_sample(b, raw_options, same=False, again=False):
     """Make a sample of the pages of a PDF or photos with these options, in the background: of the
-    pages of the last sample (same: to compare), or of others chosen at random."""
+    pages of the last sample (same: to compare), or of others chosen at random. The first one (or
+    again: the designs found again) finds the designs of the pages, and is a page of each."""
     if b['kind'] == 'text':
         raise LibraryError('A text needs no sample: its pages are made at once.')
     if b['status'] in ('working', 'ready'):
@@ -456,6 +474,8 @@ def start_sample(b, raw_options, same=False):
                            else 'The pages of this book are being made.')
     options = save_options(b, raw_options)
     _selection(b, options)  # (what is wrong is said at once: no PDF, no such page …)
+    if again and os.path.isfile(_designs_path(b['id'])):
+        os.remove(_designs_path(b['id']))
     with _jobs_lock:
         _samples[b['id']] = {'state': 'working', 'stage': 'Waiting…', 'done': 0, 'total': 0}
     _queue_up(('sample', b['id'], bool(same)))
@@ -491,6 +511,104 @@ def preview_file_path(bid, name, token=None):
     return path if os.path.isfile(path) else None
 
 
+# ---------------------------------------------------------------- The designs of the pages (designs.py)
+
+def _designs_path(bid):
+    return folder(bid, 'designs.json')
+
+
+def _designs_for(b, options, total):
+    """The designs found of the pages chosen now (designs.json), or None (not found yet, or of other pages)."""
+    saved = designs.load(_designs_path(b['id']))
+    if saved and saved.get('for') == {'kind': b['kind'], 'pages': options['pages'], 'total': total}:
+        return saved
+    return None
+
+
+def _small_pages(b, chosen, progress):
+    """[(page number, the page drawn small)] of the chosen pages (0-based), kept in designs/<n>.webp."""
+    src, out = folder(b['id'], 'source'), []
+    pics = folder(b['id'], 'designs')
+    shutil.rmtree(pics, ignore_errors=True)
+    os.makedirs(pics)
+    what = 'page' if b['kind'] == 'pdf' else 'photo'
+
+    def keep(n, img):
+        img.save(os.path.join(pics, f'{n}.webp'), 'WEBP', quality=70)
+        out.append((n, img))
+    if b['kind'] == 'pdf':
+        import pypdfium2 as pdfium
+        pdf = pdfium.PdfDocument(os.path.join(src, 'book.pdf'))
+        try:
+            for k, i in enumerate(chosen):
+                progress(f'Looking at the design of {what} {i + 1} ({k + 1} of {len(chosen)})', k, len(chosen))
+                page = pdf[i]
+                keep(i + 1, page.render(scale=designs.SMALL_W / page.get_size()[0]).to_pil().convert('RGB'))
+        finally:
+            pdf.close()
+        return out
+    names = _photo_names(src)
+    for k, i in enumerate(chosen):
+        progress(f'Looking at the design of {what} {i + 1} ({k + 1} of {len(chosen)})', k, len(chosen))
+        try:
+            with Image.open(os.path.join(src, names[i])) as im:
+                im.draft('RGB', (designs.SMALL_W * 2, designs.SMALL_W * 4))  # (a JPEG: decoded smaller, faster)
+                img = ImageOps.exif_transpose(im).convert('RGB')
+        except Exception:
+            raise LibraryError(f'Photo {i + 1} could not be opened.')
+        img.thumbnail((designs.SMALL_W, designs.SMALL_W * 4))
+        keep(i + 1, img)
+    return out
+
+
+def _find_designs(b, options, chosen, total, progress):
+    """Find the designs of the chosen pages, and keep them (no areas yet: the sample reads them)."""
+    small = _small_pages(b, chosen, progress)
+    progress('Comparing the designs of the pages…', len(chosen), len(chosen))
+    found, other = designs.find([n for n, _ in small], [designs.signature(img) for _, img in small])
+    return designs.save(_designs_path(b['id']), {'for': {'kind': b['kind'], 'pages': options['pages'], 'total': total},
+                                                 'designs': found, 'other': other})
+
+
+def designs_info(b):
+    """The designs of the pages, as the owner sees and changes them: {'designs': [{'pages',
+    'example', 'areas'}], 'other' (pages of no design: read whole), 'pages' (all those chosen),
+    'token' (of their pictures: /lib/<id>/designs/<n>.webp?v=<token>)}; None: not found yet."""
+    options = _options(b)
+    try:
+        chosen, total = _selection(b, options)
+    except LibraryError:
+        return None
+    saved = _designs_for(b, options, total)
+    if not saved:
+        return None
+    return {'designs': saved['designs'], 'other': saved['other'], 'pages': [i + 1 for i in chosen], 'token': saved['token']}
+
+
+def save_designs(b, raw):
+    """The designs as the owner changed them (their pages, areas …): checked and kept."""
+    if b['status'] in ('working', 'ready'):
+        raise LibraryError('The pages of this book are made already.' if b['status'] == 'ready'
+                           else 'The pages of this book are being made.')
+    options = _options(b)
+    chosen, total = _selection(b, options)
+    saved = _designs_for(b, options, total)
+    if not saved:
+        raise LibraryError('The designs of the pages are not found yet: make a sample first.')
+    try:
+        found, other = designs.clean(raw.get('designs') if isinstance(raw, dict) else None, [i + 1 for i in chosen])
+    except ValueError as e:
+        raise LibraryError(str(e))
+    designs.save(_designs_path(b['id']), {**saved, 'designs': found, 'other': other, 'checked': True})  # (used from now on)
+    return designs_info(b)
+
+
+def design_picture(bid, n):
+    """The small picture of page n (to see its design), or None."""
+    path = folder(bid, 'designs', f'{n}.webp')
+    return path if os.path.isfile(path) else None
+
+
 def _work():
     while True:
         what, bid, *args = _queue.get()
@@ -518,9 +636,10 @@ def _make(bid):
         pages = _text_pages(b, folder(bid, 'source'))
     else:
         options = _options(b)
-        chosen, _ = _selection(b, options)
+        chosen, total = _selection(b, options)
         progress = lambda stage, done, total: _set_job(bid, stage=stage, done=done, total=total)  # noqa: E731
-        pages = [(img, doc) for img, doc, _ in _read(b, options, chosen, build, progress)]
+        plan = designs.plan(_designs_for(b, options, total))  # (the pages of a design: area by area)
+        pages = [(img, doc) for img, doc, _ in _read(b, options, chosen, build, progress, plan)]
     if not pages:
         raise LibraryError('No pages were found.')
     meta = []
@@ -540,6 +659,12 @@ def _make(bid):
         os.replace(os.path.join(build, sub), folder(bid, sub))
     shutil.rmtree(build, ignore_errors=True)
     shutil.rmtree(folder(bid, 'preview'), ignore_errors=True)
+    shutil.rmtree(folder(bid, 'designs'), ignore_errors=True)  # (the pages drawn small; designs.json stays)
+    # (pictures replaced before: in the PDF, and so in the new pages; nothing to take back now)
+    shutil.rmtree(folder(bid, 'pictures'), ignore_errors=True)
+    for path in (folder(bid, 'pictures.json'), folder(bid, 'source', 'book.original.pdf')):
+        if os.path.isfile(path):
+            os.remove(path)
     with _jobs_lock:
         _samples.pop(bid, None)
     size = sum(os.path.getsize(os.path.join(dp, f)) for dp, _, fs in os.walk(folder(bid)) for f in fs)
@@ -565,23 +690,47 @@ def _make_sample(bid, same):
         return
     options = _options(b)
     chosen, total = _selection(b, options)
+    progress = lambda stage, done, total: _set_sample(bid, stage=stage, done=done, total=total)  # noqa: E731
+    saved = _designs_for(b, options, total) or _find_designs(b, options, chosen, total, progress)
     before = [p['n'] - 1 for p in (_saved_sample(bid) or {}).get('pages', [])]
-    picks = [i for i in before if i in set(chosen)] if same else []  # (pages no longer chosen: others)
+    fresh = [d['example'] - 1 for d in saved['designs'] if d['areas'] is None][:8]  # (designs not read yet: their example)
+    if same:  # (pages no longer chosen: others)
+        picks = sorted(set([i for i in before if i in set(chosen)] + fresh))
+    else:  # the examples (and a page of no design), and pages at random up to a sample's size
+        picks = fresh + ([random.choice(saved['other']) - 1] if fresh and saved['other'] and len(fresh) < 8 else [])
+        more = [i for i in _pick(chosen, sample_size(len(chosen)), avoid=set(before) | set(picks)) if i not in picks]
+        picks = sorted(picks + more[:max(0, sample_size(len(chosen)) - len(picks))])
     picks = picks or _pick(chosen, sample_size(len(chosen)), avoid=set(before))
     build = folder(bid, 'sample-build')
     shutil.rmtree(build, ignore_errors=True)
     os.makedirs(os.path.join(build, 'preview'))
     try:
-        progress = lambda stage, done, total: _set_sample(bid, stage=stage, done=done, total=total)  # noqa: E731
-        made = _read(b, options, picks, build, progress)
+        made = _read(b, options, picks, build, progress, designs.plan(saved))
+        # A design's example read for the first time: its areas, from what was read on it (once
+        # the owner has checked the designs, the pages of the sample of that design read by them).
+        fresh = [(d, picks.index(d['example'] - 1)) for d in saved['designs'] if d['areas'] is None and d['example'] - 1 in picks]
+        for d, k in fresh:
+            img, doc, info = made[k]
+            d['areas'] = designs.proposed(doc, img.width, img.height, info['lists'], info['raw'])
+            for j, i in enumerate(picks):
+                if d['areas'] and i + 1 in d['pages'] and saved.get('checked'):
+                    img, doc, info = made[j]
+                    doc, found = _doc_in_areas(info['raw'], options, img, info['how'] not in ('pdf', 'hidden'), d['areas'])
+                    made[j] = (img, doc, {**info, **found, 'areas': d['areas']})
+        if fresh:
+            saved = designs.save(_designs_path(bid), saved)
+        design_of = {n: k for k, d in enumerate(saved['designs']) for n in d['pages']}
         token = secrets.token_hex(8)
         pages = []
         for i, (img, doc, info) in zip(picks, made):
             img.save(os.path.join(build, 'preview', f'{i + 1}.webp'), 'WEBP', quality=80, method=4)
+            k = design_of.get(i + 1)  # areas: its design's (suggested, or used: framed)
             pages.append({'n': i + 1, 'img': f"/lib/{bid}/preview/{i + 1}.webp?token={token}", 'how': info['how'],
-                          'text': page_text(doc), 'words': len(doc['words'])})
+                          'text': page_text(doc), 'words': len(doc['words']), 'design': k,
+                          'areas': (saved['designs'][k]['areas'] if k is not None else None) or [], 'framed': bool(info['areas'])})
         result = {'total': total, 'chosen': len(chosen), 'pages': pages, 'options': options, 'token': token,
-                  'tips': _tips(b['kind'], options, picks, made)}
+                  'tips': _tips(b['kind'], options, picks, made), 'designs': len(saved['designs']),
+                  'checked': bool(saved.get('checked'))}
         with open(os.path.join(build, 'preview', 'preview.json'), 'w', encoding='utf-8') as f:
             json.dump(result, f, ensure_ascii=False)
         shutil.rmtree(folder(bid, 'preview'), ignore_errors=True)
@@ -732,12 +881,13 @@ def _text_pages(b, src):
 
 # ---------- PDF and photos: the page pictures and their words
 
-def _read(b, options, indices, build, progress):
+def _read(b, options, indices, build, progress, plan=None):
     """These pages of the upload (0-based), made as the owner asked: [(picture, text document,
     info)]. info: how the words were found ('pdf'; 'hidden': the PDF's text hidden under a scan,
     made by OCR when it was scanned; or with OCR: 'scan' (no text in the PDF), 'broken' (the PDF's
     text was broken), 'ocr' (asked for), 'photo'), and how many lines of the
-    page are pinyin, and in its margins."""
+    page are pinyin, and in its margins; its words as found (raw) and the areas it was read by.
+    plan: {page number: the areas of its design} (designs.plan): those pages are read area by area."""
     src = folder(b['id'], 'source')
     if b['kind'] == 'pdf':
         found = _pdf_pages(os.path.join(src, 'book.pdf'), indices, options['ocrAll'], progress)
@@ -750,9 +900,11 @@ def _read(b, options, indices, build, progress):
         for k, raw in zip(scans, raws):
             found[k] = (found[k][0], raw, found[k][2])
     out = []
-    for img, raw, how in found:
-        doc, info = _doc(raw, options, img, stops=how not in ('pdf', 'hidden'))  # (read with OCR: its stops)
-        out.append((img, doc, {'how': how, **info}))
+    for i, (img, raw, how) in zip(indices, found):
+        areas = (plan or {}).get(i + 1)
+        stops = how not in ('pdf', 'hidden')  # (read with OCR: its stops)
+        doc, info = _doc_in_areas(raw, options, img, stops, areas) if areas else _doc(raw, options, img, stops=stops)
+        out.append((img, doc, {'how': how, **info, 'raw': raw, 'areas': areas}))
     return out
 
 
@@ -1160,18 +1312,26 @@ def _in_margin(ln, h):
     return (bottom < 0.07 * h or top > 0.93 * h) and len(text) <= 60 and any(ch.isalpha() for ch in text)
 
 
-def _doc(raw, options, img=None, stops=False):
+def _doc(raw, options, img=None, stops=False, kind='text', rows=False):
     """A page's text document from its words (raw: from the PDF or OCR), as the owner chose; and
-    what was found on it: {'pinyin': lines of pinyin, 'margins': lines in its margins}. img: the
-    page picture, for the bullets of lists that OCR did not read. A list of new words: each row its
-    word, then its meaning (its pinyin and part of speech left out with the pinyin). A Chinese
-    book's dialogues: without the names of their speakers and their pictures (not to be read)."""
+    what was found on it: {'pinyin': lines of pinyin, 'margins': lines in its margins, 'lists':
+    the boxes of its lists of new words}. img: the page picture, for the bullets of lists that OCR
+    did not read. A list of new words: each row its word, then its meaning (its pinyin and part of
+    speech left out with the pinyin). A Chinese book's dialogues: without the names of their
+    speakers and their pictures (not to be read). kind: what the owner said is in it (an area of
+    a design, designs.py): a 'dialogue' (also without the names at the start of its lines, "A:"),
+    a list of new words ('words': its rows found also when its columns are not), or 'text'. rows:
+    OCR's pieces of one line put together first (segment_text.join_rows: an area read again)."""
     lines = [ln for ln in raw['lines'] if ln['words']]
+    if kind == 'dialogue':
+        lines = designs.without_speakers(lines)
     if options['language'].startswith('zh-'):
         quiet = _speakers(lines)
         lines = [{**ln, 'words': [w for k, w in enumerate(ln['words']) if (i, k) not in quiet]} for i, ln in enumerate(lines)]
         lines = [ln for ln in lines if ln['words']]
     lists, lines = word_lists(lines, keep_reading=not options['dropPinyin'])
+    if kind == 'words' and not lists and lines:
+        lists, lines = _list_rows(lines, keep_reading=not options['dropPinyin']), []
     runs = _pinyin_runs(lines) if options['language'].startswith('zh-') else set()
     pinyin = {i for i, _ in runs}  # (the lines with pinyin)
     if options['dropPinyin']:  # also the words of pinyin among other words ("药 yào n. medicine")
@@ -1196,7 +1356,58 @@ def _doc(raw, options, img=None, stops=False):
         lines = [fixed(ln) for ln in lines]
         for found in lists:
             found['entries'] = [[fixed(ln) for ln in entry] for entry in found['entries']]
-    return segment({**raw, 'lines': lines}, ocr=False, image=img, lists=lists, stops=stops), {'pinyin': len(pinyin), 'margins': len(margins)}
+    return (segment({**raw, 'lines': lines}, ocr=False, image=img, lists=lists, stops=stops, rows=rows),
+            {'pinyin': len(pinyin), 'margins': len(margins), 'lists': [list(found['box']) for found in lists]})
+
+
+def _list_rows(lines, keep_reading=True):
+    """The rows of a list of new words in an area the owner marked as one, when word_lists did not
+    find its columns: a line with a word in another writing than the Latin one ("旅游") starts a
+    row, the lines under it without one go on with its meaning. A row: its word (and its reading,
+    "lǚyóu", if kept), then its meaning, without the row's number and its part of speech (kept
+    with the reading). In word_lists' form: [{'box', 'entries'}]."""
+    rows = []
+    for ln in sorted(lines, key=lambda ln: min(w['y'] for w in ln['words'])):
+        ws = sorted(ln['words'], key=lambda w: w['x'])
+        if not rows or any(_other_writing(w['t']) for w in ws):
+            rows.append({'word': [], 'reading': [], 'pos': [], 'meaning': [], 'all': []})
+        r = rows[-1]
+        r['all'] += ws
+        for w in ws:
+            t = w['t']
+            if re.fullmatch(r'[(（]?\d{1,3}[.)）、．]?|[①-⑳]', t):
+                continue
+            if _other_writing(t):
+                r['word'].append(w)
+            elif PART_OF_SPEECH.fullmatch(t):
+                r['pos'].append(w)
+            elif not r['meaning'] and not r['pos'] and t.lower() not in ENGLISH and (PINYIN_MARK.search(t) or _pinyin_word(_letters(t)) == 'plain'):
+                r['reading'].append(w)
+            else:
+                r['meaning'].append(w)
+    entries = []
+    for r in rows:
+        first = r['word'] + (r['reading'] if keep_reading else [])
+        meaning = (r['pos'] if keep_reading else []) + r['meaning']
+        entry = ([{'words': first, 'own': True}] if first else []) + ([{'words': meaning}] if meaning else [])
+        if entry:
+            entries.append(entry)
+    ws = [w for r in rows for w in r['all']]
+    if not entries:
+        return []
+    return [{'box': (min(w['x'] for w in ws), min(w['y'] for w in ws), max(w['x'] + w['w'] for w in ws),
+                     max(w['y'] + w['h'] for w in ws)), 'entries': entries}]
+
+
+def _doc_in_areas(raw, options, img, stops, areas):
+    """A page's text document read area by area (the areas of its design, designs.py), in their
+    order; and what was found on it (as _doc)."""
+    docs, info = [], {'pinyin': 0, 'margins': 0, 'lists': []}
+    for area, part in designs.parts(raw, areas):
+        doc, found = _doc(part, options, img, stops, area['kind'])
+        docs.append(doc)
+        info = {k: info[k] + found[k] for k in info}
+    return designs.join(docs), info
 
 
 # ---------------------------------------------------------------- Text of a page, search
@@ -1300,6 +1511,382 @@ def file_path(bid, kind, name):
         return None
     p = folder(bid, kind, name)
     return p if os.path.isfile(p) else None
+
+
+def pdf_file(b):
+    """The book's PDF (with the pictures its owner replaced), or None (not a PDF)."""
+    p = folder(b['id'], 'source', 'book.pdf')
+    return p if b['kind'] == 'pdf' and os.path.isfile(p) else None
+
+
+# ---------------------------------------------------------------- Replacing a picture on a page (pictures.py)
+
+def _pictures(bid):
+    try:
+        with open(folder(bid, 'pictures.json'), encoding='utf-8') as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return []
+
+
+def _save_pictures(bid, items):
+    tmp = folder(bid, 'pictures.json.tmp')
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(items, f)
+    os.replace(tmp, folder(bid, 'pictures.json'))
+
+
+def pictures_of(b, n=None):
+    """The pictures replaced in a book (on page n): [{'id', 'n', 'box': [x, y, w, h], 'fit', 'at'}]."""
+    return [r for r in _pictures(b['id']) if n is None or str(r['n']) == str(n)]
+
+
+def _drop_words_in(bid, n, box):
+    """The words in box (their middle) taken out of page n's text (as made, and as corrected): the
+    words of the old picture. How many there were (in the text the reader shows)."""
+    x, y, w, h = box
+    shown = 0
+    for sub in ('text', 'edits'):
+        path = folder(bid, sub, f'{n}.json')
+        if not os.path.isfile(path):
+            continue
+        with open(path, encoding='utf-8') as f:
+            doc = json.load(f)
+        drop = {k for k, v in enumerate(doc['words']) if v[2] > 0 and x <= v[0] + v[2] / 2 <= x + w and y <= v[1] + v[3] / 2 <= y + h}
+        doc, changed = _without(doc, drop)
+        if changed:
+            tmp = path + '.tmp'
+            with open(tmp, 'w', encoding='utf-8') as f:
+                json.dump(doc, f, ensure_ascii=False, separators=(',', ':'))
+            os.replace(tmp, path)
+        shown = len(drop)  # (the corrections, if any: they are what the reader shows)
+    return shown
+
+
+def _apply_pictures(b, items, pages):
+    """The page pictures of these pages, and the PDF, made again from the originals with the
+    replacements (items) in them; without any, back to the originals."""
+    bid = b['id']
+    pic = lambda r: Image.open(folder(bid, 'pictures', f"{r['id']}.jpg"))  # noqa: E731
+    for n in pages:
+        original = folder(bid, 'pictures', f'page-{n}.webp')
+        if not os.path.isfile(original):
+            continue
+        mine = [r for r in items if str(r['n']) == str(n)]
+        with Image.open(original) as im:
+            img = pictures.page_with(im, mine, pic)
+        img.save(folder(bid, 'pages', f'{n}.webp'), 'WEBP', quality=80, method=4)
+        th = img.copy()
+        th.thumbnail((240, 2000))
+        th.save(folder(bid, 'thumbs', f'{n}.webp'), 'WEBP', quality=75)
+        if not mine:
+            os.remove(original)
+    if b['kind'] != 'pdf':
+        return
+    book, original = folder(bid, 'source', 'book.pdf'), folder(bid, 'source', 'book.original.pdf')
+    if not items:
+        if os.path.isfile(original):
+            os.replace(original, book)
+        return
+    if not os.path.isfile(original):
+        shutil.copyfile(book, original)
+    chosen, _ = _selection(b, _options(b))
+    sizes = {str(p['n']): (p['w'], p['h']) for p in _pages(b)}
+    changes = []
+    for r in items:  # (each new picture made to its box's shape, sharp enough: twice the page's pixels)
+        x, y, w, h = r['box']
+        k = min(2.0, pictures.MOST_PX / max(w, h))
+        fit = folder(bid, 'pictures', f"{r['id']}-fit.jpg")
+        with pic(r) as im:
+            pictures.fitted(im.convert('RGB'), w * k, h * k, r['fit']).save(fit, 'JPEG', quality=88)
+        changes.append((chosen[int(r['n']) - 1], (x, y, w, h), *sizes[str(r['n'])], fit))
+    tmp = folder(bid, 'source', 'book.pdf.tmp')
+    pictures.pdf_with(original, tmp, changes)
+    os.replace(tmp, book)
+
+
+def replace_picture(b, n, box, data, fit='cover'):
+    """Page n's picture in box (x, y, w, h: the page picture's pixels) replaced by this one (data:
+    its bytes), on the page and in the PDF; the words of the old picture taken out of the page's
+    text. Returns {'picture': the replacement, 'words': how many words were taken out}."""
+    if b['status'] != 'ready':
+        raise LibraryError('The pages of this book are not made yet.')
+    page = next((p for p in _pages(b) if str(p['n']) == str(n)), None)
+    if not page:
+        raise LibraryError('There is no such page.')
+    try:
+        x, y, w, h = (float(v) for v in box)
+    except (TypeError, ValueError):
+        raise LibraryError('Draw a box around the picture.')
+    x, y = max(0.0, x), max(0.0, y)
+    w, h = min(w, page['w'] - x), min(h, page['h'] - y)
+    if w < 12 or h < 8:
+        raise LibraryError('Draw a bigger box around the picture.')
+    if fit not in pictures.FITS:
+        raise LibraryError('Choose how the picture fills the box.')
+    try:
+        jpeg = pictures.normalized(data)
+    except pictures.PictureError as e:
+        raise LibraryError(str(e))
+    bid = b['id']
+    os.makedirs(folder(bid, 'pictures'), exist_ok=True)
+    item = {'id': 'p' + secrets.token_hex(5), 'n': str(n), 'box': [round(x), round(y), round(w), round(h)], 'fit': fit, 'at': int(time.time())}
+    with open(folder(bid, 'pictures', f"{item['id']}.jpg"), 'wb') as f:
+        f.write(jpeg)
+    original = folder(bid, 'pictures', f'page-{n}.webp')
+    if not os.path.isfile(original):  # (the page as it was: kept once, to take the pictures back)
+        shutil.copyfile(folder(bid, 'pages', f'{n}.webp'), original)
+    items = _pictures(bid) + [item]
+    try:
+        _apply_pictures(b, items, [str(n)])
+    except Exception as e:
+        os.remove(folder(bid, 'pictures', f"{item['id']}.jpg"))
+        _apply_pictures(b, items[:-1], [str(n)])
+        if isinstance(e, pictures.PictureError):
+            raise LibraryError(str(e))
+        raise
+    _save_pictures(bid, items)
+    words = _drop_words_in(bid, n, item['box'])
+    _new_addresses(bid)
+    return {'picture': item, 'words': words}
+
+
+def _new_addresses(bid):
+    """New addresses for a book's page pictures (?v=…: a browser keeps them a year): later than
+    the last, also within the same second (a picture replaced and taken back at once)."""
+    db.run('UPDATE books SET updated = MAX(updated + 1, ?) WHERE id = ?', (int(time.time()), bid))
+
+
+def restore_picture(b, pid):
+    """A replaced picture taken back: the page and the PDF as they were there (its words are not
+    read back: Re-read text by area reads them)."""
+    items = _pictures(b['id'])
+    item = next((r for r in items if r['id'] == pid), None)
+    if not item:
+        raise LibraryError('There is no such picture.')
+    items = [r for r in items if r is not item]
+    _apply_pictures(b, items, [str(item['n'])])
+    _save_pictures(b['id'], items)
+    for name in (f'{pid}.jpg', f'{pid}-fit.jpg'):
+        if os.path.isfile(folder(b['id'], 'pictures', name)):
+            os.remove(folder(b['id'], 'pictures', name))
+    _new_addresses(b['id'])
+    return {'n': item['n']}
+
+
+# ---------------------------------------------------------------- Audio and video of a book (tracks.py)
+
+def _media_address(bid, file):
+    return f'/lib/{bid}/migration-media/{file}'
+
+
+def _book_bytes(bid):
+    """The book's size counted again (its owner's room: LIMITS['user_mb'])."""
+    size = sum(os.path.getsize(os.path.join(dp, f)) for dp, _, fs in os.walk(folder(bid)) for f in fs)
+    db.run('UPDATE books SET bytes = ? WHERE id = ?', (size, bid))
+
+
+def tracks_info(b):
+    """The recordings added to a book: {'files', 'placed' (with a button on a page), 'unplaced':
+    [their names], 'bytes', 'items': [{file, name, title, kind, placed}] (to choose one: a button put
+    by hand)}."""
+    items = tracks.load(folder(b['id']))
+    return {'files': len(items), 'placed': sum(1 for it in items if it.get('placed')),
+            'unplaced': sorted(it['name'] for it in items if not it.get('placed')), 'bytes': sum(it['size'] for it in items),
+            'items': [{'file': it['file'], 'name': it['name'], 'title': tracks.title(it), 'kind': it['kind'],
+                       'placed': bool(it.get('placed'))} for it in items]}
+
+
+def track_files(b):
+    """The recordings added to a book: [(their address, their file)] (to transcribe them)."""
+    bid = b['id']
+    return [(_media_address(bid, it['file']), folder(bid, 'migration-media', it['file'])) for it in tracks.load(folder(bid))]
+
+
+def add_track(b, user, name, data):
+    """One recording (audio or video) added to a book; its button goes on its page when the
+    recordings are placed (place_tracks)."""
+    if b['status'] != 'ready':
+        raise LibraryError('The pages of this book are not made yet.')
+    name = os.path.basename(str(name or '').replace('\\', '/'))[:200]
+    if os.path.splitext(name)[1].lower() not in tracks.KINDS:
+        raise LibraryError('Only audio and video can be added: MP3, M4A, WAV, OGG, MP4, WebM.')
+    most = limits(user)['pdf_mb']
+    if len(data) > most * 2 ** 20:
+        raise LibraryError(f'“{name}” is too big (at most {most} MB).')
+    if not user['admin'] and _used_bytes(b['owner']) + len(data) > LIMITS['user_mb'] * 2 ** 20:
+        raise LibraryError(f"Your library is full ({LIMITS['user_mb']} MB). Delete a book first.")
+    file, kind = tracks.stored(folder(b['id']), name, data)
+    t = tracks.track_of(name)
+    items = tracks.load(folder(b['id']))
+    was = next((it for it in items if it['name'] == name), {})  # (added again: its buttons changed by hand stay so)
+    items = [it for it in items if it['name'] != name]
+    items.append({'name': name, 'file': file, 'kind': kind, 'track': list(t) if t else None, 'size': len(data),
+                  **({'skip': was['skip']} if was.get('skip') else {}), **({'placed': True} if was.get('placed') else {})})
+    tracks.save(folder(b['id']), items)
+    return {'file': file, 'track': t}
+
+
+def _assets(bid):
+    try:
+        with open(folder(bid, 'migration-assets.json'), encoding='utf-8') as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) and isinstance(d.get('pages'), dict) else {'version': 1, 'pages': {}}
+    except (OSError, ValueError):
+        return {'version': 1, 'pages': {}}
+
+
+def _save_assets(bid, d, buttons=None, drop=('added',)):
+    """The page buttons: those added before (ours: 'added'; with drop also 'manual': put by hand)
+    replaced by these ({page: [button]})."""
+    pages = {n: [a for a in spots if not any(a.get(k) for k in drop)] for n, spots in d['pages'].items()}
+    for n, spots in (buttons or {}).items():
+        pages.setdefault(str(n), []).extend(spots)
+    d = {**d, 'pages': {n: spots for n, spots in pages.items() if spots}}
+    tmp = folder(bid, 'migration-assets.json.tmp')
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(d, f, ensure_ascii=False)
+    os.replace(tmp, folder(bid, 'migration-assets.json'))
+
+
+def place_tracks(b):
+    """A play button for each recording on every page where its number is printed; as the pages'
+    text is now (also corrected). Returns tracks_info."""
+    bid = b['id']
+    items = tracks.load(folder(bid))
+    docs = {str(p['n']): d for p in _pages(b) if (d := text_doc(bid, p['n']))}
+    buttons, unplaced = tracks.buttons(items, docs, lambda f: _media_address(bid, f))
+    _save_assets(bid, _assets(bid), buttons)
+    by_hand = {a.get('src') for spots in _assets(bid)['pages'].values() for a in spots if a.get('manual')}
+    left = {it['file'] for it in unplaced if _media_address(bid, it['file']) not in by_hand}
+    for it in items:
+        it['placed'] = it['file'] not in left
+    tracks.save(folder(bid), items)
+    _book_bytes(bid)
+    return tracks_info(get(bid))
+
+
+def remove_tracks(b):
+    """The recordings added to a book taken out, with their buttons (those of an old app imported stay)."""
+    bid = b['id']
+    items = tracks.load(folder(bid))
+    assets = _assets(bid)
+    _save_assets(bid, assets, drop=('added', 'manual'))
+    still = {a.get('src') for spots in _assets(bid)['pages'].values() for a in spots}
+    for it in items:
+        path = folder(bid, 'migration-media', it['file'])
+        if _media_address(bid, it['file']) not in still and os.path.isfile(path):
+            os.remove(path)
+    if os.path.isfile(folder(bid, 'tracks.json')):
+        os.remove(folder(bid, 'tracks.json'))
+    _book_bytes(bid)
+    return tracks_info(get(bid))
+
+
+def _button_page(b, n):
+    """Page n of a book (its number as a string), or LibraryError."""
+    page = next((p for p in _pages(b) if str(p['n']) == str(n)), None)
+    if not page:
+        raise LibraryError('There is no such page.')
+    return page
+
+
+def _at(page, x, y):
+    """A place on a page (its pixels), kept on the page."""
+    try:
+        x, y = float(x), float(y)
+    except (TypeError, ValueError):
+        raise LibraryError('Click on the page where the button goes.')
+    return min(max(x, 0), page['w']), min(max(y, 0), page['h'])
+
+
+def _find_button(spots, src, x, y):
+    """The play button of that recording nearest to (x, y) on a page, or LibraryError."""
+    try:
+        x, y = float(x), float(y)
+    except (TypeError, ValueError):
+        x = y = 0
+    found = [a for a in spots if a.get('src') == src and a.get('t') in ('audio', 'video')]
+    if not found:
+        raise LibraryError('That play button is not on the page any more. Open the page again.')
+    return min(found, key=lambda a: (a['x'] - x) ** 2 + (a['y'] - y) ** 2)
+
+
+def _by_hand(bid, n, a):
+    """A button of ours changed by hand on page n: its recording's button is not put there again
+    (when the buttons are placed again)."""
+    items = tracks.load(folder(bid))
+    for it in items:
+        if _media_address(bid, it['file']) == a.get('src'):
+            it['skip'] = sorted(set(it.get('skip') or []) | {str(n)}, key=lambda v: int(v) if v.isdigit() else 0)
+    tracks.save(folder(bid), items)
+
+
+def add_button(b, n, file, x, y):
+    """A play button put by hand on page n, where the owner clicked, for one of the book's
+    recordings (file): the page's buttons."""
+    page = _button_page(b, n)
+    bid = b['id']
+    items = tracks.load(folder(bid))
+    it = next((it for it in items if it['file'] == file), None)
+    if not it:
+        raise LibraryError('Choose one of the recordings of this book (add it first, in Settings → Audio and video).')
+    x, y = _at(page, x, y)
+    d = _assets(bid)
+    d['pages'].setdefault(str(page['n']), []).append(tracks.button(it, x, y, lambda f: _media_address(bid, f)))
+    _save_assets(bid, d, drop=())
+    it['placed'] = True
+    tracks.save(folder(bid), items)
+    return _assets(bid)['pages'].get(str(page['n']), [])
+
+
+def move_button(b, n, src, old, x, y):
+    """A play button moved by hand on page n (from old: [x, y], where it was): the page's buttons."""
+    page = _button_page(b, n)
+    bid = b['id']
+    d = _assets(bid)
+    spots = d['pages'].get(str(page['n']), [])
+    a = _find_button(spots, src, *(list(old or []) + [0, 0])[:2])
+    a['x'], a['y'] = (round(v) for v in _at(page, x, y))
+    if a.pop('added', None):  # (one of ours: now as put by hand)
+        a['manual'] = True
+        _by_hand(bid, page['n'], a)
+    _save_assets(bid, d, drop=())
+    return _assets(bid)['pages'].get(str(page['n']), [])
+
+
+def remove_button(b, n, src, x, y):
+    """A play button taken away by hand from page n (put in a wrong place): the page's buttons. The
+    recording stays in the book; its button is not put on this page again."""
+    page = _button_page(b, n)
+    bid = b['id']
+    d = _assets(bid)
+    spots = d['pages'].get(str(page['n']), [])
+    a = _find_button(spots, src, x, y)
+    spots.remove(a)
+    if a.get('added') or a.get('manual'):
+        _by_hand(bid, page['n'], a)
+    _save_assets(bid, d, drop=())
+    items = tracks.load(folder(bid))  # (on no page any more: told as not placed)
+    still = {a.get('src') for spots in _assets(bid)['pages'].values() for a in spots}
+    for it in items:
+        if it.get('placed') and _media_address(bid, it['file']) not in still:
+            it['placed'] = False
+    tracks.save(folder(bid), items)
+    return _assets(bid)['pages'].get(str(page['n']), [])
+
+
+def old_picture(b, n, box):
+    """The part of page n's picture in box, as JPEG bytes (for the AI image service to start from)."""
+    page = folder(b['id'], 'pages', f'{n}.webp')
+    if not os.path.isfile(page):
+        raise LibraryError('There is no such page.')
+    x, y, w, h = (float(v) for v in box)
+    with Image.open(page) as im:
+        part = im.convert('RGB').crop((round(x), round(y), round(x + w), round(y + h)))
+    out = io.BytesIO()
+    part.save(out, 'JPEG', quality=90)
+    return out.getvalue()
 
 
 # ---------------------------------------------------------------- Reports (public books)

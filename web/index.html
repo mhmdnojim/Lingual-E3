@@ -58,7 +58,8 @@
     <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
     <symbol id="i-file" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></symbol>
     <symbol id="i-text" viewBox="0 0 24 24"><path d="M17 6.1H3"/><path d="M21 12.1H3"/><path d="M15.1 18H3"/></symbol>
-    <symbol id="i-select-area" viewBox="0 0 24 24"><path d="M5 3a2 2 0 0 0-2 2"/><path d="M19 3a2 2 0 0 1 2 2"/><path d="M21 19a2 2 0 0 1-2 2"/><path d="M5 21a2 2 0 0 1-2-2"/><path d="M9 3h1"/><path d="M14 3h1"/><path d="M9 21h1"/><path d="M14 21h1"/><path d="M3 9v1"/><path d="M21 9v1"/><path d="M3 14v1"/><path d="M21 14v1"/><path d="m9 11 3 3 5-6"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></symbol>
+  <symbol id="i-select-area" viewBox="0 0 24 24"><path d="M5 3a2 2 0 0 0-2 2"/><path d="M19 3a2 2 0 0 1 2 2"/><path d="M21 19a2 2 0 0 1-2 2"/><path d="M5 21a2 2 0 0 1-2-2"/><path d="M9 3h1"/><path d="M14 3h1"/><path d="M9 21h1"/><path d="M14 21h1"/><path d="M3 9v1"/><path d="M21 9v1"/><path d="M3 14v1"/><path d="M21 14v1"/><path d="m9 11 3 3 5-6"/></symbol>
     <symbol id="i-back" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
     <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
@@ -328,7 +329,9 @@
           <button class="tbtn" data-op="read-page" title="Read the whole page again with OCR: review what is found, then it replaces the page's text"><svg class="i"><use href="#i-transcribe"/></svg>Read the whole page again</button>
           <button class="tbtn" data-op="ocr" aria-pressed="false" title="Draw boxes around text on the page, one or several, one after the other. Then OCR reads them; review what was found in each and add the recovered text"><svg class="i"><use href="#i-transcribe"/></svg>Re-read text by area</button>
           <button class="tbtn" data-op="order-areas" aria-pressed="false" title="Put the sentences in order: draw boxes around the parts of the page (paragraphs, dialogues, columns) in the order they should be read"><svg class="i"><use href="#i-arrow-down"/></svg>Order by areas</button>
-          <button class="tbtn" data-op="check-area" aria-pressed="false" title="Select existing sentence entries inside a box. This does not read or recognize text"><svg class="i"><use href="#i-select-area"/></svg>Select sentences by area</button>
+          <button class="tbtn" data-op="buttons" aria-pressed="false" hidden title="The play buttons of audio and video on the page: drag one to move it, take one away (its ×), or add one for a recording where you click"><svg class="i"><use href="#i-headphones"/></svg>Play buttons</button>
+          <button class="tbtn" data-op="picture" aria-pressed="false" hidden title="Replace a picture on the page: draw a box around it, then give a new one (yours, or made by AI). The page and the book's PDF change; it can be taken back"><svg class="i"><use href="#i-image"/></svg>Replace a picture</button>
+      <button class="tbtn" data-op="check-area" aria-pressed="false" title="Select existing sentence entries inside a box. This does not read or recognize text"><svg class="i"><use href="#i-select-area"/></svg>Select sentences by area</button>
           <button class="tbtn" data-op="check-all" title="Choose every sentence of the page">Choose all</button>
           <span class="bulk-chosen bulk-count" id="bulk-count" hidden></span>
           <button class="tbtn danger bulk-chosen" data-op="delete-checked" title="Delete the chosen sentences (Delete key; Undo brings them back)" hidden><svg class="i"><use href="#i-trash"/></svg>Delete</button>
@@ -336,6 +339,7 @@
           <button class="tbtn bulk-chosen" data-op="move-checked" title="Move the chosen sentences after the selected sentence (click it first)" hidden><svg class="i"><use href="#i-arrow-down"/></svg>Move after selected</button>
           <button class="tbtn bulk-chosen" data-op="check-none" title="Choose none" hidden>Clear</button>
         </div>
+        <div class="pb-bar" id="pb-bar" hidden aria-label="Play buttons"></div>
       </div>
       <div class="text-view" id="text-view"></div>
       <div class="panel-foot"><button class="link-btn" id="save-book-text">Save the whole book's text (.txt)</button></div>

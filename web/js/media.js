@@ -3,10 +3,12 @@
 import { $, el, escapeHtml, fmtTime, getJSON, icon, store, toast } from './util.js';
 import { ScriptTranslation } from './translation.js';
 import { repeatTimes } from './speech.js';
-import { AUTO_NOTE, savedTranscript, transcribeButton, transcribeRecording } from './transcription.js';
+import { AUTO_NOTE, savedTranscript, speechButton, speechDialog, transcribeButton, transcribeRecording } from './transcription.js';
 
-/** The id of a disc recording's script (its translations are saved under it): AU-… or VI-…. */
-const scriptId = (asset) => (asset.script || asset.src || '').match(/([A-Z]{2}-[0-9a-f]+)(?:\.json|\/[^/]+)$/)?.[1] || null;
+/** The id of a recording's script (its translations are saved under it): AU-… or VI-… of the disc;
+ * of a recording added to a library book AU-<its file's sha256>. */
+const scriptId = (asset) => (asset.script || asset.src || '').match(/([A-Z]{2}-[0-9a-f]+)(?:\.json|\/[^/]+)$/)?.[1]
+  || (asset.src || '').match(/\/migration-media\/([0-9a-f]{64})\.\w+$/)?.[1]?.replace(/^/, 'AU-') || null;
 
 function parseCueTime(value) {
   const text = String(value).trim();
@@ -474,8 +476,9 @@ export class AudioPlayer {
     a.play().catch(() => {});
 
     let cues = asset.cues || (asset.script ? await getJSON(asset.script).catch(() => null) : null);
-    // A disc recording without a script: transcribed before (or now) on this computer?
-    const job = !cues && book && !asset.rec ? await savedTranscript(asset, asset.transcribeLanguage) : null;
+    // A recording without a script: transcribed before (or now)? One speech recognition wrote
+    // (auto): written again since (e.g. by ElevenLabs, better)?
+    const job = (!cues || asset.auto) && book && !asset.rec ? await savedTranscript(asset, asset.transcribeLanguage) : null;
     if (shown !== this.shown) return;
     if (job?.state === 'done') cues = job.cues;
     const corrections = store.get('audioTranscriptCorrections', {})[asset.src];
@@ -694,6 +697,8 @@ export class AudioPlayer {
     const title = asset && escapeHtml(asset.title.replace(/^Listen to /, ''));
     if (!asset) {
       head.innerHTML = 'Audio script<small>Click a headphones button on the page to play a recording. Its script appears here and follows the audio.</small>';
+      head.append(el('div', { class: 'cue-transcript-tools' }, el('button', { class: 'btn small', type: 'button', onclick: () => speechDialog(this.app),
+        title: 'Write down what is said in any audio or video file (ElevenLabs or this computer)' }, 'Transcribe a file…')));
     } else {
       const detected = cues?.some((cue) => cue.speaker) ? ' Speaker labels are automatic; a third detected voice is marked Explanation.' : '';
       const editHelp = asset && !asset.rec ? (this.transcript.editMode
@@ -758,7 +763,7 @@ export class AudioPlayer {
           }
           this.transcribe(asset, book, null, force);
         });
-        tools.push(button);
+        tools.push(button, speechButton(this.app));
         this.transcribeStatus = status;
       } else {
         this.transcribeStatus = null;
@@ -897,7 +902,9 @@ export function closeDialog() {
 export function initDialog() {
   const d = dialog();
   $('#md-close').addEventListener('click', closeDialog);
-  d.addEventListener('close', () => { cleanup?.(); cleanup = null; $('#md-body').replaceChildren(); });
+  // (closed with Esc: its cleanup; the event comes a moment later: opened again meanwhile — another
+  // dialog from this one — it is not that one's to empty)
+  d.addEventListener('close', () => { if (d.open) return; cleanup?.(); cleanup = null; $('#md-body').replaceChildren(); });
   // A click on the backdrop closes it (unless it keeps). Pressed inside and let go outside (selecting text): no such click.
   let down = null;
   d.addEventListener('pointerdown', (e) => { down = e.target; });
@@ -905,7 +912,7 @@ export function initDialog() {
 }
 
 /** The repeat button of a script (the same setting as the one in the top bar: R). */
-function repeatButton(app) {
+export function repeatButton(app) {
   const b = el('button', { class: 'icon-btn small repeat-btn', type: 'button', html: `${icon('repeat')}<span class="count-badge" hidden></span>` });
   b.addEventListener('click', () => app.cycleRepeat());
   app.showRepeat?.(b);
@@ -941,10 +948,10 @@ export async function openVideo(app, asset, book, language = 'en') {
     if (asset.auto || asset.generatedCues) tr.note.before(el('p', { class: 'auto-note' }, AUTO_NOTE));
   };
   const cues = asset.script ? await getJSON(asset.script).catch(() => null) : null;
-  // A disc video without a script: transcribed before (or now) on this computer?
-  const job = !cues && book ? await savedTranscript(asset, language) : null;
+  // A video without a script: transcribed before (or now)? Written again since (auto)?
+  const job = (!cues || asset.auto) && book ? await savedTranscript(asset, language) : null;
   if (!list.isConnected) return; // closed meanwhile
-  if (cues || job?.state === 'done') return show(cues || job.cues);
+  if (cues || job?.state === 'done') return show(job?.state === 'done' ? job.cues : cues);
   const empty = el('li', { class: 'empty' }, 'This video has no script.');
   list.replaceChildren(empty);
   if (!book) return;
