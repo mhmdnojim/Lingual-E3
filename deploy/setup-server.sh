@@ -3,9 +3,10 @@
 #
 #     bash setup-server.sh books.example.com git@github.com:YOUR-NAME/YOUR-REPO.git
 #
-# It installs Python, Tesseract (reads photos of pages) and Caddy (the web server that gets the
-# HTTPS certificate by itself), copies the code from GitHub, asks for the admin's e-mail address,
-# and starts the app as a service that also starts again after a restart of the server.
+# It installs Python, Tesseract (reads photos of pages), LibreOffice (makes Word files into PDFs) and
+# Caddy (the web server that gets the HTTPS certificate by itself), copies the code from GitHub, asks
+# for the admin's e-mail address, and starts the app as a service that also starts again after a
+# restart of the server.
 # The website starts with an empty library: sign up with the admin's e-mail and add books.
 set -euo pipefail
 DOMAIN="${1:?Give the domain, e.g. books.example.com}"
@@ -28,6 +29,10 @@ if ! command -v caddy >/dev/null; then
   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' > /etc/apt/sources.list.d/caddy-stable.list
   apt update -q && apt install -y -q caddy
 fi
+# LibreOffice (without its windows) makes the Word files of books into PDFs (web/office.py), with the
+# fonts of Chinese and those of Word's own documents (Calibri, Cambria: the same sizes).
+apt install -y -q libreoffice-writer-nogui fonts-noto-cjk fonts-crosextra-carlito fonts-crosextra-caladea \
+  || apt install -y -q libreoffice-writer fonts-noto-cjk
 
 echo "== The app's own user and folders"
 id lingua >/dev/null 2>&1 || useradd --system --home-dir "$DATA" --create-home --shell /usr/sbin/nologin lingua

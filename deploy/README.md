@@ -149,5 +149,7 @@ reader; it does not automatically rewrite an arbitrary application's code or Fla
   of books and space, and their PDFs can be up to 500 MB (`ADMIN_PDF_MB`: a whole textbook).
 - **Reports**: a book reported by three different people is hidden at once until an admin looks
   at it (Admin tab). Answer copyright complaints quickly: hide or delete the book.
+- Word files of books are made into PDFs with **LibreOffice** on the server (setup-server.sh installs
+  it with Chinese fonts; on a server set up before, update.sh installs it once);
 - Photos of pages are read with **Tesseract** on the server; translations use Google's free
   translator and MP3s Microsoft's online voices (see the terms page).

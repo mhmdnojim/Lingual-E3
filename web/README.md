@@ -72,9 +72,10 @@ chosen (or the books next to it are tapped).
 |---|---|
 | **Text** | Paste or type a text (an empty line starts a paragraph; a line starting with `#` is a heading), add a picture if you like. It is set into pages. |
 | **PDF** | Up to 300 pages are used (choose which ones: **Pages to use**, e.g. `3-120`). At most 500 MB on this computer (and for a website's admins: a whole textbook is often 80–220 MB), 60 MB for the other accounts of a website; a bigger file is refused before it is sent, with its size. Text in the PDF is used as it is; scanned pages, and pages whose text is broken, are read with OCR. |
+| **Word** | A Word file (`.docx`, `.doc`, also `.rtf` and `.odt`; the same size as a PDF). The app makes it into a PDF first, with its pictures and tables (`web/office.py`: Microsoft Word on this computer, its macros never run; LibreOffice on a website's server), and then it is a PDF book: the same questions, sample and **Download the PDF**. The Word file is kept in the book's `source/` folder. Without Word or LibreOffice the Word tab says to save the file as a PDF in Word and add the PDF. |
 | **Photos of pages** | One photo per page (in the order of the file names). The words are read with OCR. Photograph straight from above, in good light. |
 
-For a PDF or photos the app first asks about the pages: their **language** (OCR reads that
+For a PDF, a Word file or photos the app first asks about the pages: their **language** (OCR reads that
 language; it warns when this computer cannot read it from pictures yet: add the language in the
 Windows Settings, with “Optical character recognition”), for Chinese **is there pinyin** (none,
 some, or over every line; the lines of pinyin can be left out of the text), and which pages to use.

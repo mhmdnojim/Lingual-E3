@@ -9,7 +9,7 @@ for learning languages:
 - **Repeat** each sentence 1–10 times or again and again, with a pause to say it after.
 - **MP3s** of chosen sentences with natural voices, with subtitles; they play with highlighting.
 - **Correct** the text (OCR is never perfect): change, split, merge, move sentences.
-- **Your library**: add a text, a PDF or photos of pages; keep them private or share them with
+- **Your library**: add a text, a PDF, a Word file or photos of pages; keep them private or share them with
   everyone (with a licence). Reports and an admin page for a public website.
 - Works on computers, **Android and iPhone** (tap, swipe, pinch; add it to the home screen).
 

@@ -1,12 +1,16 @@
 // Adding a big PDF (web/library.py limits, js/library.js tooBig): on this computer (you are the
 // admin) a whole textbook of 70 MB is taken (the limit of the website's accounts, 60 MB, is not
 // yours); a PDF over your limit is refused before it is sent, with its size and what to do; an
-// upload that fails leaves no empty book behind.
+// upload that fails leaves no empty book behind. A Word file (the Word tab) is made into the book's
+// PDF on the server (web/office.py, with Word or LibreOffice) and checked as a PDF is; what is not
+// a Word file, or is too big, is refused in the same way.
 // Run: node web/tests/upload-size-test.mjs
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 process.env.PORT ||= '8829';
 const { startServer, stopServer, openBrowser, sleep } = await import('./harness.mjs');
@@ -32,19 +36,26 @@ const files = { big: path.join(tmp, 'textbook.pdf'), small: path.join(tmp, 'smal
 writeFileSync(files.big, makePdf('A whole textbook.', 70));
 writeFileSync(files.small, makePdf('Two megabytes.', 2));
 writeFileSync(files.fake, Buffer.from('This is not a PDF at all.'));
+Object.assign(files, { word: path.join(tmp, 'lesson.docx'), fakeWord: path.join(tmp, 'fake.docx'), bigWord: path.join(tmp, 'big.docx') });
+writeFileSync(files.bigWord, makePdf('Two megabytes.', 2)); // (only its size is looked at: before sending)
+// (a small Word file, as web/tests/test_office.py makes it)
+execFileSync('python', ['-c', 'import sys; sys.path.insert(0, sys.argv[1]); from test_office import docx; '
+  + 'open(sys.argv[2], "wb").write(docx("Lesson one.", "We study Chinese.", "我们学习中文。"))',
+path.dirname(fileURLToPath(import.meta.url)), files.word]);
+writeFileSync(files.fakeWord, Buffer.from('This is not a Word file at all.'));
 
 const server = await startServer();
 const { browser, page } = await openBrowser();
 const errors = [];
 const mine = () => page.evaluate(() => fetch('/api/books?scope=mine').then((r) => r.json()).then((b) => b.map((x) => x.title)));
-/** Add a PDF through the Add dialog; then the dialog's message, or the step it went on to. */
-async function add(title, file) {
+/** Add a PDF (or a Word file) through the Add dialog; then the dialog's message, or the step it went on to. */
+async function add(title, file, kind = 'pdf') {
   await page.click('#lib-add');
   await page.waitForSelector('.add-kind', { timeout: 10000 });
-  await page.click('.add-kind [data-kind="pdf"]');
+  await page.click(`.add-kind [data-kind="${kind}"]`);
   await page.$eval('.lib-form input[type=text]', (i) => { i.value = ''; });
   await page.type('.lib-form input[type=text]', title);
-  await (await page.$('.lib-form input[type=file][accept*="pdf"]')).uploadFile(file);
+  await (await page.$(`.lib-form input[type=file][accept*="${kind === 'word' ? 'docx' : 'pdf'}"]`)).uploadFile(file);
   await page.click('.lib-form button[type=submit]');
   for (let i = 0; i < 300; i++) {
     const now = await page.evaluate(() => ({
@@ -95,7 +106,44 @@ try {
   assert.match(over.msg, /This PDF is 2\.0 MB: at most 1 MB/);
   assert.deepEqual(await mine(), before);
   await page.keyboard.press('Escape');
+  // (a Word file over the limit: the same)
+  const overWord = await add('Too big Word', files.bigWord, 'word');
+  assert.match(overWord.msg, /This Word file is 2\.0 MB: at most 1 MB/);
+  assert.deepEqual(await mine(), before);
+  await page.keyboard.press('Escape');
   await page.evaluate(() => { window.smallLimit = false; });
+
+  // A Word file: made into the book's PDF, and its sample made as a PDF's is.
+  const wordFiles = await page.evaluate(() => window.aef.library.me.wordFiles);
+  assert.equal(typeof wordFiles, 'boolean', 'the server says whether Word files can be added');
+  const fromWord = await add('From Word', files.word, 'word');
+  if (wordFiles) {
+    assert.equal(fromWord.msg, '', JSON.stringify(fromWord));
+    assert.match(fromWord.title, /Sample|Check the sample/);
+    const book = await page.evaluate(() => fetch('/api/books?scope=mine').then((r) => r.json()).then((b) => b.find((x) => x.title === 'From Word')));
+    assert.equal(book.kind, 'pdf', 'a PDF book');
+    let pdf;
+    for (let i = 0; i < 300 && pdf?.state !== 'ready' && pdf?.state !== 'error'; i++) {
+      if (i) await sleep(200);
+      pdf = await page.evaluate((id) => fetch(`/api/books/${id}/preview`).then((r) => r.json()), book.id);
+    }
+    assert.equal(pdf.state, 'ready', JSON.stringify(pdf));
+    assert.match(JSON.stringify(pdf), /Lesson|study/, 'its words read from the PDF made of it');
+  } else {
+    assert.match(fromWord.msg, /Save As → PDF/);
+  }
+  await page.keyboard.press('Escape');
+  const withWord = await mine();
+  const notWord = await add('Not a Word file', files.fakeWord, 'word');
+  assert.match(notWord.msg, /not a Word file/);
+  await sleep(300);
+  assert.deepEqual(await mine(), withWord, 'no empty book left');
+  await page.keyboard.press('Escape');
+  for (const t of ['From Word']) {
+    await page.evaluate((title) => fetch('/api/books?scope=mine').then((r) => r.json())
+      .then((b) => b.filter((x) => x.title === title).map((x) => fetch(`/api/books/${x.id}`, { method: 'DELETE' }))), t);
+  }
+  await sleep(300);
 
   // The upload fails (not a PDF): the reason, and no empty book left.
   const fake = await add('Not a PDF', files.fake);

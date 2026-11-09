@@ -11,7 +11,7 @@ Accounts (accounts.py) and the library (library.py: books made from a text, a PD
     POST   /api/books                      a new book {title, author, about, kind: text|pdf|images}
     PUT    /api/books/<id>                 change title, branch, licence, visibility (private / public)
     DELETE /api/books/<id>
-    PUT    /api/books/<id>/source/<part>   upload: pdf, image-<k>, text ({text}), picture
+    PUT    /api/books/<id>/source/<part>   upload: pdf, word (a Word file, made into the PDF), image-<k>, text ({text}), picture
     GET    /api/page-languages             the languages of pages, and which OCR reads here
     POST   /api/books/<id>/preview         make a sample of 1-5 pages first {options, same, again: find the designs again}
     GET    /api/books/<id>/preview         the sample (with tips), or how far making it is
@@ -106,6 +106,7 @@ import ids
 import library
 import migration
 import ocr
+import office
 import pictures
 import pinyin
 import subscriptions
@@ -116,7 +117,7 @@ import words
 
 # Raise when the app needs new server features; web/js/main.js checks it (NEEDS_API) and asks
 # to restart the app if an older server is still running.
-API_VERSION = 30  # 23: optional subscription codes and time-limited book access; 24: translations from the book's language; 25: pinyin; 26: a page's original text, reading a page again step by step; 27: the designs of a book's pages; 28: pictures replaced; 29: a book's audio and video; 30: its play buttons changed by hand
+API_VERSION = 31  # 23: optional subscription codes and time-limited book access; 24: translations from the book's language; 25: pinyin; 26: a page's original text, reading a page again step by step; 27: the designs of a book's pages; 28: pictures replaced; 29: a book's audio and video; 30: its play buttons changed by hand; 31: a book added from a Word file
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 WEB = os.path.join(ROOT, 'web')
@@ -1015,7 +1016,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json({'mode': MODE, 'user': accounts.public_user(user), 'disc': bool(disc()),
                                    'contact': os.environ.get('LB_CONTACT_EMAIL', ''),
                                    'licenses': library.LICENSES, 'reasons': library.REPORT_REASONS,
-                                   'limits': library.limits(user), 'subscription': subscription})
+                                   'limits': library.limits(user), 'subscription': subscription,
+                                   'wordFiles': office.available()})  # (can a book be added from a Word file here)
         if path == '/api/picture-ai':  # (is there a key for the AI image service: never the key itself)
             u = self.user()
             key, model = pictures.ai_settings(auth.config())

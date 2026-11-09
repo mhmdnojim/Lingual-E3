@@ -1,7 +1,8 @@
 """Lingua Books: the books and lessons people add — a text, a PDF, or photos of pages.
 
 Every book is a folder DATA/books/<id>/:
-    source/          what was uploaded (text.json + picture, book.pdf, or 0.jpg, 1.png, ...)
+    source/          what was uploaded (text.json + picture, book.pdf, or 0.jpg, 1.png, ...; a book
+                     added from a Word file: book.docx, and book.pdf made from it)
     pages/<n>.webp   the page images
     thumbs/<n>.webp  small page images (the library, the page list)
     text/<n>.json    the words of each page with their place, sentences, clauses, paragraphs
@@ -12,7 +13,8 @@ and a row in the database (db.py) with its title, owner, visibility and pages.
 Turning the upload into pages runs in the background, one book at a time:
 - text:   the text is set into pages (the Atkinson Hyperlegible font), so the place of every word
           is known exactly; a picture can go at the top;
-- PDF:    each page is drawn (pypdfium2) and its words are taken from the PDF (pdfplumber);
+- PDF:    (a Word file is made into a PDF first: office.py)
+          each page is drawn (pypdfium2) and its words are taken from the PDF (pdfplumber);
           a page without text (a scan), or whose text is broken, is read with OCR (a scan with
           text hidden under it, which OCR made, keeps it unless the owner asks for OCR);
 - photos: each photo is turned upright, made smaller if very big, and read with OCR (ocr.py).
@@ -47,6 +49,7 @@ import db
 import designs
 import ids
 import ocr
+import office
 import pictures
 import tracks
 
@@ -347,11 +350,30 @@ def _kind_of_image(data):
 
 
 def save_source(b, user, part, data):
-    """One uploaded file: 'pdf' (the PDF), 'image-<k>' (photo k), 'text' (JSON: {text}) or 'picture'."""
+    """One uploaded file: 'pdf' (the PDF), 'word' (a Word file: made into the PDF, office.py),
+    'image-<k>' (photo k), 'text' (JSON: {text}) or 'picture'."""
     src = folder(b['id'], 'source')
     os.makedirs(src, exist_ok=True)
     if not user['admin'] and _used_bytes(b['owner']) + len(data) > LIMITS['user_mb'] * 2 ** 20:
         raise LibraryError(f"Your library is full ({LIMITS['user_mb']} MB). Delete a book first.")
+    if part == 'word' and b['kind'] == 'pdf':
+        ext = office.kind_of(data)
+        if not ext:
+            raise LibraryError('This is not a Word file (.docx, .doc, .rtf or .odt).')
+        most = limits(user)['pdf_mb']
+        if len(data) > most * 2 ** 20:
+            raise LibraryError(f"The Word file is too big (at most {most} MB).")
+        for old in os.listdir(src):  # (another Word file or PDF sent before)
+            if os.path.splitext(old)[0] == 'book':
+                os.remove(os.path.join(src, old))
+        original = os.path.join(src, 'book' + ext)  # (kept: the book was made from it)
+        with open(original, 'wb') as f:
+            f.write(data)
+        try:
+            office.to_pdf(original, os.path.join(src, 'book.pdf'))
+        except office.OfficeError as e:
+            raise LibraryError(str(e))
+        return
     if part == 'pdf' and b['kind'] == 'pdf':
         if not data.startswith(b'%PDF'):
             raise LibraryError('This is not a PDF file.')

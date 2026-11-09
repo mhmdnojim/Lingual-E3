@@ -81,6 +81,10 @@ function tooBig(kind, files, limits = {}) {
     return `This PDF is ${mb(files[0])} MB: at most ${limits.pdf_mb || 60} MB can be added. Make the PDF smaller `
       + '(for example “Reduce file size” in a PDF program), or split it into parts and add each as a book.';
   }
+  if (kind === 'word' && files[0].size > (limits.pdf_mb || 60) * 2 ** 20) {
+    return `This Word file is ${mb(files[0])} MB: at most ${limits.pdf_mb || 60} MB can be added. Make its pictures smaller `
+      + '(in Word: File → Compress Pictures), or split it into parts and add each as a book.';
+  }
   const photo = kind === 'images' && files.find((f) => /^image\/(jpeg|png|webp)$/.test(f.type) && f.size > (limits.image_mb || 15) * 2 ** 20);
   return photo ? `The photo “${photo.name}” is ${mb(photo)} MB: at most ${limits.image_mb || 15} MB each. Take it again smaller, or make it smaller.` : '';
 }
@@ -967,7 +971,7 @@ export class Library {
       dropPinyin.hidden = pinyinNote.hidden = !language.value.startsWith('zh-');
       dropPinyinInput.checked = language.value.startsWith('zh-');
       dropPinyinInput.disabled = language.value.startsWith('zh-');
-      pagesRow.hidden = ocrAll.hidden = kind !== 'pdf';
+      pagesRow.hidden = ocrAll.hidden = kind !== 'pdf' && kind !== 'word';
     };
     [language, pinyin].forEach((s) => s.addEventListener('change', sync));
     language.addEventListener('change', () => { $('input', english).checked = language.value.startsWith('zh-'); }); // (Chinese textbooks: and English)
@@ -999,6 +1003,7 @@ export class Library {
     const text = el('textarea', { class: 'input', rows: 10, placeholder: 'Paste or type the text.\n\nAn empty line starts a new paragraph. A line starting with # is a heading.' });
     const picture = el('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp' });
     const pdf = el('input', { type: 'file', accept: 'application/pdf,.pdf' });
+    const word = el('input', { type: 'file', accept: '.docx,.doc,.rtf,.odt,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword' });
     const photos = el('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp', multiple: true });
     const photoNote = el('p', { class: 'hint' }, 'Choose one photo per page. The pages are put in the order of the file names.');
     photos.addEventListener('change', () => {
@@ -1012,13 +1017,17 @@ export class Library {
         el('label', { class: 'field' }, el('span', {}, 'A picture at the top (optional)'), picture)),
       pdf: el('div', {}, el('label', { class: 'field' }, el('span', {}, `PDF file (at most ${this.me.limits?.pdf_mb || 60} MB; ${this.me.limits?.pages || 300} pages are used)`), pdf),
         el('p', { class: 'hint' }, 'Pages with text are read from the PDF; scanned pages are read with OCR.')),
+      word: el('div', {}, el('label', { class: 'field' }, el('span', {}, `Word file (.docx or .doc; at most ${this.me.limits?.pdf_mb || 60} MB; ${this.me.limits?.pages || 300} pages are used)`), word),
+        el('p', { class: this.me.wordFiles === false ? 'hint warn' : 'hint' }, this.me.wordFiles === false
+          ? 'Word files cannot be added here yet. In Word, save the file as a PDF (File → Save As → PDF) and add the PDF.'
+          : 'The app makes it into a PDF first, with its pictures and tables, and then reads it like a PDF.')),
       images: el('div', {}, el('label', { class: 'field' }, el('span', {}, 'Photos or scans of the pages'), photos), photoNote,
         el('p', { class: 'hint' }, 'Tip: photograph each page straight from above, in good light.')),
     };
     const sampleNote = el('p', { class: 'hint' }, 'First the app makes a few pages, chosen at random, for you to check. '
       + 'If something is not right, you tell it what to change and try again — then it makes all the pages.');
     const seg = el('div', { class: 'seg add-kind', role: 'radiogroup' },
-      ...[['text', 'Text'], ['pdf', 'PDF'], ['images', 'Photos of pages']].map(([k, label]) =>
+      ...[['text', 'Text'], ['pdf', 'PDF'], ['word', 'Word'], ['images', 'Photos of pages']].map(([k, label]) =>
         el('button', { type: 'button', role: 'radio', dataset: { kind: k }, onclick: () => setKind(k) }, label)));
     const setKind = (k) => {
       kind = k;
@@ -1044,10 +1053,14 @@ export class Library {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       msg.textContent = '';
-      const files = kind === 'pdf' ? [...pdf.files] : kind === 'images' ? [...photos.files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })) : [];
+      const files = kind === 'pdf' ? [...pdf.files] : kind === 'word' ? [...word.files]
+        : kind === 'images' ? [...photos.files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })) : [];
       if (!title.value.trim()) { msg.textContent = 'Please give a title.'; title.focus(); return; }
       if (kind === 'text' && !text.value.trim()) { msg.textContent = 'Please add the text.'; text.focus(); return; }
-      if (kind !== 'text' && !files.length) { msg.textContent = kind === 'pdf' ? 'Please choose the PDF file.' : 'Please choose the photos.'; return; }
+      if (kind !== 'text' && !files.length) {
+        msg.textContent = { pdf: 'Please choose the PDF file.', word: 'Please choose the Word file.' }[kind] || 'Please choose the photos.';
+        return;
+      }
       // (said before sending: the server would stop reading it; its limits asked now: it may have been started again since this page was opened)
       const limits = (await api('GET', '/api/me').catch(() => null))?.limits || this.me.limits;
       const big = tooBig(kind, files, limits);
@@ -1067,7 +1080,8 @@ export class Library {
   }
 
   async add(d, form) {
-    const book = await api('POST', '/api/books', { kind: d.kind, title: d.title, author: d.author, ...d.place, importOptions: d.options });
+    // (a Word file is made into a PDF on the server: the book is a PDF book)
+    const book = await api('POST', '/api/books', { kind: d.kind === 'word' ? 'pdf' : d.kind, title: d.title, author: d.author, ...d.place, importOptions: d.options });
     const bar = el('div', { class: 'rec-progress' }, el('div'));
     const stage = el('p', { class: 'hint' }, 'Sending…');
     form.replaceChildren(el('h3', { class: 'lib-progress-title' }, d.title), bar, stage);
@@ -1079,6 +1093,9 @@ export class Library {
         if (d.picture) await upload(src('picture'), await serverPhoto(d.picture), (f) => show(f, 'Sending the picture…'));
       } else if (d.kind === 'pdf') {
         await upload(src('pdf'), d.files[0], (f) => show(f, `Sending the PDF… ${Math.round(f * 100)}%`));
+      } else if (d.kind === 'word') {
+        await upload(src('word'), d.files[0], (f) => show(f, f < 1 ? `Sending the Word file… ${Math.round(f * 100)}%`
+          : 'Making the Word file into a PDF… (a big file takes a minute or two)'));
       } else {
         for (const [k, f] of d.files.entries()) {
           await upload(src(`image-${k}`), await serverPhoto(f), (x) => show((k + x) / d.files.length, `Sending photo ${k + 1} of ${d.files.length}…`));
