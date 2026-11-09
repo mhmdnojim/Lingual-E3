@@ -14,13 +14,19 @@ APP=/opt/lingua-books        # the code (from GitHub)
 DATA=/var/lib/lingua-books   # accounts, books, MP3s, translations (never touched by updates)
 
 echo "== Programs"
-apt-get update -q
-apt-get install -y -q python3 python3-venv git curl gpg tesseract-ocr tesseract-ocr-eng \
+# A new server first installs its own updates by itself (unattended-upgrades): meanwhile nothing
+# else can be installed. Wait for it (up to 30 minutes) instead of stopping.
+apt() { apt-get -o DPkg::Lock::Timeout=1800 "$@"; }
+if pgrep -f '/usr/bin/unattended-upgrade' >/dev/null; then
+  echo "Ubuntu is installing its own updates first: waiting until it has finished (a few minutes)…"
+fi
+apt update -q
+apt install -y -q python3 python3-venv git curl gpg tesseract-ocr tesseract-ocr-eng \
   debian-keyring debian-archive-keyring apt-transport-https
 if ! command -v caddy >/dev/null; then
-  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --batch --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' > /etc/apt/sources.list.d/caddy-stable.list
-  apt-get update -q && apt-get install -y -q caddy
+  apt update -q && apt install -y -q caddy
 fi
 
 echo "== The app's own user and folders"
@@ -56,9 +62,19 @@ sudo -u lingua "$APP/.venv/bin/pip" install -q -r "$APP/web/requirements.txt"
 
 echo "== Settings"
 if [ ! -f /etc/lingua-books.env ]; then
-  read -rp "Your admin e-mail [mhmd.nojim@gmail.com]: " ADMIN
-  ADMIN=${ADMIN:-mhmd.nojim@gmail.com}
-  read -rp "E-mail address for questions and copyright complaints (shown in the terms) [$ADMIN]: " CONTACT
+  # (Enter: the address in brackets; anything that is not an e-mail address, e.g. "y": asked again)
+  while :; do
+    read -rp "Your admin e-mail (Enter: mhmd.nojim@gmail.com): " ADMIN
+    ADMIN=${ADMIN:-mhmd.nojim@gmail.com}
+    [[ "$ADMIN" == ?*@?*.?* ]] && break
+    echo "That is not an e-mail address. Type it, or press Enter for the one in brackets."
+  done
+  while :; do
+    read -rp "E-mail address for questions and copyright complaints, shown in the terms (Enter: $ADMIN): " CONTACT
+    CONTACT=${CONTACT:-$ADMIN}
+    [[ "$CONTACT" == ?*@?*.?* ]] && break
+    echo "That is not an e-mail address. Type it, or press Enter for the one in brackets."
+  done
   ADMIN_SETUP_TOKEN=$(openssl rand -hex 16)
   umask 077
   cat > /etc/lingua-books.env <<EOF
@@ -85,6 +101,7 @@ EnvironmentFile=/etc/lingua-books.env
 WorkingDirectory=$APP
 ExecStart=$APP/.venv/bin/python $APP/web/server.py --public --proxy --no-browser --port 8765
 Restart=always
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target

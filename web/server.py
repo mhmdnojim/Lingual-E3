@@ -1700,8 +1700,10 @@ class Handler(SimpleHTTPRequestHandler):
 
 class Server(ThreadingHTTPServer):
     """Only one copy of the app may use a port. (Python's default "reuse address" lets two
-    servers share a port on Windows, and the browser may then keep talking to an old copy.)"""
-    allow_reuse_address = False
+    servers share a port on Windows, and the browser may then keep talking to an old copy.)
+    On Linux "reuse address" only lets the app take its port again at once after a restart (the
+    old copy's closed connections still hold it for a minute): two cannot listen on it there."""
+    allow_reuse_address = os.name != 'nt'
     daemon_threads = True
     request_queue_size = 256  # many readers at once wait in line, not get turned away (Python's default: 5)
 
