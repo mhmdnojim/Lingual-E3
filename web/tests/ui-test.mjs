@@ -411,7 +411,10 @@ async function websiteChecks(browser, problems) {
     await adminPage.click('.lib-form button[type=submit]');
     await adminPage.waitForFunction(() => !document.querySelector('#library [data-scope="admin"]').hidden, { timeout: 10000 }).catch(() => {});
     await adminPage.click('#library [data-scope="admin"]');
-    await adminPage.waitForFunction(() => document.querySelector('.admin-table'), { timeout: 10000 }).catch(() => {});
+    // (the Admin page opens on Users: the reports are in "Books and reports")
+    await adminPage.waitForSelector('[data-admin-tab="books"]', { timeout: 10000 }).catch(() => {});
+    await adminPage.click('[data-admin-tab="books"]').catch(() => {});
+    await adminPage.waitForFunction(() => /Reports \(/.test(document.querySelector('.admin')?.textContent || '') && document.querySelector('.admin-table'), { timeout: 10000 }).catch(() => {});
     const listed = await adminPage.$$eval('.admin-table', (t) => t[0]?.textContent || '');
     await adminPage.evaluate(() => [...document.querySelectorAll('.admin-table')[0].querySelectorAll('button')].find((b) => b.textContent === 'Hide').click());
     await sleep(600);

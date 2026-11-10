@@ -33,6 +33,9 @@ Accounts (accounts.py) and the library (library.py: books made from a text, a PD
     GET    /api/books/<id>/job             how far that is
     POST   /api/books/<id>/report          report a public book {reason, note}
     GET    /api/admin/reports              admins: open reports
+    GET    /api/admin/users[/<id>]         admins: the accounts (the Users tab: admin_users.py), or one
+    POST   /api/admin/users/<id>           admins: {action: block | unblock | make-admin | remove-admin
+                                            (owner) | password | give-days | revoke-plan | delete, ...}
     POST   /api/admin/books/<id>           admins: {action: hide | show | dismiss | delete}
     GET    /api/branches                   the branches of the library (branches.py): [{id, parent, name, empty}]
     POST   /api/branches                   admins: a new branch {name, parent}   PUT /api/branches/<id> {name, parent}
@@ -99,6 +102,7 @@ from urllib.request import Request, urlopen
 from PIL import Image
 
 import accounts
+import admin_users
 import auth
 import branches
 import db
@@ -118,7 +122,7 @@ import words
 
 # Raise when the app needs new server features; web/js/main.js checks it (NEEDS_API) and asks
 # to restart the app if an older server is still running.
-API_VERSION = 33  # 33: optional, permission-checked AI layout suggestions
+API_VERSION = 34  # 34: the Users tab of the Admin page, the owner and helper admins; 33: optional, permission-checked AI layout suggestions
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 WEB = os.path.join(ROOT, 'web')
@@ -143,6 +147,7 @@ API_BRANCH = re.compile(r'^/api/branches(?:/(\d{1,9})(/copy)?)?$')
 API_LINK = re.compile(r'^/api/links(?:/(\d{1,9}))?$')
 API_ADMIN_SUBSCRIPTION_CODE = re.compile(r'^/api/admin/subscription-codes(?:/(\d{1,9}))?$')
 API_ADMIN_SUBSCRIPTION = re.compile(r'^/api/admin/subscriptions/(\d{1,9})$')
+API_ADMIN_USER = re.compile(r'^/api/admin/users(?:/(\d{1,9}))?$')
 LIB_FILE = re.compile(r'^/lib/(L[0-9a-f]{10})/(pages|thumbs)/(\d{1,4}\.webp)$')
 LIB_PREVIEW_FILE = re.compile(r'^/lib/(L[0-9a-f]{10})/preview/(\d{1,4}\.webp)$')
 LIB_DESIGN_FILE = re.compile(r'^/lib/(L[0-9a-f]{10})/designs/(\d{1,4})\.webp$')
@@ -541,6 +546,8 @@ class Handler(SimpleHTTPRequestHandler):
                 u = accounts.session_user(morsel.value) if morsel else None
                 if MODE == 'lan' and u and u['id'] != db.LOCAL_USER:
                     u = None
+                if u:
+                    accounts.seen(u['id'])  # (the Users tab: last seen)
             self._user = u or False
         return self._user or None
 
@@ -610,7 +617,8 @@ class Handler(SimpleHTTPRequestHandler):
             return True
         if (path.startswith('/web/') or path in ('/', '/index.html', '/web')
                 or path in ('/api/version', '/api/me', '/api/login', '/api/signup', '/api/logout',
-                            '/api/password', '/api/redeem', '/api/admin/subscriptions')
+                            '/api/password', '/api/redeem', '/api/admin/subscriptions',
+                            '/api/tr-languages')  # (only the names of the languages)
                 or path.startswith('/api/admin/subscription-codes')
                 or API_ADMIN_SUBSCRIPTION.match(path)):
             return True
@@ -792,6 +800,25 @@ class Handler(SimpleHTTPRequestHandler):
             except subscriptions.SubscriptionError as e:
                 return self.send_json({'error': str(e)}, 404)
         return self.denied()
+
+    def admin_users_api(self, method, uid):
+        """The Users tab of the Admin page (admin_users.py: what each admin may do is checked there)."""
+        u = self.user()
+        if not u:
+            return self.need_account()
+        if not u['admin']:
+            return self.denied('Only an admin can see the accounts.')
+        try:
+            if method == 'GET':
+                if uid is None:
+                    return self.send_json({'users': admin_users.listing(), 'role': accounts.role(u)})
+                return self.send_json(admin_users.details(u, uid))
+            body = self.read_body()
+            if body is None:
+                return None
+            return self.send_json(admin_users.change(u, uid, body))
+        except admin_users.UsersError as e:
+            return self.send_json({'error': str(e)}, e.status)
 
     def redeem_subscription(self):
         if MODE != 'public' or not subscriptions.required():
@@ -1034,7 +1061,8 @@ class Handler(SimpleHTTPRequestHandler):
         if path == '/api/picture-ai':  # (is there a key for the AI image service: never the key itself)
             u = self.user()
             key, model = pictures.ai_settings(auth.config())
-            return self.send_json({'ready': bool(key), 'model': model, 'admin': bool(u and u['admin'])})
+            return self.send_json({'ready': bool(key), 'model': model, 'admin': bool(u and u['admin']),
+                                   'owner': accounts.is_owner(u)})
         if path == '/api/speech-ai':  # (how transcriptions are made: never the key itself)
             return self.send_json(self.speech_info())
         if path == '/api/transcribe-file':
@@ -1049,6 +1077,9 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json({'login': MODE == 'lan' and self.client_address[0] not in LOOPBACK})
         if path == '/api/transcript':
             return self.transcription(query.get('src', [''])[0], language=query.get('language', ['en'])[0])
+        m = API_ADMIN_USER.match(path)
+        if m:
+            return self.admin_users_api('GET', m.group(1))
         if path.startswith(('/api/books', '/api/admin/')) or path == '/api/branches':
             return self.get_library(path, query)
         if path == '/api/words':
@@ -1274,6 +1305,9 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_json({'ok': True})
             threading.Thread(target=self.server.shutdown, daemon=True).start()
             return None
+        m = API_ADMIN_USER.match(path)
+        if m and m.group(1):
+            return self.admin_users_api('POST', m.group(1))
         if path.startswith(('/api/books', '/api/admin/')):
             return self.change_library('POST', path)
         if API_BRANCH.match(path):
@@ -1415,13 +1449,13 @@ class Handler(SimpleHTTPRequestHandler):
         u = self.user()
         key, model, engine = transcription.speech_settings(auth.config())
         return {'ready': bool(key), 'engine': engine, 'model': model, 'local': transcription.local_ready(),
-                'admin': bool(u and u['admin']), 'can': self.may_transcribe() and bool(u)}
+                'admin': bool(u and u['admin']), 'owner': accounts.is_owner(u), 'can': self.may_transcribe() and bool(u)}
 
     def layout_ai_info(self):
         user, config = self.user(), auth.config()
         key, model, source = layout_ai.settings(config)
         admin = bool(user and user['admin'])
-        return {'ready': bool(key), 'model': model, 'admin': admin,
+        return {'ready': bool(key), 'model': model, 'admin': admin, 'owner': accounts.is_owner(user),
                 'can': bool(user and (admin or config.get('layoutAllowUsers') is True)),
                 'allowUsers': config.get('layoutAllowUsers') is True,
                 'sharedAvailable': bool(config.get('imageKey')) if admin else False,
@@ -1430,8 +1464,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def configure_layout_ai(self):
         user = self.user()
-        if not user or not user['admin']:
-            return self.denied('Only an admin can change AI layout settings.')
+        if not accounts.is_owner(user):
+            return self.denied('Only the owner of the website can change AI layout settings.')
         body = self.read_body()
         if not isinstance(body, dict):
             return self.send_json({'error': 'Invalid AI layout settings.'}, 400)
@@ -1502,8 +1536,8 @@ class Handler(SimpleHTTPRequestHandler):
         u = self.user()
         if not u:
             return self.need_account()
-        if not u['admin']:
-            return self.denied('Only an admin can change how recordings are transcribed.')
+        if not accounts.is_owner(u):
+            return self.denied('Only the owner of the website can change how recordings are transcribed.')
         body = self.read_body()
         if body is None:
             return None
@@ -1533,12 +1567,14 @@ class Handler(SimpleHTTPRequestHandler):
         if not isinstance(body, dict):
             return self.send_json({'error': 'bad request'}, 400)
         if method == 'PUT':
+            if not accounts.is_owner(u):
+                return self.denied('Only the owner of the website can change the key of the AI image service.')
             changes = {'imageKey': str(body.get('key') or '').strip() or None}
             if 'model' in body:
                 changes['imageModel'] = str(body.get('model') or '').strip()[:60] or None
             auth.set_config(**changes)
             key, model = pictures.ai_settings(auth.config())
-            return self.send_json({'ready': bool(key), 'model': model, 'admin': True})
+            return self.send_json({'ready': bool(key), 'model': model, 'admin': True, 'owner': True})
         b = library.get(str(body.get('book', '')))
         if not library.can_edit(b, u):
             return self.denied()

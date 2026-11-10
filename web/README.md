@@ -34,8 +34,8 @@ up); the browser's Back button goes up too, and the library opens again in the b
 in. **Find a book** looks in every branch, also by their names. A book is put in a branch when it
 is added (**Branch**: the one that is open) or later in its settings.
 
-**Admins make the branches** (on this computer you are the admin; on the website, the accounts
-in `LB_ADMIN_EMAIL`). In the bar above the books: **New main branch** (at the top) or **New
+**Admins make the branches** (on this computer you are the admin; on the website, the owner —
+the account in `LB_ADMIN_EMAIL` — and the helper admins the owner makes in the Users tab). In the bar above the books: **New main branch** (at the top) or **New
 sub-branch** (in the branch that is open). Admins also see the branches with nothing in them yet
 (**Empty**), to fill them; the others see only the branches with books.
 

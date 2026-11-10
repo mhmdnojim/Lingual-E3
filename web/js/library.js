@@ -6,6 +6,7 @@ import { openDialog as showDialog, closeDialog } from './media.js';
 import { designEditor, framed } from './designs.js';
 import { speechDialog } from './transcription.js';
 import { requestAILayout } from './layout-ai.js';
+import { usersAdmin } from './admin-users.js';
 
 /** The library's dialogs (adding a book, settings, names, accounts …) stay open when the page outside them is clicked. */
 const openDialog = (title, body) => showDialog(title, body, null, { keep: true });
@@ -1693,14 +1694,30 @@ export class Library {
 
   // ---------------------------------------------------------------- Admin
 
+  /**
+   * The Admin page, in parts: Users (js/admin-users.js), Books and reports, and Access codes
+   * (when the website asks for them). The part last chosen opens again.
+   */
   async renderAdmin(gen) {
     const body = $('#lib-body');
+    const codes = Boolean(this.me.subscription?.required);
+    const parts = [['users', 'Users'], ['books', 'Books and reports'], ...(codes ? [['codes', 'Access codes']] : [])];
+    let part = store.get('adminTab', 'users');
+    if (!parts.some(([k]) => k === part)) part = 'users';
+    const bar = el('div', { class: 'seg admin-tabs', role: 'radiogroup', 'aria-label': 'Admin' },
+      ...parts.map(([k, label]) => el('button', { type: 'button', role: 'radio', 'aria-checked': String(k === part), dataset: { adminTab: k },
+        onclick: () => { store.set('adminTab', k); this.renderAdmin(this.gen); } }, label)));
+    if (part === 'users') {
+      body.replaceChildren(el('div', { class: 'admin' }, bar,
+        usersAdmin({ me: this.me.user, plans: codes, openDialog: showDialog, closeDialog })));
+      return;
+    }
     let reports, books, access = null;
     try {
       [reports, books] = await Promise.all([api('GET', '/api/admin/reports'), api('GET', '/api/books?scope=all')]);
-      if (this.me.subscription?.required) access = await api('GET', '/api/admin/subscriptions');
+      if (part === 'codes') access = await api('GET', '/api/admin/subscriptions');
     } catch (e) {
-      body.replaceChildren(el('div', { class: 'lib-empty' }, e.message));
+      body.replaceChildren(el('div', { class: 'admin' }, bar, el('div', { class: 'lib-empty' }, e.message)));
       return;
     }
     if (gen !== this.gen) return;
@@ -1718,15 +1735,14 @@ export class Library {
       el('td', { class: 'admin-acts' }, b.hidden ? act(b.id, 'show', 'Show again') : act(b.id, 'hide', 'Hide'), act(b.id, 'delete', 'Delete', 'btn small danger-btn'))));
     const table = (head, rows) => el('div', { class: 'table-scroll' }, el('table', { class: 'admin-table' },
       el('thead', {}, el('tr', {}, ...head.map((h) => el('th', {}, h)))), el('tbody', {}, ...rows)));
-    const sections = [
+    const sections = access ? [this.subscriptionAdmin(access, books, table)] : [
       el('h3', {}, `Reports (${reports.length})`),
       el('p', { class: 'hint' }, 'A book reported by three different people is hidden at once, until you look at it.'),
       table(['Book', 'Reason', 'Shared by', 'Date', ''], reportRows),
       el('h3', {}, `All public books (${books.length})`),
       table(['Book', 'Shared by', 'Licence', 'Changed', ''], bookRows),
     ];
-    if (access) sections.push(this.subscriptionAdmin(access, books, table));
-    body.replaceChildren(el('div', { class: 'admin' }, ...sections));
+    body.replaceChildren(el('div', { class: 'admin' }, bar, ...sections));
   }
 
   subscriptionAdmin(access, books, table) {

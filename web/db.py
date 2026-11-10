@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS users (
   admin INTEGER NOT NULL DEFAULT 0,
   disabled INTEGER NOT NULL DEFAULT 0,
   version INTEGER NOT NULL DEFAULT 1,      -- raised to log out everywhere
-  created INTEGER NOT NULL
+  created INTEGER NOT NULL,
+  last_seen INTEGER NOT NULL DEFAULT 0     -- the last time it was used (at most every 5 minutes)
 );
 CREATE TABLE IF NOT EXISTS books (
   id TEXT PRIMARY KEY,
@@ -93,7 +94,8 @@ CREATE TABLE IF NOT EXISTS subscription_codes (
   redeem_until INTEGER NOT NULL DEFAULT 0,
   redeemed_by INTEGER,
   redeemed_at INTEGER,
-  revoked INTEGER NOT NULL DEFAULT 0
+  revoked INTEGER NOT NULL DEFAULT 0,
+  kind TEXT NOT NULL DEFAULT 'code'        -- code | given (days given by an admin in the Users tab)
 );
 CREATE TABLE IF NOT EXISTS subscriptions (
   id INTEGER PRIMARY KEY,
@@ -130,6 +132,12 @@ def conn():
                 c.execute('ALTER TABLE books ADD COLUMN branch INTEGER')
             if 'course' in columns:  # (for a while a book had a course and a level: now the branches of them)
                 _courses_to_branches(c)
+            # (the Users tab of the Admin page: when each account was last used; plan days given by
+            # an admin are kept as a code of kind 'given', used at once)
+            if 'last_seen' not in {r[1] for r in c.execute('PRAGMA table_info(users)').fetchall()}:
+                c.execute('ALTER TABLE users ADD COLUMN last_seen INTEGER NOT NULL DEFAULT 0')
+            if 'kind' not in {r[1] for r in c.execute('PRAGMA table_info(subscription_codes)').fetchall()}:
+                c.execute("ALTER TABLE subscription_codes ADD COLUMN kind TEXT NOT NULL DEFAULT 'code'")
             if not c.execute('SELECT 1 FROM users WHERE id = ?', (LOCAL_USER,)).fetchone():
                 c.execute("INSERT INTO users (id, email, name, admin, created) VALUES (?, 'local', 'You', 1, ?)",
                           (LOCAL_USER, int(time.time())))

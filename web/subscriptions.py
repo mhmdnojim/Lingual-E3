@@ -1,7 +1,9 @@
 """Time-limited, server-checked access codes for public deployments.
 
 The plaintext code is returned once to the admin. Only its SHA-256 hash is stored; redemption
-consumes it and creates a time-limited grant on the user's account.
+consumes it and creates a time-limited grant on the user's account. An admin can also give days
+to an account in the Users tab (grant): kept as a code of kind 'given', used at once, never shown
+in the list of codes.
 """
 import base64
 import hashlib
@@ -119,19 +121,47 @@ def redeem(raw, user_id):
             (int(user_id), now, row['id'])).rowcount
         if changed != 1:
             raise SubscriptionError('That access code has already been used.')
-        books = json.loads(row['books'] or '["*"]')
-        # Codes with the same scope extend from the current end date; different plans start now.
-        existing = c.execute(
-            'SELECT books, ends_at FROM subscriptions WHERE user_id = ? AND revoked = 0 AND ends_at > ?',
-            (int(user_id), now)).fetchall()
-        start = now
-        for grant in existing:
-            if json.loads(grant['books'] or '["*"]') == books:
-                start = max(start, int(grant['ends_at']))
-        end = start + int(row['duration_days']) * 86400
-        c.execute('INSERT INTO subscriptions (user_id, code_id, books, starts_at, ends_at) VALUES (?, ?, ?, ?, ?)',
-                  (int(user_id), int(row['id']), json.dumps(books), start, end))
-        return {'startsAt': start, 'expiresAt': end, 'books': books, 'days': int(row['duration_days'])}
+        return _add(c, user_id, row['id'], json.loads(row['books'] or '["*"]'), row['duration_days'], now)
+
+    return db.transaction(apply)
+
+
+def _add(c, user_id, code_id, books, days, now):
+    """A grant of days for these books. The same books as a grant not ended yet: from its end
+    date (days added); other books: from now."""
+    existing = c.execute(
+        'SELECT books, ends_at FROM subscriptions WHERE user_id = ? AND revoked = 0 AND ends_at > ?',
+        (int(user_id), now)).fetchall()
+    start = now
+    for grant in existing:
+        if json.loads(grant['books'] or '["*"]') == books:
+            start = max(start, int(grant['ends_at']))
+    end = start + int(days) * 86400
+    c.execute('INSERT INTO subscriptions (user_id, code_id, books, starts_at, ends_at) VALUES (?, ?, ?, ?, ?)',
+              (int(user_id), int(code_id), json.dumps(books), start, end))
+    return {'startsAt': start, 'expiresAt': end, 'books': books, 'days': int(days)}
+
+
+def grant(admin_id, user_id, days, books, label=''):
+    """Days given by an admin to an account (no code: the Users tab), added as a code would add them."""
+    try:
+        days = int(days)
+    except (TypeError, ValueError):
+        raise SubscriptionError('Enter the number of days.')
+    if not 1 <= days <= 3650:
+        raise SubscriptionError('Give from 1 to 3,650 days.')
+    books = _books(books)
+    label = ' '.join(str(label).split())[:80]
+    now = int(time.time())
+
+    def apply(c):
+        # (a hash nobody can type: "given" codes are never redeemed)
+        code_id = c.execute(
+            'INSERT INTO subscription_codes (code_hash, code_hint, label, duration_days, books, created_by, created, '
+            "redeem_until, redeemed_by, redeemed_at, kind) VALUES (?, '', ?, ?, ?, ?, ?, 0, ?, ?, 'given')",
+            (_hash('given:' + secrets.token_hex(16)), label, days, json.dumps(books), int(admin_id), now,
+             int(user_id), now)).lastrowid
+        return _add(c, user_id, code_id, books, days, now)
 
     return db.transaction(apply)
 
@@ -179,7 +209,7 @@ def can_access_book(user_id, book_id, admin=False, now=None):
 def admin_data(now=None):
     now = int(time.time()) if now is None else int(now)
     codes = db.rows('SELECT id, code_hint, label, duration_days, books, created, redeem_until, redeemed_by, redeemed_at, revoked '
-                    'FROM subscription_codes ORDER BY id DESC LIMIT 500')
+                    "FROM subscription_codes WHERE kind = 'code' ORDER BY id DESC LIMIT 500")
     for row in codes:
         row['books'] = json.loads(row['books'] or '["*"]')
         if row['revoked']:
@@ -191,13 +221,31 @@ def admin_data(now=None):
         else:
             row['status'] = 'ready'
     grants = db.rows(
-        'SELECT s.id, s.user_id, u.email, u.name, s.books, s.starts_at, s.ends_at, s.revoked, s.revoked_at, c.code_hint '
+        'SELECT s.id, s.user_id, u.email, u.name, s.books, s.starts_at, s.ends_at, s.revoked, s.revoked_at, c.code_hint, '
+        'c.kind, c.label '
         'FROM subscriptions s JOIN users u ON u.id = s.user_id JOIN subscription_codes c ON c.id = s.code_id '
         'ORDER BY s.id DESC LIMIT 1000')
     for row in grants:
         row['books'] = json.loads(row['books'] or '["*"]')
-        row['status'] = 'revoked' if row['revoked'] else 'scheduled' if row['starts_at'] > now else 'expired' if row['ends_at'] <= now else 'active'
+        row['status'] = _state(row, now)
     return {'codes': codes, 'subscriptions': grants}
+
+
+def _state(row, now):
+    return 'revoked' if row['revoked'] else 'scheduled' if row['starts_at'] > now else 'expired' if row['ends_at'] <= now else 'active'
+
+
+def of_user(user_id, now=None):
+    """An account's grants, newest first: {id, books, starts_at, ends_at, status, kind (code |
+    given), label, code_hint}."""
+    now = int(time.time()) if now is None else int(now)
+    out = db.rows('SELECT s.id, s.books, s.starts_at, s.ends_at, s.revoked, s.revoked_at, c.kind, c.label, c.code_hint '
+                  'FROM subscriptions s JOIN subscription_codes c ON c.id = s.code_id WHERE s.user_id = ? ORDER BY s.id DESC',
+                  (int(user_id),))
+    for row in out:
+        row['books'] = json.loads(row['books'] or '["*"]')
+        row['status'] = _state(row, now)
+    return out
 
 
 def cancel_code(code_id):

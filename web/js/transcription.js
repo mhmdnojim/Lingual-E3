@@ -60,7 +60,7 @@ export async function speechDialog(app, onChange = null) {
   const ways = () => {
     const seg = el('div', { class: 'seg speech-ways', role: 'radiogroup', 'aria-label': 'How recordings are transcribed' },
       ...[['eleven', 'ElevenLabs (on the internet)'], ['local', 'This computer (Whisper)']].map(([k, label]) =>
-        el('button', { type: 'button', role: 'radio', 'aria-checked': String(info.engine === k), dataset: { engine: k }, disabled: !info.admin }, label)));
+        el('button', { type: 'button', role: 'radio', 'aria-checked': String(info.engine === k), dataset: { engine: k }, disabled: !info.owner }, label)));
     const state = el('p', { class: 'hint', 'aria-live': 'polite' });
     const tell = () => {
       state.textContent = info.engine === 'eleven'
@@ -77,8 +77,10 @@ export async function speechDialog(app, onChange = null) {
       tell();
     });
     tell();
-    return [seg, state, info.admin ? el('div', { class: 'form-buttons' },
+    // (only the owner of the website changes the way and the key: helper admins see them)
+    return [seg, state, info.owner ? el('div', { class: 'form-buttons' },
       el('button', { class: 'link-btn speech-key', type: 'button', onclick: () => how.replaceChildren(...keyForm()) }, info.ready ? 'Change the key of ElevenLabs' : 'Add a key of ElevenLabs')) : null,
+    info.admin && !info.owner ? el('p', { class: 'hint' }, 'Only the owner of the website changes this.') : null,
     info.can ? null : el('p', { class: 'hint' }, 'Only an admin can transcribe here: ElevenLabs costs money.')].filter(Boolean);
   };
   const keyForm = () => {
@@ -100,7 +102,7 @@ export async function speechDialog(app, onChange = null) {
     el('div', { class: 'form-buttons' }, el('button', { class: 'btn', type: 'button', onclick: () => how.replaceChildren(...ways()) }, info.ready ? 'Keep the one saved' : 'Not now'), save),
     state];
   };
-  how.replaceChildren(...(info.admin && !info.ready && !info.local ? keyForm() : ways()));
+  how.replaceChildren(...(info.owner && !info.ready && !info.local ? keyForm() : ways()));
 }
 
 /**

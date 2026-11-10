@@ -2,7 +2,7 @@
 import { el } from './util.js';
 
 export function layoutAISettings(info, configure, changed) {
-  if (!info?.admin || !configure) return el('p', { class: 'hint' },
+  if (!info?.owner || !configure) return el('p', { class: 'hint' },
     info?.can ? 'AI analysis sends this page image and its OCR text to OpenAI. API usage is billed.'
       : 'An admin can enable optional AI layout analysis. Local paragraph editing is available.');
   const details = el('details', { class: 'layout-ai-settings' });

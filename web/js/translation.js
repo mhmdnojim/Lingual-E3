@@ -46,7 +46,8 @@ export class Translator {
   get fromName() { return this.langs.find((l) => l.code === (SAME[this.from] || this.from))?.name || 'English'; }
 
   async loadLanguages() {
-    try { this.langs = await (await fetch('/api/tr-languages')).json(); } catch { this.langs = []; }
+    // (a list, or nothing: a refusal is not a list of languages)
+    try { const d = await (await fetch('/api/tr-languages')).json(); this.langs = Array.isArray(d) ? d : []; } catch { this.langs = []; }
     this.fillLanguages();
     this.updateButton();
     this.app.fillTranslationVoice?.(); // (the language's name is known now)

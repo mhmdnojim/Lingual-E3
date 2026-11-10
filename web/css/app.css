@@ -1320,6 +1320,23 @@ a.btn { text-decoration: none; } /* (a link that looks like a button: Download t
 .admin-table th, .admin-table td { padding: 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
 .admin-table th { color: var(--muted); font-weight: 600; font-size: 12.5px; }
 .admin-acts { display: flex; flex-wrap: wrap; gap: 4px; }
+/* (its parts: Users, Books and reports, Access codes) */
+.admin-tabs { margin: 4px 0 14px; flex-wrap: wrap; }
+.users-tools { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+.users-tools .input { flex: 1 1 220px; }
+.users-tools .select { flex: 0 1 180px; }
+.users-table td .badge { margin-left: 6px; }
+.users-table td .badge.role-owner, .users-table td .badge.role-admin { margin-left: 0; }
+.badge.role-owner { background: var(--accent-soft); color: var(--accent); }
+.badge.role-admin { background: rgba(37, 99, 235, .14); color: #2563eb; }
+.user-page { display: grid; gap: 6px; min-width: min(560px, 100%); }
+.user-page h4 { margin: 14px 0 4px; }
+.user-facts { margin: 0; }
+.give-form { padding: 6px 0 0; }
+.give-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.give-row .input { width: 110px; }
+.field-label { font-size: 13px; color: var(--muted); }
+.user-acts { justify-content: flex-start; }
 .subscription-admin { margin-top: 30px; padding-top: 16px; border-top: 1px solid var(--line); }
 .subscription-code-form { width: min(680px, 100%); padding: 10px 0; }
 .subscription-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }

@@ -145,7 +145,7 @@ try {
   };
   // A key of another AI (Kimi): refused, said plainly; changed for OpenAI's.
   await saveKey('sk-kimi-key');
-  assert.deepEqual((await api('GET', '/api/picture-ai')).data, { ready: true, model: 'gpt-image-1', admin: true }, 'the key kept, never sent back');
+  assert.deepEqual((await api('GET', '/api/picture-ai')).data, { ready: true, model: 'gpt-image-1', admin: true, owner: true }, 'the key kept, never sent back (this computer: you are the owner)');
   await button('Make a picture');
   await page.waitForFunction(() => /OpenAI did not accept the key/.test(document.querySelector('.pic-dialog [aria-live]')?.textContent), { timeout: 10000 });
   await page.click('.pic-dialog .pic-key');

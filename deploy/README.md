@@ -95,6 +95,23 @@ generate a code and QR link, cancel unused codes, or revoke a user's active subs
 QR opens the sign-in and redemption page. `LB_PUBLIC_URL` must be the site's HTTPS address so the
 QR works on phones.
 
+### Admins and the Users tab
+
+The **owner** is the account with the e-mail in `LB_ADMIN_EMAIL`. In **Library → Admin → Users**
+the owner sees every account (role, plan, last seen, books) and opens one to:
+
+- give it plan days without a code (7, 30, 90, 365 or another number; all shared books or chosen
+  ones; added after a plan of the same books that has not ended), or take a plan away;
+- **block** it (logged out at once, cannot log in) and unblock it;
+- set a **new password** when the user forgot theirs (the site sends no e-mails); the account is
+  logged out everywhere;
+- **make it an admin** (a helper admin) or a user again — only the owner does this;
+- **delete** it, with its books, MP3s, new words and imports.
+
+Helper admins manage users, books, reports and codes, but not other admins or the owner, and they
+cannot change the API keys (ElevenLabs, OpenAI): only the owner can. Nobody blocks, deletes or
+demotes the owner or themselves.
+
 The admin account uses `LB_ADMIN_EMAIL` and `LB_ADMIN_SETUP_TOKEN`. To change the owner on an
 existing server, update those values in `/etc/lingua-books.env`, restart the service, then claim
 the configured e-mail with the owner setup code. To turn subscriptions off, set

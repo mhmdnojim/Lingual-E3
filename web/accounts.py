@@ -3,7 +3,9 @@
 Passwords are kept only as scrypt hashes. After logging in the browser keeps a cookie
 "lb_session" for 30 days: user id, the user's "version" (raised to log out everywhere), the
 time it ends, signed with HMAC-SHA256 and the server's secret key (DATA/secret.key, made once).
-The admins are the accounts whose e-mail is in LB_ADMIN_EMAIL (several: separated by commas).
+The owner is the admin whose e-mail is in LB_ADMIN_EMAIL (several: separated by commas), and on
+this computer its only user. The owner makes other accounts admins too (helper admins: the Users
+tab of the Admin page, admin_users.py); only the owner makes admins and changes the API keys.
 """
 import hashlib
 import hmac
@@ -20,8 +22,11 @@ DAYS = 30
 EMAIL_RE = re.compile(r'^[^@\s]{1,64}@[^@\s]{1,190}\.[a-z]{2,}$', re.I)
 ADMINS = {e.strip().lower() for e in (os.environ.get('LB_ADMIN_EMAIL') or '').split(',') if e.strip()}
 
+SEEN_EVERY = 300  # (when an account was last used is saved at most every 5 minutes)
+
 _lock = threading.Lock()
 _tries = {}  # (kind, address) -> recent times, to slow down guessing and mass sign-ups
+_seen = {}   # user id -> when its last use was saved
 
 
 class AccountError(Exception):
@@ -66,8 +71,28 @@ def limited(kind, address, most, seconds):
         return False
 
 
+def is_owner(u):
+    """The owner of the website: an admin whose e-mail is in LB_ADMIN_EMAIL (or this computer's user)."""
+    return bool(u and u['admin'] and (u['id'] == db.LOCAL_USER or str(u['email']).lower() in ADMINS))
+
+
+def role(u):
+    return 'owner' if is_owner(u) else 'admin' if u and u['admin'] else 'user'
+
+
 def public_user(u):
-    return {'id': u['id'], 'name': u['name'], 'email': u['email'], 'admin': bool(u['admin'])} if u else None
+    return {'id': u['id'], 'name': u['name'], 'email': u['email'], 'admin': bool(u['admin']),
+            'owner': is_owner(u), 'role': role(u)} if u else None
+
+
+def seen(uid, now=None):
+    """The account is being used now (saved at most every SEEN_EVERY seconds)."""
+    now = int(time.time()) if now is None else int(now)
+    with _lock:
+        if now - _seen.get(uid, 0) < SEEN_EVERY:
+            return
+        _seen[uid] = now
+    db.run('UPDATE users SET last_seen = ? WHERE id = ?', (now, uid))
 
 
 def sign_up(email, name, password, address, admin_setup_token=''):
@@ -104,7 +129,7 @@ def log_in(email, password, address, admin_setup_token=''):
         time.sleep(0.5)
         raise AccountError('Wrong e-mail or password.')
     if u['disabled']:
-        raise AccountError('This account is closed.')
+        raise AccountError('This account is blocked. Ask the website’s admin.')
     if email in ADMINS and not u['admin']:
         if os.environ.get('LB_REQUIRE_SUBSCRIPTION', '').strip().lower() in ('1', 'true', 'yes', 'on'):
             expected = os.environ.get('LB_ADMIN_SETUP_TOKEN', '')
@@ -114,6 +139,7 @@ def log_in(email, password, address, admin_setup_token=''):
                 raise AccountError('Enter the owner setup code to activate the administrator account.')
         db.run('UPDATE users SET admin = 1 WHERE id = ?', (u['id'],))
         u['admin'] = 1
+    seen(u['id'])
     return u
 
 
