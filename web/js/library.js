@@ -5,6 +5,7 @@ import { $, $$, el, icon, store, toast } from './util.js';
 import { openDialog as showDialog, closeDialog } from './media.js';
 import { designEditor, framed } from './designs.js';
 import { speechDialog } from './transcription.js';
+import { requestAILayout } from './layout-ai.js';
 
 /** The library's dialogs (adding a book, settings, names, accounts …) stay open when the page outside them is clicked. */
 const openDialog = (title, body) => showDialog(title, body, null, { keep: true });
@@ -1153,13 +1154,13 @@ export class Library {
       el('div', { class: 'sample-text', lang: s.options.language }, p.text || 'No words were found on this page.'))));
     // The designs of the pages: on each, the app reads its areas in their order (web/designs.py).
     // Its areas are used once the owner has checked them (saved): laid on pages that only look alike they could cut them wrongly.
-    const designs = ready && s.designs > 0 && el('div', { class: 'sample-tips design-note' },
-      el('h4', {}, `The app found ${s.designs} design${s.designs === 1 ? '' : 's'} of page`),
-      el('p', {}, 'Pages that look alike (as the units of a textbook) have the same design. On every page of a design the app can read '
-        + 'the same areas, in their numbered order, and leave out those marked “Don’t read”. '
-        + (s.checked ? 'The pages of each design are read so, as you saved them.'
+    const designs = ready && el('div', { class: 'sample-tips design-note' },
+      el('h4', {}, s.designs ? `The app found ${s.designs} design${s.designs === 1 ? '' : 's'} of page` : 'Review the paragraphs of every page'),
+      el('p', {}, 'Review individual pages to change their paragraph outlines and reading order. Pages that look alike can also share a design. '
+        + 'Areas marked “Don’t read” are left out. '
+        + (s.checked ? 'Your saved individual layouts and shared designs are used in the sample and the finished book.'
           : 'The frames on the pages below are its suggestion. Check them, change them if needed, and save: then the pages of each design are read by them. Until then every page is read whole, as before.')),
-      el('button', { class: 'btn small', type: 'button', onclick: () => this.designs(book, s, q) }, s.checked ? 'See and change the designs' : 'Check the designs'));
+      el('button', { class: 'btn small', type: 'button', onclick: () => this.designs(book, s, q) }, 'Review all pages and paragraph outlines'));
     const tips = ready && s.tips.length > 0 && el('div', { class: 'sample-tips' }, el('h4', {}, 'The app noticed'),
       ...s.tips.map((t) => el('div', { class: 'sample-tip' }, el('p', {}, t.text),
         t.set ? el('button', { class: 'btn small', type: 'button', onclick: () => { q.set(t.set); again(true); } }, 'Change it and try again') : null)));
@@ -1190,15 +1191,19 @@ export class Library {
   async designs(book, s, q, n) {
     let info;
     try { info = await api('GET', `/api/books/${book.id}/designs`); } catch (err) { toast(err.message); return; }
+    const aiInfo = await api('GET', '/api/layout-ai').catch(() => null);
     const sharp = Object.fromEntries(s.pages.map((p) => [p.n, p.img])); // (the pages of the sample: drawn big)
     const back = () => this.review(book, s, q.value());
-    step(`Designs of the pages: ${book.title}`, designEditor({
-      info, first: n,
+    step(`Page layouts: ${book.title}`, designEditor({
+      info, first: n, aiInfo,
       picture: (k, small) => (!small && sharp[k]) || `/lib/${book.id}/designs/${k}.webp?v=${info.token}`,
       onCancel: back,
       onAgain: () => this.sample(book, q.value(), { again: true }),
-      onSave: async (designs) => {
-        await api('PUT', `/api/books/${book.id}/designs`, { designs });
+      onPage: (n) => api('POST', `/api/books/${book.id}/layout/${n}`),
+      onConfigureAI: (body) => api('PUT', '/api/layout-ai', body),
+      onAnalyze: (n, refresh, progress) => requestAILayout(book.id, n, refresh, progress),
+      onSave: async (designs, pageAreas) => {
+        await api('PUT', `/api/books/${book.id}/designs`, { designs, pageAreas });
         this.sample(book, q.value(), { same: true });
       },
     }));

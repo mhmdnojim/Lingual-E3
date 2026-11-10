@@ -112,24 +112,56 @@ on the page and numbered in the order they are read; their colour says what is i
 | Area | How it is read |
 |---|---|
 | Text (blue) | As the app finds it. |
+| One paragraph (blue) | All text in this outline belongs to one paragraph; its sentences are split normally. |
+| Heading (brown) | Read as one unit, including a title with punctuation such as “OMG! Where is my passport?”. |
+| Separate exercise lines (teal) | Each line is a separate reading unit. Use separate outlines for table cells or columns. |
 | Dialogue (green) | Also without the speakers' names at the start of the lines (“A:”, “王方：”, “Wang Fang:”). Found by itself when two lines start so. |
 | New words (purple) | Each row: the word, then its meaning (number, pinyin, part of speech left out), also when the app cannot find the list's columns. Found by itself under a heading “生词”, “New Words”, “Vocabulary”. |
 | Don't read (grey, dashed) | Left out (the speakers' pictures, the page headings, an English version …). |
 
-The frames are only a suggestion until you check them: until then every page is read whole, as
-before (an example page's frames laid on other pages that only look alike could cut their text
-wrongly). **Check the designs** (or **Change the areas of design …** on a page of the sample) opens
-the designs: a tab for each, the page with its frames, its pages below (each shows the same frames).
-Drag on the page where there is no frame to draw one; drag a frame to move it, its corners to change
-its size; the Delete key removes the one selected. Beside the page: what is in each area, ↑ ↓ to read
-it earlier or later, ✕ to remove it; **Its design** moves the page to another design, to **No design**
-(the whole page read as before) or to **a new design** of its own. A change is for every page of the
-design. **Use these designs, and read the sample again**: from now on the pages of each design are
-read by its frames, the sample first; **Find the designs again** starts over. Then **Make all …
-pages** reads each page of a design area by area, in their order. A
-page's text a little longer than its example's is not lost: words outside every frame go with the
-nearest one. Without frames (a design whose page was not read yet, or **No design**) a page is read
-whole, as before.
+Click **Review all pages and paragraph outlines** in the sample review. Every selected source
+page is available through thumbnails, **Previous / Next**, and the page selector. A page's text
+is read on demand, so a large scanned book does not need OCR of every page before review starts.
+
+The default is **Edit this page only**. Each page gets its own paragraph outlines. Click an
+outline or its number to select it and see its text. Drag it to move it, drag its corners to resize
+it, or enter **Left, Top, Width, Height** percentages. Draw on an empty part of the page to add
+an outline. Use **↑ / ↓** to change reading order, **✕ / Delete** to exclude a paragraph, and
+**Undo** to take back a change. Changes stay while navigating between pages. Text outside an
+individually reviewed page's outlines is excluded; the editor reports how many detected words
+are outside. Saving a page with no outlines deliberately leaves that page without readable text.
+
+**Edit all pages of this design** changes a shared template. Pages with individual saved layouts
+keep their own changes. Shared templates retain their earlier behaviour: words outside the boxes
+go with the nearest area. Use **Don't read** to exclude text through a shared template. **Its
+design** moves a page to another template or a new one of its own.
+
+**Save layouts and preview reading** saves the layouts and reads the sample again. Then
+**Make all … pages** applies them to the finished book. The original PDF/Word file and page
+pictures stay intact. Local review is always available: it adds conservative column-gap
+separation and support for large opening capitals, but it cannot guarantee automatic
+understanding of every textbook exercise. Word files use this same review after being converted
+to PDF.
+
+### Optional AI layout suggestions
+
+An administrator can enable **Analyze layout with AI** in the page-layout editor. This is an
+explicit, optional second opinion for difficult pages; it does not run automatically during
+upload, and it never replaces the local OCR text. The server sends the selected page image and
+the OCR word boxes to the configured OpenAI Responses API. The model returns only groups of the
+existing word IDs, using structured JSON; the server turns those groups back into rectangles,
+checks that every word is assigned once, rejects overlapping or invented groups, and preserves
+the current outlines if the request fails. Results are staged as a preview, so the user must
+choose **Preview AI outlines** and then **Save layouts** before anything changes.
+
+To configure it, open the administrator settings and enter a dedicated OpenAI API key and a
+compatible vision/structured-output model (the default is `gpt-4.1`). The key is kept on the
+server and is never sent to the browser or included in an error message. A deployment may use
+`OPENAI_API_KEY` as a server environment fallback; reusing the saved image-generation key is a
+separate opt-in setting. Administrators may allow book owners to use the feature, with a small
+server-side daily request limit. Requests are not stored by the API (`store: false`), but normal
+provider usage and billing still apply. If the page is already cached, choosing **Analyze** again
+uses the saved result; **Analyze again (new paid request)** explicitly refreshes it.
 
 Pinyin in scans and photos can be read with wrong tone marks. When Chinese is the main language,
 the app keeps Chinese and English and filters detected pinyin from the extracted text. Check the

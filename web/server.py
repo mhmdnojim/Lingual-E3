@@ -104,6 +104,7 @@ import branches
 import db
 import ids
 import library
+import layout_ai
 import migration
 import ocr
 import office
@@ -117,7 +118,7 @@ import words
 
 # Raise when the app needs new server features; web/js/main.js checks it (NEEDS_API) and asks
 # to restart the app if an older server is still running.
-API_VERSION = 31  # 23: optional subscription codes and time-limited book access; 24: translations from the book's language; 25: pinyin; 26: a page's original text, reading a page again step by step; 27: the designs of a book's pages; 28: pictures replaced; 29: a book's audio and video; 30: its play buttons changed by hand; 31: a book added from a Word file
+API_VERSION = 33  # 33: optional, permission-checked AI layout suggestions
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 WEB = os.path.join(ROOT, 'web')
@@ -135,7 +136,7 @@ API_WORD = re.compile(r'^/api/words/(w[0-9a-f]{12})$')
 API_WORD_CATEGORY = re.compile(r'^/api/words/categories(?:/(def|common|c[0-9a-f]{8}))?$')
 API_JOB = re.compile(r'^/api/jobs/([0-9a-f]{12})$')
 API_BOOK = re.compile(r'^/api/books/(\w{1,20})$')
-API_BOOK_PART = re.compile(r'^/api/books/(L[0-9a-f]{10})/(source|make|job|report|preview|designs|pictures|tracks|buttons)(?:/([\w-]{1,20}))?$')
+API_BOOK_PART = re.compile(r'^/api/books/(L[0-9a-f]{10})/(source|make|job|report|preview|designs|layout|layout-ai|pictures|tracks|buttons)(?:/([\w-]{1,20}))?$')
 LIB_PDF = re.compile(r'^/lib/(L[0-9a-f]{10})/book\.pdf$')
 API_ADMIN_BOOK = re.compile(r'^/api/admin/books/(L[0-9a-f]{10})$')
 API_BRANCH = re.compile(r'^/api/branches(?:/(\d{1,9})(/copy)?)?$')
@@ -896,6 +897,16 @@ class Handler(SimpleHTTPRequestHandler):
                 if body is None:
                     return None
                 return self.send_json(library.save_designs(b, body))
+            if part == 'layout' and method == 'POST':
+                number = m.group(3) or ''
+                if not number.isdigit():
+                    raise library.LibraryError('Choose a valid source page.')
+                return self.send_json(library.review_layout(b, int(number)))
+            if part == 'layout-ai' and method == 'POST':
+                number = m.group(3) or ''
+                if not number.isdigit():
+                    raise library.LibraryError('Choose a valid source page.')
+                return self.post_layout_ai(b, int(number))
             if part == 'pictures' and method == 'POST' and m.group(3):  # (the new picture is the body; its box in the address)
                 q = {k: v[0] for k, v in parse_qs(urlsplit(self.path).query).items()}
                 data = self.read_body((library.LIMITS['image_mb'] + 1) * 1024 * 1024, raw=True)
@@ -936,7 +947,7 @@ class Handler(SimpleHTTPRequestHandler):
             if part == 'tracks' and method == 'DELETE' and not m.group(3):
                 library.remove_tracks(b)
                 return self.send_json(self.tracks_info(library.get(b['id'])))
-        except (library.LibraryError, branches.BranchError) as e:
+        except (library.LibraryError, branches.BranchError, ocr.OcrError) as e:
             return self.send_json({'error': str(e)}, 400)
         return self.denied()
 
@@ -1018,6 +1029,8 @@ class Handler(SimpleHTTPRequestHandler):
                                    'licenses': library.LICENSES, 'reasons': library.REPORT_REASONS,
                                    'limits': library.limits(user), 'subscription': subscription,
                                    'wordFiles': office.available()})  # (can a book be added from a Word file here)
+        if path == '/api/layout-ai':
+            return self.send_json(self.layout_ai_info())
         if path == '/api/picture-ai':  # (is there a key for the AI image service: never the key itself)
             u = self.user()
             key, model = pictures.ai_settings(auth.config())
@@ -1161,7 +1174,8 @@ class Handler(SimpleHTTPRequestHandler):
         m = LIB_DESIGN_FILE.match(path)
         if m:  # a page drawn small, to see its design: only its owner
             b = library.get(m.group(1))
-            f = library.design_picture(m.group(1), int(m.group(2))) if library.can_edit(b, self.user()) else None
+            query = parse_qs(urlsplit(self.path).query)
+            f = library.design_picture(m.group(1), int(m.group(2)), query.get('full') == ['1']) if library.can_edit(b, self.user()) else None
             if not f:
                 return self.send_error(404)
             return self.send_file(f, 'image/webp', private=True)
@@ -1403,6 +1417,85 @@ class Handler(SimpleHTTPRequestHandler):
         return {'ready': bool(key), 'engine': engine, 'model': model, 'local': transcription.local_ready(),
                 'admin': bool(u and u['admin']), 'can': self.may_transcribe() and bool(u)}
 
+    def layout_ai_info(self):
+        user, config = self.user(), auth.config()
+        key, model, source = layout_ai.settings(config)
+        admin = bool(user and user['admin'])
+        return {'ready': bool(key), 'model': model, 'admin': admin,
+                'can': bool(user and (admin or config.get('layoutAllowUsers') is True)),
+                'allowUsers': config.get('layoutAllowUsers') is True,
+                'sharedAvailable': bool(config.get('imageKey')) if admin else False,
+                'useImageKey': config.get('layoutUseImageKey') is True if admin else False,
+                'source': source, 'dailyLimit': 20}
+
+    def configure_layout_ai(self):
+        user = self.user()
+        if not user or not user['admin']:
+            return self.denied('Only an admin can change AI layout settings.')
+        body = self.read_body()
+        if not isinstance(body, dict):
+            return self.send_json({'error': 'Invalid AI layout settings.'}, 400)
+        changes = {}
+        if 'key' in body:
+            key = str(body['key'] or '').strip()
+            if len(key) > 300 or '\n' in key or '\r' in key:
+                return self.send_json({'error': 'Enter a valid OpenAI API key.'}, 400)
+            changes['layoutKey'] = key or None
+        if 'model' in body:
+            model = str(body['model'] or '').strip()
+            if not re.fullmatch(r'[A-Za-z0-9_.:\-]{1,100}', model):
+                return self.send_json({'error': 'Enter a valid model ID supporting images and structured output.'}, 400)
+            changes['layoutModel'] = model
+        for request, field in [('allowUsers', 'layoutAllowUsers'), ('useImageKey', 'layoutUseImageKey')]:
+            if request in body:
+                changes[field] = body[request] is True
+        auth.set_config(**changes)
+        return self.send_json(self.layout_ai_info())
+
+    def post_layout_ai(self, book, n):
+        info = self.layout_ai_info()
+        if not info['can']:
+            return self.denied('The admin has not enabled AI layout analysis for book owners.')
+        body = self.read_body()
+        if not isinstance(body, dict):
+            return self.send_json({'error': 'Invalid AI layout request.'}, 400)
+        if not info['ready']:
+            return self.send_json({'error': 'Add an OpenAI API key in AI layout settings first.'}, 400)
+        user = self.user()
+        if not user['admin'] and accounts.limited('layout-ai', str(user['id']), info['dailyLimit'], 86400):
+            return self.send_json({'error': 'Your daily AI layout limit is reached. Use local outlines or try tomorrow.'}, 429)
+        stream = body.get('progress') is True
+        if stream:
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/x-ndjson; charset=utf-8')
+            self.send_header('X-Accel-Buffering', 'no')
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+
+        def tell(**data):
+            self.wfile.write((json.dumps(data, ensure_ascii=False) + '\n').encode('utf-8'))
+            self.wfile.flush()
+
+        try:
+            key, model, _ = layout_ai.settings(auth.config())
+            def progress(at, message):
+                if stream:
+                    try:
+                        tell(at=at, message=message)
+                    except OSError:
+                        pass  # complete and cache a paid response even if its browser closed
+            result = library.analyze_layout(book, n, key, model, body.get('refresh') is True, progress)
+            return tell(result=result) if stream else self.send_json(result)
+        except (layout_ai.LayoutError, library.LibraryError, ocr.OcrError) as error:
+            return tell(error=str(error)) if stream else self.send_json({'error': str(error)}, 400)
+        except OSError:
+            if not stream:
+                return self.send_json({'error': 'The page or layout cache could not be read. Try local outlines.'}, 500)
+            try:
+                return tell(error='The layout cache could not be saved. Your current outlines are kept.')
+            except OSError:
+                return None
+
     def speech_ai(self):
         """Admins: ElevenLabs's key ({key}: kept in web/server-config.json, never sent back; '' takes
         it out) and the way used ({engine: 'eleven' | 'local'})."""
@@ -1605,6 +1698,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.denied()
         if path.startswith('/api/migrations/'):
             return self.migration_api('PUT', path)
+        if path == '/api/layout-ai':
+            return self.configure_layout_ai()
         if path == '/api/picture-ai':
             return self.picture_ai('PUT')
         if path == '/api/speech-ai':

@@ -96,6 +96,8 @@ try {
   await page.click('.design-note .btn');
   await page.waitForSelector('.design-editor', { timeout: 10000 });
   await page.waitForFunction(() => document.querySelectorAll('.design-editor svg .frame').length > 0, { timeout: 10000 });
+  await page.waitForFunction(() => !document.querySelector('.design-editor .btn.primary').disabled);
+  await page.select('[aria-label="Layout editing scope"]', 'design');
   let e = await editor();
   assert.deepEqual(e.tabs, ['Design 1 · 3 pages', 'Design 2 · 3 pages']);
   assert.equal(e.on, 'Design 1 · 3 pages');
@@ -141,6 +143,7 @@ try {
   assert.deepEqual(e.tabs, ['Design 1 · 2 pages', 'Design 2 · 3 pages', 'No design · 1']);
   assert.equal(e.frames, 0);
   // Saved: the sample is read again so.
+  await page.waitForFunction(() => !document.querySelector('.design-editor .btn.primary').disabled);
   await page.click('.design-editor .btn.primary');
   await page.waitForSelector('.sample-review .design-note', { timeout: 60000 });
   sample = (await api('GET', `/api/books/${book.id}/preview`)).data;

@@ -23,12 +23,12 @@ from operator import sub
 
 from PIL import Image, ImageOps
 
-KINDS = ('text', 'dialogue', 'words', 'skip')  # what is in an area: how it is read (skip: not at all)
+KINDS = ('text', 'paragraph', 'heading', 'rows', 'dialogue', 'words', 'skip')
 SMALL_W = 360        # the pages are drawn this wide to compare them (and to show them to the owner)
 GRID = (16, 22)      # and compared on this many cells across and down
 FOUND = 8            # designs found at most (the owner can make more)
 MOST = 16            # designs at most
-MOST_AREAS = 40      # areas of a design at most
+MOST_AREAS = 200     # dense exercise/script pages need more than forty paragraphs
 # The name of a speaker at the start of a line of a dialogue: "A:", "王方：", "Wang Fang:".
 NAME = r"[A-Z][a-zà-ÿāáǎēéěīíǐōóǒūúǔǖǘǚǜ']*"
 SPEAKER = re.compile(rf'(?:[A-Z]|[一-鿿]{{1,4}}|{NAME}(?: {NAME})?) ?[:：]\s*')
@@ -228,6 +228,103 @@ def proposed(doc, w, h, lists=(), raw=None):
     return out[:MOST_AREAS]
 
 
+def layout_lines(raw, image=None):
+    """Separate repeated column gutters before any paragraph grouping.
+
+    Keep fill-in blanks intact and reconnect a dropped capital to its first word.
+    This local pass preserves source words; models can later supply richer regions.
+    """
+    from segment_text import _blank_under, _reading_order
+    lines = [{**ln, 'words': [dict(w) for w in ln['words']]} for ln in raw['lines'] if ln['words']]
+    all_words = [w for ln in lines for w in ln['words']]
+    if not all_words:
+        return {**raw, 'lines': []}
+    unit = statistics.median(w['h'] for w in all_words)
+    gray = image.convert('L') if image is not None else None
+    # A drop cap overlaps several lines vertically; attach it to the top line only.
+    for ln in list(lines):
+        if len(ln['words']) != 1:
+            continue
+        cap = ln['words'][0]
+        if not re.fullmatch('[A-Z]', cap['t']) or cap['h'] < 1.8 * unit:
+            continue
+        candidates = []
+        for other in lines:
+            if other is ln or not other['words']:
+                continue
+            first = min(other['words'], key=lambda w: w['x'])
+            if (0 <= first['x'] - (cap['x'] + cap['w']) <= 1.5 * unit
+                    and abs(first['y'] - cap['y']) <= unit and re.match('[a-z]', first['t'])):
+                candidates.append((first['y'], other, first))
+        if candidates:
+            _, other, first = min(candidates, key=lambda item: item[0])
+            right = first['x'] + first['w']
+            first.update(t=cap['t'] + first['t'], x=cap['x'], w=right - cap['x'])
+            lines.remove(ln)
+    # Some OCR engines return an entire vertical 1/2/3 label strip as one line.
+    # Restore its physical rows so numeric-label filtering does not read it as prose.
+    expanded = []
+    for ln in lines:
+        ws = sorted(ln['words'], key=lambda w: w['y'])
+        numeric = len(ws) >= 3 and all(re.fullmatch(r'\d{1,2}[.)]?', w['t']) for w in ws)
+        values = [int(re.sub(r'\D', '', w['t'])) for w in ws] if numeric else []
+        if (numeric and all(b == a + 1 for a, b in zip(values, values[1:]))
+                and max(w['x'] for w in ws) - min(w['x'] for w in ws) <= unit
+                and ws[-1]['y'] - ws[0]['y'] >= 2 * unit):
+            expanded.extend({**ln, 'words': [w]} for w in ws)
+        else:
+            expanded.append(ln)
+    lines = expanded
+    gaps = []
+    for i, ln in enumerate(lines):
+        ws = sorted(ln['words'], key=lambda w: w['x'])
+        for left, right in zip(ws, ws[1:]):
+            x0, x1 = left['x'] + left['w'], right['x']
+            if x1 - x0 < 3 * unit or not 0.2 * raw['w'] < (x0 + x1) / 2 < 0.8 * raw['w']:
+                continue
+            if gray is not None and _blank_under(gray, x0, x1, min(left['y'], right['y']),
+                                                 max(left['y'] + left['h'], right['y'] + right['h']), unit):
+                continue
+            gaps.append((i, x0, x1, left['y']))
+    gutters = []
+    for _, x0, x1, _ in gaps:
+        x = (x0 + x1) / 2
+        nearby = [(i, y) for i, a, b, y in gaps if a < x < b]
+        if len({i for i, _ in nearby}) >= 4 and max(y for _, y in nearby) - min(y for _, y in nearby) >= 4 * unit:
+            gutters.append(x)
+    if not gutters:
+        return {**raw, 'lines': lines}
+    out = []
+    valid = {(i, x0, x1) for i, x0, x1, _ in gaps if any(x0 < x < x1 for x in gutters)}
+    for i, ln in enumerate(lines):
+        ws = sorted(ln['words'], key=lambda w: w['x'])
+        part = []
+        for k, word in enumerate(ws):
+            if k and (i, ws[k - 1]['x'] + ws[k - 1]['w'], word['x']) in valid:
+                out.append({**ln, 'words': part}); part = []
+            part.append(word)
+        if part:
+            out.append({**ln, 'words': part})
+    return {**raw, 'lines': _reading_order(out)}
+
+
+def paragraph_areas(doc, w, h):
+    """One outline per paragraph, without merging neighbouring blocks into a template."""
+    areas = []
+    for sa, sb in doc['blocks']:
+        if sa >= sb:
+            continue
+        ws = doc['words'][doc['sent'][sa][0]:doc['sent'][sb - 1][1]]
+        if not ws:
+            continue
+        x0, y0, x1, y1 = _box(ws)
+        pad = max(2, statistics.median(word[3] for word in ws) * 0.15)
+        x0, y0 = max(0, x0 - pad), max(0, y0 - pad)
+        x1, y1 = min(w, x1 + pad), min(h, y1 + pad)
+        areas.append({'x': x0 / w, 'y': y0 / h, 'w': (x1 - x0) / w, 'h': (y1 - y0) / h, 'kind': 'paragraph'})
+    return areas[:MOST_AREAS]
+
+
 # ---------------------------------------------------------------- Reading a page by its areas
 
 def parts(raw, areas):
@@ -235,6 +332,9 @@ def parts(raw, areas):
     of the words in it)] for each area to read that has words, in their order. A word goes in the
     area its middle is in (the smallest, in one drawn in another), else in the nearest one; the
     words of an area to leave out go."""
+    if not areas:
+        return []
+    strict = any(a.get('strict') for a in areas)
     W, H = raw['w'], raw['h']
     rects = [(a['x'] * W, a['y'] * H, (a['x'] + a['w']) * W, (a['y'] + a['h']) * H) for a in areas]
     lines = {k: [] for k in range(len(areas))}
@@ -245,6 +345,8 @@ def parts(raw, areas):
             inside = [k for k, r in enumerate(rects) if r[0] <= cx <= r[2] and r[1] <= cy <= r[3]]
             if inside:
                 k = min(inside, key=lambda k: (rects[k][2] - rects[k][0]) * (rects[k][3] - rects[k][1]))
+            elif strict:
+                continue  # reviewed page: deleting an outline excludes its words
             else:
                 k = min(range(len(rects)), key=lambda k: max(rects[k][0] - cx, 0, cx - rects[k][2]) ** 2
                         + max(rects[k][1] - cy, 0, cy - rects[k][3]) ** 2)
@@ -322,6 +424,23 @@ def plan(saved):
     for d in saved.get('designs', []):
         for n in d['pages']:
             out[n] = d['areas'] or None
+    for n, areas in saved.get('pageAreas', {}).items():
+        # [] is deliberate: a reviewed page with no readable paragraphs.
+        out[int(n)] = [{**a, 'strict': True} for a in areas]
+    return out
+
+
+def clean_page_areas(raw, numbers):
+    """Validate independent layouts without limiting a book to MOST designs."""
+    if not isinstance(raw, dict) or len(raw) > len(numbers):
+        raise ValueError('The page layouts are not right.')
+    allowed, out = set(numbers), {}
+    for key, areas in raw.items():
+        if not isinstance(key, str) or not key.isdigit() or int(key) not in allowed or str(int(key)) != key:
+            raise ValueError('A layout belongs to a page outside the selected range.')
+        if not isinstance(areas, list) or len(areas) > MOST_AREAS:
+            raise ValueError(f'A page can have at most {MOST_AREAS} areas.')
+        out[key] = [_area(a) for a in areas]
     return out
 
 

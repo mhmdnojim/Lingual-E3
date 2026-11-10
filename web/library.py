@@ -30,6 +30,7 @@ read on it becomes the design's areas, which the owner changes (designs.json, de
 pages of a design are read area by area, in their order.
 """
 import io
+import hashlib
 import json
 import os
 import queue
@@ -39,6 +40,7 @@ import secrets
 import shutil
 import sys
 import threading
+import tempfile
 import time
 import unicodedata
 
@@ -48,6 +50,7 @@ import branches
 import db
 import designs
 import ids
+import layout_ai
 import ocr
 import office
 import pictures
@@ -604,7 +607,8 @@ def designs_info(b):
     saved = _designs_for(b, options, total)
     if not saved:
         return None
-    return {'designs': saved['designs'], 'other': saved['other'], 'pages': [i + 1 for i in chosen], 'token': saved['token']}
+    return {'designs': saved['designs'], 'other': saved['other'], 'pages': [i + 1 for i in chosen],
+            'pageAreas': saved.get('pageAreas', {}), 'token': saved['token']}
 
 
 def save_designs(b, raw):
@@ -619,16 +623,85 @@ def save_designs(b, raw):
         raise LibraryError('The designs of the pages are not found yet: make a sample first.')
     try:
         found, other = designs.clean(raw.get('designs') if isinstance(raw, dict) else None, [i + 1 for i in chosen])
+        overrides = designs.clean_page_areas(raw.get('pageAreas', saved.get('pageAreas', {})), [i + 1 for i in chosen])
     except ValueError as e:
         raise LibraryError(str(e))
-    designs.save(_designs_path(b['id']), {**saved, 'designs': found, 'other': other, 'checked': True})  # (used from now on)
+    designs.save(_designs_path(b['id']), {**saved, 'designs': found, 'other': other,
+                                        'pageAreas': overrides, 'checked': True})
     return designs_info(b)
 
 
-def design_picture(bid, n):
+def design_picture(bid, n, large=False):
     """The small picture of page n (to see its design), or None."""
-    path = folder(bid, 'designs', f'{n}.webp')
+    path = folder(bid, 'designs', f'{n}-big.webp' if large else f'{n}.webp')
     return path if os.path.isfile(path) else None
+
+
+_layout_lock = threading.Lock()
+
+
+def review_layout(b, n):
+    """Read one selected source page on demand; never rebuild the book or its edits."""
+    if b['status'] in ('working', 'ready'):
+        raise LibraryError('Review layouts before making the complete book.')
+    options = _options(b)
+    chosen, total = _selection(b, options)
+    if n - 1 not in chosen:
+        raise LibraryError('This page is outside the selected page range.')
+    saved = _designs_for(b, options, total)
+    if not saved:
+        raise LibraryError('Make a sample first.')
+    # Serialize OCR calls: rapid navigation must not launch many engines at once.
+    with _layout_lock:
+        source = folder(b['id'], 'source', 'book.pdf') if b['kind'] == 'pdf' else folder(b['id'], 'source', _photo_names(folder(b['id'], 'source'))[n - 1])
+        stat = os.stat(source)
+        fingerprint = hashlib.sha256(json.dumps([options, stat.st_size, stat.st_mtime_ns], sort_keys=True).encode()).hexdigest()
+        cache_dir = folder(b['id'], 'layout-review')
+        os.makedirs(cache_dir, exist_ok=True)
+        path = os.path.join(cache_dir, f'{n}.json')
+        cached = designs.load(path)
+        picture = folder(b['id'], 'designs', f'{n}-big.webp')
+        if not cached or cached.get('fingerprint') != fingerprint or not os.path.isfile(picture):
+            with tempfile.TemporaryDirectory(prefix='reading-', dir=cache_dir) as build:
+                img, doc, info = _read(b, options, [n - 1], build, lambda *_: None)[0]
+                os.makedirs(os.path.dirname(picture), exist_ok=True)
+                img.save(picture, 'WEBP', quality=90)
+                areas = designs.paragraph_areas(doc, img.width, img.height)
+                cached = {'fingerprint': fingerprint, 'raw': info['raw'], 'areas': areas, 'how': info['how']}
+                with open(path + '.tmp', 'w', encoding='utf-8') as f:
+                    json.dump(cached, f, ensure_ascii=False)
+                os.replace(path + '.tmp', path)
+        return {'n': n, 'areas': cached['areas'], 'how': cached['how'], 'fingerprint': fingerprint,
+                'words': [{**w, 'line': i} for i, ln in enumerate(cached['raw']['lines']) for w in ln['words']],
+                'width': cached['raw']['w'], 'height': cached['raw']['h'],
+                'picture': f"/lib/{b['id']}/designs/{n}.webp?full=1&v={fingerprint[:16]}"}
+
+
+_layout_ai_lock = threading.Lock()
+
+
+def analyze_layout(b, n, key, model, refresh=False, progress=None):
+    """Return a suggestion only. Saving it is the page editor's separate action."""
+    tell = progress or (lambda *_: None)
+    tell(0, 'Preparing the page image and OCR words locally…')
+    page = review_layout(b, n)
+    identity = hashlib.sha256(json.dumps([page['fingerprint'], model, layout_ai.VERSION]).encode()).hexdigest()[:24]
+    path = folder(b['id'], 'layout-review', f'ai-{n}-{identity}.json')
+    # Two tabs asking for the same suggestion should not create two paid requests.
+    with _layout_ai_lock:
+        cached = designs.load(path)
+        if cached and not refresh:
+            tell(2, 'Loading the saved AI suggestion (no new API request)…')
+            return {**page, 'areas': cached['areas'], 'ai': {**cached['ai'], 'cached': True}}
+        tell(1, 'Asking OpenAI to identify paragraphs and their reading order…')
+        result, usage = layout_ai.request_layout(folder(b['id'], 'designs', f'{n}-big.webp'), page, key, model)
+        tell(2, 'Checking word coverage, boundaries and reading order…')
+        areas, notes = layout_ai.validate_layout(result, page)
+        output = {'areas': areas, 'ai': {'model': model, 'notes': notes, 'usage': usage, 'cached': False}}
+        with open(path + '.tmp', 'w', encoding='utf-8') as f:
+            json.dump(output, f, ensure_ascii=False)
+        os.replace(path + '.tmp', path)
+        return {**page, **output}
 
 
 def _work():
@@ -682,6 +755,7 @@ def _make(bid):
     shutil.rmtree(build, ignore_errors=True)
     shutil.rmtree(folder(bid, 'preview'), ignore_errors=True)
     shutil.rmtree(folder(bid, 'designs'), ignore_errors=True)  # (the pages drawn small; designs.json stays)
+    shutil.rmtree(folder(bid, 'layout-review'), ignore_errors=True)  # regenerable OCR cache; saved outlines stay in designs.json
     # (pictures replaced before: in the PDF, and so in the new pages; nothing to take back now)
     shutil.rmtree(folder(bid, 'pictures'), ignore_errors=True)
     for path in (folder(bid, 'pictures.json'), folder(bid, 'source', 'book.original.pdf')):
@@ -749,7 +823,8 @@ def _make_sample(bid, same):
             k = design_of.get(i + 1)  # areas: its design's (suggested, or used: framed)
             pages.append({'n': i + 1, 'img': f"/lib/{bid}/preview/{i + 1}.webp?token={token}", 'how': info['how'],
                           'text': page_text(doc), 'words': len(doc['words']), 'design': k,
-                          'areas': (saved['designs'][k]['areas'] if k is not None else None) or [], 'framed': bool(info['areas'])})
+                          'areas': saved.get('pageAreas', {}).get(str(i + 1), (saved['designs'][k]['areas'] if k is not None else None) or []),
+                          'framed': info['areas'] is not None})
         result = {'total': total, 'chosen': len(chosen), 'pages': pages, 'options': options, 'token': token,
                   'tips': _tips(b['kind'], options, picks, made), 'designs': len(saved['designs']),
                   'checked': bool(saved.get('checked'))}
@@ -923,9 +998,10 @@ def _read(b, options, indices, build, progress, plan=None):
             found[k] = (found[k][0], raw, found[k][2])
     out = []
     for i, (img, raw, how) in zip(indices, found):
+        raw = designs.layout_lines(raw, img)
         areas = (plan or {}).get(i + 1)
         stops = how not in ('pdf', 'hidden')  # (read with OCR: its stops)
-        doc, info = _doc_in_areas(raw, options, img, stops, areas) if areas else _doc(raw, options, img, stops=stops)
+        doc, info = _doc_in_areas(raw, options, img, stops, areas) if areas is not None else _doc(raw, options, img, stops=stops)
         out.append((img, doc, {'how': how, **info, 'raw': raw, 'areas': areas}))
     return out
 
@@ -1378,8 +1454,15 @@ def _doc(raw, options, img=None, stops=False, kind='text', rows=False):
         lines = [fixed(ln) for ln in lines]
         for found in lists:
             found['entries'] = [[fixed(ln) for ln in entry] for entry in found['entries']]
-    return (segment({**raw, 'lines': lines}, ocr=False, image=img, lists=lists, stops=stops, rows=rows),
-            {'pinyin': len(pinyin), 'margins': len(margins), 'lists': [list(found['box']) for found in lists]})
+    if kind == 'rows':
+        lines = [{**ln, 'own': True} for ln in lines]
+    doc = segment({**raw, 'lines': lines}, ocr=False, image=img, lists=lists, stops=stops, rows=rows)
+    if kind in ('heading', 'paragraph') and doc['words']:
+        if kind == 'heading':
+            doc['sent'] = [[0, len(doc['words'])]]
+            doc['clause'] = [[0, len(doc['words'])]]
+        doc['blocks'] = [[0, len(doc['sent'])]]
+    return doc, {'pinyin': len(pinyin), 'margins': len(margins), 'lists': [list(found['box']) for found in lists]}
 
 
 def _list_rows(lines, keep_reading=True):
