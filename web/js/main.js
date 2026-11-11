@@ -11,9 +11,10 @@ import { Follower, followSettings, setFollow } from './follow.js';
 import { Words } from './words.js';
 import { Breakdown } from './breakdown.js';
 import { offlineLock } from './offline-lock.js';
+import { Assistant } from './assistant.js';
 
 const RATIO = 1984 / 2496;
-const NEEDS_API = 40; // server features this page needs (API_VERSION in web/server.py)
+const NEEDS_API = 41; // server features this page needs (API_VERSION in web/server.py)
 const CHUNK_UNITS = 10; // sentences (or clauses) read in one go, for a smooth flow
 const CHUNK_CHARS = 1500;
 const MODES = ['sentence', 'clause', 'word', 'off'];
@@ -403,6 +404,7 @@ class App {
     this.translator = new Translator(this);
     this.words = new Words(this); // new words: collecting them, flashcards
     this.breakdown = new Breakdown(this); // a sentence broken down: each word and its meaning
+    this.assistant = new Assistant(this);
     this.library = new Library(this);
     this.follower = new Follower(this);
     initDialog();

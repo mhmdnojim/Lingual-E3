@@ -1581,8 +1581,13 @@ export class Library {
     }
     const account = el('button', { class: 'btn', html: `${icon('user')}<span>${this.user.name.replace(/[<&>]/g, '')}</span>`,
       title: this.user.email, onclick: () => this.accountMenu() });
-    box.replaceChildren(account, this.me.subscription?.required && !this.user.admin
-      ? el('button', { class: 'btn primary', id: 'lib-plans', onclick: () => this.plansDialog() }, 'Plans') : null);
+    // `replaceChildren` converts a passed `null` into the literal text "null".
+    // That was visible beside the account button for owners/admins (who do not
+    // need a Plans button).  Build the children list explicitly instead.
+    const children = [account];
+    if (this.me.subscription?.required && !this.user.admin)
+      children.push(el('button', { class: 'btn primary', id: 'lib-plans', onclick: () => this.plansDialog() }, 'Plans'));
+    box.replaceChildren(...children);
   }
 
   accountMenu() {

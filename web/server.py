@@ -5,6 +5,7 @@ Serves the app (/web/), with HTTP Range support so audio and video can seek, and
 
 Accounts (accounts.py) and the library (library.py: books made from a text, a PDF or photos)
     GET    /api/me                         {mode, user, disc}: who is logged in
+    GET    /api/assistant-token             short-lived ElevenLabs conversation token (key stays server-side)
     POST   /api/signup  /api/login  /api/logout  /api/password
     GET    /api/books?scope=public|mine|local|all&q=…   lists of books
     GET    /api/books/<id>                 one book with its pages (to read it)
@@ -114,6 +115,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import webbrowser
 from pathlib import Path
 from http.cookies import SimpleCookie
@@ -149,7 +151,11 @@ import words
 
 # Raise when the app needs new server features; web/js/main.js checks it (NEEDS_API) and asks
 # to restart the app if an older server is still running.
-API_VERSION = 40  # 40: enforce cached feature switches and stream student downloads; 39: at most 2 devices per account, the offline lease told; 38: the Statistics part of the Admin page, a record of use; 37: the API part of the Admin page, backups of the free services; 36: plans, the free trial, payments told by hand; 35: features switched for accounts, amounts of the paid AI services; 34: the Users tab of the Admin page, the owner and helper admins; 33: optional, permission-checked AI layout suggestions
+API_VERSION = 41  # 41: ElevenLabs conversation assistant token endpoint; 40: enforce cached feature switches and stream student downloads; 39: at most 2 devices per account, the offline lease told; 38: the Statistics part of the Admin page, a record of use; 37: the API part of the Admin page, backups of the free services; 36: plans, the free trial, payments told by hand; 35: features switched for accounts, amounts of the paid AI services; 34: the Users tab of the Admin page, the owner and helper admins; 33: optional, permission-checked AI layout suggestions
+
+# The agent id is not a secret. The ElevenLabs API key, when needed for a private
+# agent, stays in server-config.json and is never sent to the browser.
+ASSISTANT_AGENT_ID = os.environ.get('LB_ASSISTANT_AGENT_ID', 'agent_2601kksf9mmjevqtern76wfnzas7')
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 WEB = os.path.join(ROOT, 'web')
@@ -1256,6 +1262,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.migration_api('GET', path)
         if path == '/api/version':
             return self.send_json({'api': API_VERSION})
+        if path == '/api/assistant-token':
+            return self.assistant_token()
         if path == '/api/me':
             user = self.user()
             subscription = {'required': MODE == 'public' and subscriptions.required()}
@@ -1756,6 +1764,36 @@ class Handler(SimpleHTTPRequestHandler):
         key, model, engine = transcription.speech_settings(auth.config())
         return {'ready': bool(key), 'engine': engine, 'model': model, 'local': transcription.local_ready(),
                 'admin': bool(u and u['admin']), 'owner': accounts.is_owner(u), 'can': self.may_transcribe() and bool(u)}
+
+    def assistant_token(self):
+        """Give the browser a short-lived ElevenLabs conversation token.
+
+        The agent id is public, but the API key is not.  Prefer a server-created
+        token for a private agent; if no ElevenLabs key is configured, return the
+        public-agent fallback and let the SDK connect with the id directly.
+        """
+        user = self.user()
+        if MODE == 'public' and not user:
+            return self.need_account()
+        # A separate key can be supplied for ConvAI (LB_ASSISTANT_KEY); the
+        # existing ElevenLabs speech key remains a convenient fallback.
+        key = str(os.environ.get('LB_ASSISTANT_KEY') or auth.config().get('speechKey') or '').strip()
+        if not key:
+            return self.send_json({'agentId': ASSISTANT_AGENT_ID, 'public': True})
+        url = 'https://api.elevenlabs.io/v1/convai/conversation/token?agent_id=' + quote(ASSISTANT_AGENT_ID, safe='')
+        request = Request(url, headers={'xi-api-key': key, 'Accept': 'application/json'})
+        try:
+            with urlopen(request, timeout=20) as response:
+                data = json.loads(response.read(100_000).decode('utf-8', 'replace'))
+            token = str(data.get('token') or '').strip() if isinstance(data, dict) else ''
+            if not token:
+                return self.send_json({'error': 'ElevenLabs returned no conversation token.'}, 502)
+            return self.send_json({'conversationToken': token, 'agentId': ASSISTANT_AGENT_ID})
+        except urllib.error.HTTPError as e:
+            # Do not echo ElevenLabs' response: it can contain account details.
+            return self.send_json({'error': f'ElevenLabs rejected the conversation request ({e.code}).'}, 502)
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+            return self.send_json({'error': 'ElevenLabs could not be reached for a conversation token.'}, 502)
 
     def layout_ai_info(self):
         user, config = self.user(), auth.config()

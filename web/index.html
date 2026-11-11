@@ -46,6 +46,7 @@
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
     <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></symbol>
     <symbol id="i-transcribe" viewBox="0 0 24 24"><rect x="4" y="2" width="6" height="11" rx="3"/><path d="M1 10v1a6 6 0 0 0 12 0v-1M7 17v5M4 22h6M16 7h6M16 12h6M16 17h6"/></symbol>
+    <symbol id="i-microphone" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="13" rx="4"/><path d="M4 11v1a8 8 0 0 0 16 0v-1M12 20v2M8 22h8"/></symbol>
     <symbol id="i-repeat" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></symbol>
     <symbol id="i-repeat-fill" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M7 4.5h9.5V1l7.5 5-7.5 5V7.5H7A4.5 4.5 0 0 0 2.5 12H0a7 7 0 0 1 7-7.5ZM17 19.5H7.5V23L0 18l7.5-5v3.5H17a4.5 4.5 0 0 0 4.5-4.5H24a7 7 0 0 1-7 7.5Z"/></symbol>
     <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M21 4h-7"/><path d="M10 4H3"/><path d="M21 12h-9"/><path d="M8 12H3"/><path d="M21 20h-5"/><path d="M12 20H3"/><path d="M14 2v4"/><path d="M8 10v4"/><path d="M16 18v4"/></symbol>
@@ -53,6 +54,7 @@
     <symbol id="i-device" viewBox="0 0 24 24"><rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/></symbol>
     <symbol id="i-sidebar" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="M5.5 7h1"/><path d="M5.5 10h1"/></symbol>
     <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M20 11.5a8 8 0 0 1-8 8H7l-4 2 1.6-4A8 8 0 1 1 20 11.5Z"/><path d="M8 11.5h.01M12 11.5h.01M16 11.5h.01"/></symbol>
     <symbol id="i-flag" viewBox="0 0 24 24"><path d="M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 8 2a6 6 0 0 0 3.6-1.2.5.5 0 0 1 .4.4V14a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.5"/></symbol>
     <symbol id="i-books" viewBox="0 0 24 24"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/><path d="M8 7h8"/><path d="M8 11h6"/></symbol>
     <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
@@ -117,6 +119,7 @@
       <button role="radio" data-lang="en" title="Read only the English">EN</button>
     </div>
     <button class="icon-btn" id="btn-voice" title="Settings: voice, speed and translation" aria-label="Settings: voice, speed and translation" aria-expanded="false"><svg class="i"><use href="#i-sliders"/></svg></button>
+      <button class="icon-btn" id="btn-assistant" title="Conversation tutor" aria-label="Conversation tutor" aria-expanded="false"><svg class="i"><use href="#i-chat"/></svg></button>
     <button class="icon-btn" id="btn-translate" title="Translation on the page: show it when pointing at a sentence" aria-label="Translation on the page" aria-pressed="false"><svg class="i"><use href="#i-languages"/></svg></button>
     <button class="icon-btn repeat-btn" id="btn-repeat" title="Repeat each sentence: once. Click: 2, 3, 4, 5 times, ∞ (R)" aria-label="Repeat each sentence: once" aria-pressed="false"><svg class="i"><use href="#i-repeat"/></svg><span class="count-badge" id="repeat-badge" hidden></span></button>
     <button class="icon-btn" id="btn-collect" title="Add new words: click words, clauses or sentences on the page — Word, Clause or Sentence chooses which (N)" aria-label="Add new words" aria-pressed="false"><svg class="i"><use href="#i-collect"/></svg></button>
@@ -207,6 +210,17 @@
   <div class="tr-steps" id="tr-steps" hidden></div>
   </div>
   <p class="pop-foot" id="logout-row" hidden><button class="link-btn" id="btn-logout">Log out on this device</button></p>
+</div>
+
+<div class="popover assistant-pop" id="assistant-pop" hidden>
+  <div class="assistant-head"><h3>Conversation tutor</h3><span class="assistant-agent-label">ElevenLabs</span></div>
+  <p class="hint">Ask about the current book, page, sentence, vocabulary, or how to use Lingua Books.</p>
+  <div class="assistant-messages" id="assistant-messages" aria-live="polite"></div>
+  <p class="assistant-status" id="assistant-status" role="status"></p>
+  <div class="assistant-actions">
+    <button class="btn primary" id="assistant-start" type="button"><svg class="i"><use href="#i-microphone"/></svg>Start conversation</button>
+    <button class="btn" id="assistant-stop" type="button" hidden><svg class="i"><use href="#i-stop"/></svg>End</button>
+  </div>
 </div>
 
 <main class="layout">
