@@ -35,7 +35,28 @@ Accounts (accounts.py) and the library (library.py: books made from a text, a PD
     GET    /api/admin/reports              admins: open reports
     GET    /api/admin/users[/<id>]         admins: the accounts (the Users tab: admin_users.py), or one
     POST   /api/admin/users/<id>           admins: {action: block | unblock | make-admin | remove-admin
-                                            (owner) | password | give-days | revoke-plan | delete, ...}
+                                            (owner) | password | give-days | revoke-plan | delete |
+                                            feature {feature, value} | give-ai {kind, amount, expiresAt} |
+                                            take-ai {amount}, ...}
+    GET    /api/admin/features             admins: the features as they are for everyone
+    POST   /api/admin/features             admins: {users: [ids] | 'everyone', feature, value: true | false | null}
+    GET    /api/plans                      the plans offered, and one's own "I paid" requests (plans.py)
+    POST   /api/plans/<id>/paid            {note}: "I paid" — a request for the admins
+    PUT    /api/payment-requests/<id>/proof   a screenshot of the payment (the body)
+    GET    /api/plan-files/<name>          a payment QR picture; a screenshot (admins, its sender)
+    GET    /api/admin/stats?period=today|week|month|year|custom&start&end&user   admins: the statistics (stats.py)
+    (--student SITE, a student's computer: /api/login and /api/logout go to the website; GET /api/student/books,
+     POST /api/student/download/<id>, POST /api/student/refresh; the books are refused (423) while locked: student.py)
+    POST   /api/activity                   {what: read}: a sentence was read aloud (counted: stats.py)
+    (log in and sign up take {device}: the browser's device id — at most 2 devices per account: devices.py;
+     /api/me tells serverTime and offline {minutes, until}: how long the app may stay offline, step 7)
+    GET    /api/admin/services             the owner: the online services and whether their keys are saved (services.py)
+    PUT    /api/admin/services             the owner: {key: value, …} (a key, a model, the Azure region; '' takes a key out)
+    POST   /api/admin/services/<key>/test  the owner: try the service now
+    GET    /api/admin/plans                admins: every plan, the requests, the days of the free trial
+    POST   /api/admin/plans   PUT, DELETE /api/admin/plans/<id>   PUT, DELETE …/<id>/qr/<1|2> (a picture)
+    PUT    /api/admin/settings             admins: {trialDays}
+    POST   /api/admin/payment-requests/<id>   admins: {action: approve | refuse, amount, reply}
     POST   /api/admin/books/<id>           admins: {action: hide | show | dismiss | delete}
     GET    /api/branches                   the branches of the library (branches.py): [{id, parent, name, empty}]
     POST   /api/branches                   admins: a new branch {name, parent}   PUT /api/branches/<id> {name, parent}
@@ -101,11 +122,13 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit
 from urllib.request import Request, urlopen
 from PIL import Image
 
+import access
 import accounts
 import admin_users
 import auth
 import branches
 import db
+import devices
 import ids
 import library
 import layout_ai
@@ -114,6 +137,10 @@ import ocr
 import office
 import pictures
 import pinyin
+import plans
+import services
+import stats
+import student
 import subscriptions
 import transcription
 import translate
@@ -122,7 +149,7 @@ import words
 
 # Raise when the app needs new server features; web/js/main.js checks it (NEEDS_API) and asks
 # to restart the app if an older server is still running.
-API_VERSION = 34  # 34: the Users tab of the Admin page, the owner and helper admins; 33: optional, permission-checked AI layout suggestions
+API_VERSION = 40  # 40: enforce cached feature switches and stream student downloads; 39: at most 2 devices per account, the offline lease told; 38: the Statistics part of the Admin page, a record of use; 37: the API part of the Admin page, backups of the free services; 36: plans, the free trial, payments told by hand; 35: features switched for accounts, amounts of the paid AI services; 34: the Users tab of the Admin page, the owner and helper admins; 33: optional, permission-checked AI layout suggestions
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 WEB = os.path.join(ROOT, 'web')
@@ -148,6 +175,11 @@ API_LINK = re.compile(r'^/api/links(?:/(\d{1,9}))?$')
 API_ADMIN_SUBSCRIPTION_CODE = re.compile(r'^/api/admin/subscription-codes(?:/(\d{1,9}))?$')
 API_ADMIN_SUBSCRIPTION = re.compile(r'^/api/admin/subscriptions/(\d{1,9})$')
 API_ADMIN_USER = re.compile(r'^/api/admin/users(?:/(\d{1,9}))?$')
+API_ADMIN_FEATURES = '/api/admin/features'
+API_ADMIN_SERVICES = re.compile(r'^/api/admin/services(?:/(\w{1,40})/test)?$')
+# Plans, the free trial and payments told by hand (plans.py): for the users, and for the admins.
+API_PLANS = re.compile(r'^/api/(?:plans(?:/(\d{1,9})/paid)?|plan-files/([\w.-]{1,80})|payment-requests/(\d{1,9})/proof)$')
+API_ADMIN_PLANS = re.compile(r'^/api/admin/(?:plans(?:/(\d{1,9})(?:/qr/([12]))?)?|settings|payment-requests/(\d{1,9}))$')
 LIB_FILE = re.compile(r'^/lib/(L[0-9a-f]{10})/(pages|thumbs)/(\d{1,4}\.webp)$')
 LIB_PREVIEW_FILE = re.compile(r'^/lib/(L[0-9a-f]{10})/preview/(\d{1,4}\.webp)$')
 LIB_DESIGN_FILE = re.compile(r'^/lib/(L[0-9a-f]{10})/designs/(\d{1,4})\.webp$')
@@ -168,6 +200,7 @@ NOT_SERVED = re.compile(r'^/web/(server-config\.json|levels\.json|tests/|tools/|
 OPEN = ('/web/login.html', '/web/manifest.webmanifest')
 
 MODE = 'local'        # local | lan | public (set in main)
+STUDENT = None        # --student SITE: a student's computer, the website's books downloaded (student.py)
 TRUST_PROXY = False   # --proxy: requests come from a web server on this machine (it adds X-Forwarded-*)
 PIN = None            # --lan
 
@@ -240,7 +273,7 @@ def disc():
     """The books of the discs (books.json made by web/tools, of each level), or None: on a public
     website never. A book also has its level (_level), its web/data folder (_data) and the level's
     documents (_resources); the addresses of another level's files start with /levels/<id>/."""
-    if MODE == 'public':
+    if MODE == 'public' or STUDENT:
         return None
     if 'data' not in _disc:
         books = []
@@ -371,6 +404,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def handle_one_request(self):
         self._user = None
+        self._device = ''
         self.cache_set = False
         try:
             super().handle_one_request()
@@ -543,13 +577,29 @@ class Handler(SimpleHTTPRequestHandler):
                 u = accounts.user(db.LOCAL_USER)
             else:
                 morsel = SimpleCookie(self.headers.get('Cookie') or '').get(accounts.COOKIE)
-                u = accounts.session_user(morsel.value) if morsel else None
+                u, self._device = accounts.session_user(morsel.value, with_device=True) if morsel else (None, '')
                 if MODE == 'lan' and u and u['id'] != db.LOCAL_USER:
                     u = None
                 if u:
                     accounts.seen(u['id'])  # (the Users tab: last seen)
+                    if self._device:
+                        devices.seen(u['id'], self._device)
             self._user = u or False
         return self._user or None
+
+    def feature(self, key):
+        """May this account use the feature (access.py: switched by an admin on a website)? If not,
+        the refusal is sent and False returned."""
+        if STUDENT:
+            if student.feature_allowed(key):
+                return True
+            self.send_json({'error': f'The admin has switched off {access.FEATURES[key][1]} for your account.', 'feature': key}, 403)
+            return False
+        u = self.user()
+        if MODE != 'public' or not u or access.allowed(u, key):
+            return True
+        self.send_json({'error': f'The admin has switched off {access.FEATURES[key][1]} for your account.', 'feature': key}, 403)
+        return False
 
     def rec_dir(self):
         """The folder of this user's MP3s: on a website each user has their own."""
@@ -571,6 +621,10 @@ class Handler(SimpleHTTPRequestHandler):
         folder = self.words_dir()
         if not folder:
             return self.need_account()
+        if not self.feature('words'):
+            return None
+        if MODE == 'public' and method == 'POST' and path == '/api/words':
+            stats.count(self.user(), 'words')
         m, cat = API_WORD.match(path), API_WORD_CATEGORY.match(path)
         try:
             if method == 'GET' and path == '/api/words':
@@ -599,7 +653,13 @@ class Handler(SimpleHTTPRequestHandler):
         return self.denied()
 
     def gate(self, path):
-        """Home Wi-Fi: nothing without the PIN. True if the request may go on (else it is answered)."""
+        """Home Wi-Fi: nothing without the PIN. A student's computer: no books while locked (the
+        website not reached and the lease over). True if the request may go on (else it is answered)."""
+        if STUDENT and (path.startswith(('/api/', '/lib/')) and not path.startswith(('/api/me', '/api/version', '/api/login', '/api/logout', '/api/student/'))):
+            is_locked, why = student.locked()
+            if is_locked:
+                self.send_json({'error': why, 'locked': True}, 423)
+                return False
         if MODE != 'lan' or self.user() or path in OPEN or path.startswith('/web/icons/'):
             return True
         if path.startswith('/api/'):
@@ -619,6 +679,7 @@ class Handler(SimpleHTTPRequestHandler):
                 or path in ('/api/version', '/api/me', '/api/login', '/api/signup', '/api/logout',
                             '/api/password', '/api/redeem', '/api/admin/subscriptions',
                             '/api/tr-languages')  # (only the names of the languages)
+                or API_PLANS.match(path)  # (the plans are seen, and paid for, without one)
                 or path.startswith('/api/admin/subscription-codes')
                 or API_ADMIN_SUBSCRIPTION.match(path)):
             return True
@@ -659,6 +720,12 @@ class Handler(SimpleHTTPRequestHandler):
             return self.denied('bad request', 400)
         secure = self.https()
         if path == '/api/logout':
+            if STUDENT:  # (a student's computer: logged out on the website too, which frees this device)
+                student.log_out()
+                return self.send_json({'ok': True, 'user': None})
+            u = self.user()
+            if u and self._device:  # (logging out frees the device: another one may log in)
+                devices.unlink(u['id'], self._device)
             return self.send_json({'ok': True}, headers=[('Set-Cookie', accounts.cookie('', secure, 0))])
         try:
             if path == '/api/login' and MODE == 'lan':
@@ -668,6 +735,12 @@ class Handler(SimpleHTTPRequestHandler):
                     time.sleep(1)
                     return self.send_json({'error': 'Wrong PIN.'}, 401)
                 u = accounts.user(db.LOCAL_USER)
+            elif STUDENT and path == '/api/login':
+                try:
+                    st = student.log_in(body.get('email', ''), body.get('password', ''))
+                except student.StudentError as e:
+                    return self.send_json({'error': str(e)}, e.status)
+                return self.send_json({'ok': True, 'user': st['user']})
             elif MODE != 'public':
                 return self.send_json({'ok': True, 'user': accounts.public_user(self.user())})
             elif path == '/api/login':
@@ -678,6 +751,8 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.denied('bad request', 400)
                 u = accounts.sign_up(body.get('email', ''), body.get('name', ''), body.get('password', ''),
                                      self.client_ip(), body.get('adminSetupCode', ''))
+                if MODE == 'public' and subscriptions.required() and not u['admin']:
+                    plans.start_trial(u['id'])  # (the free trial of a new account, if there is one)
             elif path == '/api/password':
                 if not self.user():
                     return self.need_account()
@@ -687,8 +762,18 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.denied()
         except accounts.AccountError as e:
             return self.send_json({'error': str(e)}, 400)
-        return self.send_json({'ok': True, 'user': accounts.public_user(u)},
-                              headers=[('Set-Cookie', accounts.cookie(accounts.new_session(u), secure))])
+        device = ''
+        if MODE == 'public' and path in ('/api/login', '/api/signup'):
+            try:
+                device = devices.link(u, body.get('device'), self.headers.get('User-Agent', ''))
+            except devices.DeviceError as e:
+                return self.send_json({'error': str(e), 'devices': True}, 403)
+        elif MODE == 'public' and path == '/api/password':
+            device = self._device  # (the same device, a new cookie)
+            if device:
+                devices.link(u, device, self.headers.get('User-Agent', ''))
+        return self.send_json({'ok': True, 'user': accounts.public_user(u), 'device': device or None},
+                              headers=[('Set-Cookie', accounts.cookie(accounts.new_session(u, device), secure))])
 
     # ---------- The library ----------
 
@@ -781,8 +866,11 @@ class Handler(SimpleHTTPRequestHandler):
                 if (parsed.scheme != 'https' or not parsed.netloc or parsed.username or parsed.password
                         or parsed.path not in ('', '/') or parsed.query or parsed.fragment):
                     return self.send_json({'error': 'LB_PUBLIC_URL must be an HTTPS origin, such as https://books.example.com.'}, 400)
+                plan = plans.get(req.get('plan')) if req.get('plan') else None
+                if req.get('plan') and not plan:
+                    return self.send_json({'error': 'This plan was not found.'}, 404)
                 return self.send_json(subscriptions.create_code(
-                    u['id'], req.get('days'), books, req.get('label', ''), req.get('redeemDays', 90), url))
+                    u['id'], req.get('days'), books, req.get('label', ''), req.get('redeemDays', 90), url, plan))
             except subscriptions.SubscriptionError as e:
                 return self.send_json({'error': str(e)}, 400)
         m = API_ADMIN_SUBSCRIPTION_CODE.match(path)
@@ -820,6 +908,117 @@ class Handler(SimpleHTTPRequestHandler):
         except admin_users.UsersError as e:
             return self.send_json({'error': str(e)}, e.status)
 
+    def plans_api(self, method, path):
+        """Plans, the free trial and payments told by hand (plans.py)."""
+        if MODE != 'public' or not subscriptions.required():
+            return self.send_json({'error': 'Plans are not used on this server.'}, 404)
+        u = self.user()
+        if not u:
+            return self.need_account()
+        book_ok = lambda bid: bool((b := library.get(bid)) and b['visibility'] == 'public' and b['status'] == 'ready')  # noqa: E731
+        try:
+            m = API_PLANS.match(path)
+            if m:
+                plan, name, request = m.groups()
+                if name:
+                    found = plans.file_path(name, u) if method == 'GET' else None
+                    return self.send_file(found[0], found[1], private=True) if found else self.send_error(404)
+                if method == 'GET' and not plan and not request:
+                    return self.send_json({'plans': plans.listing(), 'requests': plans.of_user(u['id']),
+                                           'subscription': subscriptions.status(u['id'], bool(u['admin']))})
+                if u['admin']:
+                    return self.denied('Admins need no plan.')
+                if method == 'POST' and plan:
+                    if accounts.limited('paid', str(u['id']), 10, 86400):
+                        return self.send_json({'error': 'Too many requests today. Try again tomorrow.'}, 429)
+                    body = self.read_body()
+                    if body is None:
+                        return None
+                    return self.send_json(plans.paid(u, plan, body.get('note', '') if isinstance(body, dict) else ''))
+                if method == 'PUT' and request:
+                    data = self.read_body((plans.PICTURE_MB + 1) * 2 ** 20, raw=True)
+                    return None if data is None else self.send_json(plans.set_proof(u, request, data))
+                return self.denied()
+            if not u['admin']:
+                return self.denied('Only an admin can change the plans.')
+            plan, qr, request = API_ADMIN_PLANS.match(path).groups()
+            if path == '/api/admin/settings':
+                body = self.read_body() if method == 'PUT' else None
+                if not isinstance(body, dict):
+                    return None if method == 'PUT' and body is None else self.denied()
+                if 'trialDays' in body:
+                    plans.set_trial_days(body['trialDays'])
+                return self.send_json(plans.admin_data())
+            if request:
+                body = self.read_body() if method == 'POST' else None
+                if not isinstance(body, dict):
+                    return None if method == 'POST' and body is None else self.denied()
+                return self.send_json(plans.decide(u, request, str(body.get('action', '')), body.get('amount', ''), body.get('reply', '')))
+            if qr:
+                if method == 'DELETE':
+                    return self.send_json(plans.set_qr(plan, qr, None))
+                data = self.read_body((plans.PICTURE_MB + 1) * 2 ** 20, raw=True) if method == 'PUT' else None
+                return self.send_json(plans.set_qr(plan, qr, data)) if data is not None else (None if method == 'PUT' else self.denied())
+            if method == 'GET' and not plan:
+                return self.send_json(plans.admin_data())
+            if method == 'DELETE' and plan:
+                return self.send_json(plans.delete(plan))
+            body = self.read_body() if method in ('POST', 'PUT') else None
+            if body is None:
+                return None if method in ('POST', 'PUT') else self.denied()
+            if method == 'POST' and not plan:
+                return self.send_json(plans.create(body, book_ok))
+            if method == 'PUT' and plan:
+                return self.send_json(plans.update(plan, body, book_ok))
+            return self.denied()
+        except plans.PlanError as e:
+            return self.send_json({'error': str(e)}, e.status)
+
+    def services_api(self, method, path):
+        """The API part of the Admin page (services.py): only the owner of the website (on this
+        computer: you). Keys are never sent back."""
+        u = self.user()
+        if not u:
+            return self.need_account()
+        if not accounts.is_owner(u):
+            return self.denied('Only the owner of the website sees the API keys.')
+        which = API_ADMIN_SERVICES.match(path).group(1)
+        try:
+            if method == 'GET' and not which:
+                return self.send_json(services.listing())
+            if method == 'PUT' and not which:
+                body = self.read_body()
+                return None if body is None else self.send_json(services.save(body))
+            if method == 'POST' and which:
+                return self.send_json(services.test(which))
+        except services.ServiceError as e:
+            return self.send_json({'error': str(e)}, 400)
+        return self.denied()
+
+    def admin_features(self, method):
+        """The features as they are for everyone; switched for everyone or for chosen accounts
+        (users only: an admin's account is changed by the owner, on its own page)."""
+        u = self.user()
+        if not (u and u['admin']):
+            return self.need_account() if not u else self.denied('Only an admin can switch features.')
+        try:
+            if method == 'POST':
+                body = self.read_body()
+                if body is None:
+                    return None
+                body = body if isinstance(body, dict) else {}
+                users = body.get('users')
+                if users != 'everyone':
+                    users = [int(i) for i in users] if isinstance(users, list) else []
+                    if any((accounts.user(i) or {'admin': 1})['admin'] for i in users):
+                        return self.denied('Choose users only (not admins).')
+                access.set_feature(users, str(body.get('feature', '')), body.get('value'))
+            return self.send_json({'features': access.feature_rows()})
+        except access.AccessError as e:
+            return self.send_json({'error': str(e)}, e.status)
+        except (TypeError, ValueError):
+            return self.send_json({'error': 'bad request'}, 400)
+
     def redeem_subscription(self):
         if MODE != 'public' or not subscriptions.required():
             return self.send_json({'error': 'Access codes are not enabled on this server.'}, 404)
@@ -847,6 +1046,8 @@ class Handler(SimpleHTTPRequestHandler):
             if method == 'POST' and path == '/api/books':
                 if not u:
                     return self.need_account()
+                if not self.feature('add_books'):
+                    return None
                 body = self.read_body()
                 if body is None:
                     return None
@@ -887,6 +1088,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json({'ok': True})
             if not library.can_edit(b, u):
                 return self.need_account() if not u else self.denied()
+            if part in ('pictures', 'buttons') and not self.feature('correction'):
+                return None
             if part is None and method == 'PUT':
                 body = self.read_body()
                 if body is None:
@@ -955,9 +1158,16 @@ class Handler(SimpleHTTPRequestHandler):
                 if not self.may_transcribe():
                     return self.denied('Only an admin can transcribe here.')
                 how = transcription.speech_settings(auth.config())
+                stopped = None
                 for src, file in library.track_files(b):
+                    if transcription.status(src, Path(file), b.get('lang') or 'en')['state'] in ('idle', 'error'):
+                        try:
+                            self.count_script(Path(file))  # (an account's minutes: until they run out)
+                        except access.AccessError as e:
+                            stopped = str(e)
+                            break
                     transcription.start(src, Path(file), b.get('lang') or 'en', False, how)
-                return self.send_json(self.tracks_info(b))
+                return self.send_json({**self.tracks_info(b), **({'stopped': stopped} if stopped else {})})
             if part == 'buttons' and m.group(3):  # (a page's play buttons changed by hand: correction mode)
                 if method == 'DELETE':
                     q = {k: v[0] for k, v in parse_qs(urlsplit(self.path).query).items()}
@@ -1051,18 +1261,34 @@ class Handler(SimpleHTTPRequestHandler):
             subscription = {'required': MODE == 'public' and subscriptions.required()}
             subscription.update(subscriptions.status(user['id'], bool(user['admin'])) if user else
                                 {'active': False, 'expiresAt': None, 'books': [], 'admin': False})
+            now = int(time.time())
+            lease = subscription.get('offlineMinutes') or subscriptions.OFFLINE_DEFAULT
+            if STUDENT:  # (a student's computer: the website's account, its lease and features; locked or not)
+                st = student.state()
+                return self.send_json({'mode': MODE, 'student': {k: st[k] for k in ('site', 'online', 'lastContact', 'downloads')},
+                                       'user': st['user'], 'disc': False, 'serverTime': now, 'offline': st['offline'],
+                                       'locked': st['locked'], 'lockedWhy': st['lockedWhy'], 'features': st['features'], 'ai': st['ai'],
+                                       'contact': (auth.config().get('studentMe') or {}).get('contact', ''),
+                                       'licenses': library.LICENSES, 'reasons': library.REPORT_REASONS, 'limits': library.limits(user),
+                                       'subscription': {'required': False, **st['subscription']}, 'wordFiles': office.available()})
             return self.send_json({'mode': MODE, 'user': accounts.public_user(user), 'disc': bool(disc()),
+                                   'serverTime': now,
+                                   # (how long this device may stay offline, from now: step 7 keeps it)
+                                   'offline': {'minutes': lease, 'until': now + lease * 60} if MODE == 'public' and user else None,
                                    'contact': os.environ.get('LB_CONTACT_EMAIL', ''),
                                    'licenses': library.LICENSES, 'reasons': library.REPORT_REASONS,
                                    'limits': library.limits(user), 'subscription': subscription,
-                                   'wordFiles': office.available()})  # (can a book be added from a Word file here)
+                                   'wordFiles': office.available(),  # (can a book be added from a Word file here)
+                                   # (what this account may use: features switched by an admin, paid AI left)
+                                   **(access.summary(user) if MODE == 'public' and user else {})})
         if path == '/api/layout-ai':
             return self.send_json(self.layout_ai_info())
         if path == '/api/picture-ai':  # (is there a key for the AI image service: never the key itself)
             u = self.user()
             key, model = pictures.ai_settings(auth.config())
-            return self.send_json({'ready': bool(key), 'model': model, 'admin': bool(u and u['admin']),
-                                   'owner': accounts.is_owner(u)})
+            n = access.left(u, 'pictures') if MODE == 'public' and u else None
+            return self.send_json({'ready': bool(key), 'model': model, 'admin': bool(u and (u['admin'] or n)),
+                                   'owner': accounts.is_owner(u), **({'left': n} if n is not None else {})})
         if path == '/api/speech-ai':  # (how transcriptions are made: never the key itself)
             return self.send_json(self.speech_info())
         if path == '/api/transcribe-file':
@@ -1080,6 +1306,28 @@ class Handler(SimpleHTTPRequestHandler):
         m = API_ADMIN_USER.match(path)
         if m:
             return self.admin_users_api('GET', m.group(1))
+        if path == API_ADMIN_FEATURES:
+            return self.admin_features('GET')
+        if API_PLANS.match(path) or API_ADMIN_PLANS.match(path):
+            return self.plans_api('GET', path)
+        if API_ADMIN_SERVICES.match(path):
+            return self.services_api('GET', path)
+        if STUDENT and path == '/api/student/books':
+            if not self.feature('offline'):
+                return None
+            try:
+                return self.send_json(student.books())
+            except student.StudentError as e:
+                return self.send_json({'error': str(e)}, e.status)
+        if path == '/api/admin/stats':
+            u = self.user()
+            if not (u and u['admin']):
+                return self.need_account() if not u else self.denied()
+            q = {k: v[0] for k, v in query.items()}
+            try:
+                return self.send_json(stats.summary(q.get('period', 'today'), q.get('start'), q.get('end'), q.get('user') or None))
+            except ValueError as e:
+                return self.send_json({'error': str(e)}, 400)
         if path.startswith(('/api/books', '/api/admin/')) or path == '/api/branches':
             return self.get_library(path, query)
         if path == '/api/words':
@@ -1089,6 +1337,8 @@ class Handler(SimpleHTTPRequestHandler):
             book, page = m.groups()
             if not self.book_access(book):
                 return self.send_json({'error': 'no text for this page'}, 404)
+            if MODE == 'public':
+                stats.count(self.user(), 'pages')  # (a record of use: the Statistics part of the Admin page)
             # ?original=1: the text as it was made, without the corrections (what they changed).
             first = query.get('original') == ['1']
             if ids.LIBRARY_BOOK_RE.match(book):
@@ -1200,6 +1450,8 @@ class Handler(SimpleHTTPRequestHandler):
             f = library.pdf_file(b) if library.can_edit(b, self.user()) else None
             if not f:
                 return self.send_error(404)
+            if not self.feature('download_pdf'):
+                return None
             name = re.sub(r'[^\w.-]+', '-', b['title'], flags=re.ASCII).strip('-')[:80] or 'book'
             return self.send_migration_file(f, 'application/pdf', download=f'{name}.pdf')
         m = LIB_DESIGN_FILE.match(path)
@@ -1296,10 +1548,12 @@ class Handler(SimpleHTTPRequestHandler):
         if path.startswith('/api/admin/subscription-codes'):
             return self.change_subscriptions('POST', path)
         if path == '/api/migrations' or path.startswith('/api/migrations/'):
+            if path == '/api/migrations' and not self.feature('add_books'):
+                return None
             return self.migration_api('POST', path)
         region = API_OCR_REGION.match(path)
         if region:
-            return self.post_ocr_region(*region.groups())
+            return self.post_ocr_region(*region.groups()) if self.feature('correction') else None
         if path == '/api/quit' and MODE != 'public' and not TRUST_PROXY and self.client_address[0] == '127.0.0.1':
             # A newer copy of the app is starting: make room for it.
             self.send_json({'ok': True})
@@ -1308,6 +1562,30 @@ class Handler(SimpleHTTPRequestHandler):
         m = API_ADMIN_USER.match(path)
         if m and m.group(1):
             return self.admin_users_api('POST', m.group(1))
+        if path == API_ADMIN_FEATURES:
+            return self.admin_features('POST')
+        if API_PLANS.match(path) or API_ADMIN_PLANS.match(path):
+            return self.plans_api('POST', path)
+        if API_ADMIN_SERVICES.match(path):
+            return self.services_api('POST', path)
+        if STUDENT and path.startswith('/api/student/'):
+            try:
+                if path == '/api/student/refresh':
+                    return self.send_json(student.check_now())
+                if path.startswith('/api/student/download/'):
+                    if not self.feature('offline'):
+                        return None
+                    return self.send_json(student.download(path.rsplit('/', 1)[1]))
+            except student.StudentError as e:
+                return self.send_json({'error': str(e)}, e.status)
+            return self.denied()
+        if path == '/api/activity':  # (a sentence read aloud in the browser: counted)
+            body = self.read_body()
+            if body is None:
+                return None
+            if MODE == 'public' and isinstance(body, dict) and body.get('what') == 'read':
+                stats.count(self.user(), 'reads')
+            return self.send_json({'ok': True})
         if path.startswith(('/api/books', '/api/admin/')):
             return self.change_library('POST', path)
         if API_BRANCH.match(path):
@@ -1319,6 +1597,8 @@ class Handler(SimpleHTTPRequestHandler):
         if path == '/api/picture-ai':
             return self.picture_ai('POST')
         if path == '/api/pinyin':
+            if not self.feature('breakdown'):
+                return None
             body = self.read_body()
             if body is None:
                 return None
@@ -1339,8 +1619,10 @@ class Handler(SimpleHTTPRequestHandler):
                 return None
             try:
                 how = transcription.speech_settings(auth.config())
-                return self.send_json({'job': transcription.start_file(q.get('name'), data, q.get('language'), how),
+                return self.send_json({'job': transcription.start_file(q.get('name'), data, q.get('language'), how, self.count_script),
                                        'engine': how[2]})
+            except access.AccessError as e:
+                return self.send_json({'error': str(e)}, e.status)
             except ValueError as e:
                 return self.send_json({'error': str(e)}, 400)
         if path == '/api/transcribe':
@@ -1355,6 +1637,8 @@ class Handler(SimpleHTTPRequestHandler):
         folder = self.rec_dir()
         if not folder:
             return self.need_account()
+        if not self.feature('my_audio'):
+            return None
         req = self.read_body()
         if req is None:
             return None
@@ -1365,6 +1649,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json({'error': 'You made many MP3s today. Try again tomorrow.'}, 429)
         if isinstance(req, dict) and not self.book_access(str(req.get('book', ''))):
             return self.denied()
+        if MODE == 'public':
+            stats.count(self.user(), 'mp3s')
         try:
             return self.send_json({'job': tts.start_job(req, folder)})
         except ValueError as e:
@@ -1408,9 +1694,21 @@ class Handler(SimpleHTTPRequestHandler):
         return self.send_json({'files': len(media), 'transcripts': counts, 'engine': how[2], 'canTranscribe': True})
 
     def may_transcribe(self):
-        """Starting a transcription: on a website only admins (ElevenLabs costs money)."""
+        """Starting a transcription: on a website admins, and the accounts an admin gave minutes
+        of scripts to (access.py: ElevenLabs costs money)."""
         u = self.user()
-        return MODE != 'public' or bool(u and u['admin'])
+        return MODE != 'public' or bool(u and (u['admin'] or access.left(u, 'scripts')))
+
+    def count_script(self, media):
+        """Count the length of a recording about to be transcribed against the account's minutes
+        of scripts (admins and this computer: not counted). access.AccessError: not enough."""
+        u = self.user()
+        if MODE != 'public' or (u and u['admin']):
+            return
+        seconds = access.media_seconds(media, transcription._ffmpeg())
+        if seconds is None:
+            raise access.AccessError('The length of this recording could not be read, so it cannot be counted. Ask the admin.', 400)
+        access.spend(u, 'scripts', max(1, seconds))
 
     def transcription(self, src, start=False, language='en', force=False, delete=False):
         """Start or check transcription for an indexed disc recording or private imported book asset.
@@ -1429,15 +1727,23 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.send_json({'error': 'The recording file could not be found.'}, 404)
                 language = language or (book or {}).get('lang') or 'en'
             else:
-                if MODE == 'public' and not self.may_transcribe():  # (the disc's: admins only)
+                if MODE == 'public' and not (self.user() and self.user()['admin']):  # (the disc's: admins only)
                     return self.denied()
                 media = transcription.resolve(src, disc(), disc_location)
             if delete:
                 transcription.delete(src)
                 return self.send_json({'ok': True})
             if start:
+                if MODE == 'public' and not self.user()['admin']:
+                    if not library.can_edit(book, self.user()):  # (with their own minutes: their own books)
+                        return self.denied('Only the book’s owner can have its recordings transcribed.')
+                    now = transcription.status(src, media, language)['state']
+                    if now not in ('queued', 'running') and (force or now != 'done'):
+                        self.count_script(media)
                 return self.send_json(transcription.start(src, media, language, force, transcription.speech_settings(auth.config())))
             return self.send_json(transcription.status(src, media, language))
+        except access.AccessError as e:
+            return self.send_json({'error': str(e)}, e.status)
         except ValueError as e:
             return self.send_json({'error': str(e)}, 400)
         except OSError:
@@ -1456,7 +1762,8 @@ class Handler(SimpleHTTPRequestHandler):
         key, model, source = layout_ai.settings(config)
         admin = bool(user and user['admin'])
         return {'ready': bool(key), 'model': model, 'admin': admin, 'owner': accounts.is_owner(user),
-                'can': bool(user and (admin or config.get('layoutAllowUsers') is True)),
+                'can': bool(user and (admin or config.get('layoutAllowUsers') is True
+                                      or MODE == 'public' and access.left(user, 'layout'))),
                 'allowUsers': config.get('layoutAllowUsers') is True,
                 'sharedAvailable': bool(config.get('imageKey')) if admin else False,
                 'useImageKey': config.get('layoutUseImageKey') is True if admin else False,
@@ -1496,8 +1803,15 @@ class Handler(SimpleHTTPRequestHandler):
         if not info['ready']:
             return self.send_json({'error': 'Add an OpenAI API key in AI layout settings first.'}, 400)
         user = self.user()
-        if not user['admin'] and accounts.limited('layout-ai', str(user['id']), info['dailyLimit'], 86400):
+        # An account's own pages (given by an admin) are counted; else, when the owner allowed everyone: 20 a day.
+        counted = MODE == 'public' and not user['admin'] and bool(access.left(user, 'layout'))
+        if not user['admin'] and not counted and accounts.limited('layout-ai', str(user['id']), info['dailyLimit'], 86400):
             return self.send_json({'error': 'Your daily AI layout limit is reached. Use local outlines or try tomorrow.'}, 429)
+        if counted:
+            try:
+                access.spend(user, 'layout', 1)
+            except access.AccessError as e:
+                return self.send_json({'error': str(e)}, e.status)
         stream = body.get('progress') is True
         if stream:
             self.send_response(200)
@@ -1519,8 +1833,12 @@ class Handler(SimpleHTTPRequestHandler):
                     except OSError:
                         pass  # complete and cache a paid response even if its browser closed
             result = library.analyze_layout(book, n, key, model, body.get('refresh') is True, progress)
+            if counted and result.get('ai', {}).get('cached'):  # (a saved answer costs nothing)
+                access.give_back(user, 'layout', 1)
             return tell(result=result) if stream else self.send_json(result)
         except (layout_ai.LayoutError, library.LibraryError, ocr.OcrError) as error:
+            if counted:
+                access.give_back(user, 'layout', 1)
             return tell(error=str(error)) if stream else self.send_json({'error': str(error)}, 400)
         except OSError:
             if not stream:
@@ -1559,8 +1877,8 @@ class Handler(SimpleHTTPRequestHandler):
         u = self.user()
         if not u:
             return self.need_account()
-        if not u['admin']:
-            return self.denied('Only an admin can use the AI image service: each picture costs money.')
+        if not u['admin'] and (method == 'PUT' or MODE != 'public' or not access.left(u, 'pictures')):
+            return self.denied('Pictures made by AI cost money: the admin gives an account a number of them.')
         body = self.read_body()
         if body is None:
             return None
@@ -1583,7 +1901,14 @@ class Handler(SimpleHTTPRequestHandler):
             prompt = pictures.ai_prompt(body.get('prompt'), body.get('context'), bool(body.get('like')))
             like = library.old_picture(b, str(body.get('page', '')), box) if body.get('like') else None
             key, model = pictures.ai_settings(auth.config())
-            data = pictures.ai_picture(prompt, key, model, pictures.ai_size(box[2], box[3]), like)
+            access.spend(u, 'pictures', 1)  # (an account's pictures: counted; given back when none is made)
+            try:
+                data = pictures.ai_picture(prompt, key, model, pictures.ai_size(box[2], box[3]), like)
+            except Exception:
+                access.give_back(u, 'pictures', 1)
+                raise
+        except access.AccessError as e:
+            return self.send_json({'error': str(e)}, e.status)
         except (library.LibraryError, pictures.PictureError) as e:
             return self.send_json({'error': str(e)}, 400)
         except (TypeError, ValueError, IndexError):
@@ -1679,6 +2004,11 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json({'error': str(e) or 'The selected area could not be read.'}, 400)
 
     def post_translate(self, path):
+        u = self.user()
+        if (MODE == 'public' and u and not access.allowed(u, 'translation')
+                and not (path == '/api/translate-word' and access.allowed(u, 'breakdown'))):  # (a breakdown: its words)
+            self.feature('translation')
+            return None
         req = self.read_body()
         if req is None:
             return None
@@ -1691,6 +2021,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json({'error': 'Too many translations from here. Try again in a while.'}, 429)
         try:
             src = str(req.get('from') or 'en')  # the book's language: what is translated from
+            if MODE == 'public' and not req.get('cachedOnly'):
+                stats.count(self.user(), 'translations')
             if path == '/api/translate':
                 book = str(req.get('book', ''))
                 if not (self.book_access(book) or book == translate.FILES and self.may_transcribe()):
@@ -1734,6 +2066,10 @@ class Handler(SimpleHTTPRequestHandler):
             return self.denied()
         if path.startswith('/api/migrations/'):
             return self.migration_api('PUT', path)
+        if API_PLANS.match(path) or API_ADMIN_PLANS.match(path):
+            return self.plans_api('PUT', path)
+        if API_ADMIN_SERVICES.match(path):
+            return self.services_api('PUT', path)
         if path == '/api/layout-ai':
             return self.configure_layout_ai()
         if path == '/api/picture-ai':
@@ -1766,6 +2102,8 @@ class Handler(SimpleHTTPRequestHandler):
         book, page = m.groups()
         if not self.book_access(book, write=True):
             return self.need_account() if not self.user() else self.denied()
+        if not self.feature('correction'):
+            return None
         doc = self.read_body()
         if doc is None:
             return None
@@ -1794,6 +2132,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.denied()
         if API_ADMIN_SUBSCRIPTION_CODE.match(path) or API_ADMIN_SUBSCRIPTION.match(path):
             return self.change_subscriptions('DELETE', path)
+        if API_ADMIN_PLANS.match(path):
+            return self.plans_api('DELETE', path)
         if path == '/api/transcript':
             query = parse_qs(urlsplit(self.path).query)
             return self.transcription(query.get('src', [''])[0], language=query.get('language', ['en'])[0], delete=True)
@@ -1889,7 +2229,7 @@ def lan_address():
 
 
 def main():
-    global MODE, TRUST_PROXY, PIN
+    global MODE, TRUST_PROXY, PIN, STUDENT
     ap = argparse.ArgumentParser(description="Lingua Books: the app's web server.")
     ap.add_argument('--port', type=int, default=8765)
     ap.add_argument('--no-browser', action='store_true')
@@ -1898,7 +2238,12 @@ def main():
     ap.add_argument('--public', action='store_true', help='a public website: accounts, public books; never the disc')
     ap.add_argument('--proxy', action='store_true', help='behind a web server on this machine that adds HTTPS')
     ap.add_argument('--password', help='the PIN for --lan (default: made once, in web/server-config.json)')
+    ap.add_argument('--student', metavar='SITE', help="a student's computer: the website's books, downloaded (never the disc)")
     args = ap.parse_args()
+    if args.student:
+        STUDENT = args.student
+        student.configure(args.student)
+        student.start_checking()
 
     host = args.host
     if args.public:

@@ -38,6 +38,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+import auth
 import ids
 
 WEB = os.path.dirname(os.path.abspath(__file__))
@@ -227,7 +228,55 @@ def _by_gtx(lang, paragraphs, src='en'):
     return found
 
 
-ENGINES = (('chrome', _by_chrome), ('gtx', _by_gtx))
+CLOUD_URL = 'https://translation.googleapis.com/language/translate/v2'
+
+
+def cloud_translate(texts, lang, src, key):
+    """The official Google Cloud Translation (paid; the owner's key, services.py): the texts translated."""
+    body = urllib.parse.urlencode([('q', t) for t in texts] + [('target', lang), ('source', src), ('format', 'text'), ('key', key)]).encode('utf-8')
+    req = urllib.request.Request(CLOUD_URL, data=body, headers={'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8'})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = json.load(r)
+    except urllib.error.HTTPError as e:
+        try:
+            said = json.load(e).get('error', {}).get('message', '')
+        except Exception:
+            said = ''
+        raise TranslateError(f'Google Cloud Translation answered {e.code}{": " + said[:200] if said else ""}.')
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        raise Offline()
+    out = [html.unescape(t.get('translatedText', '')) for t in data.get('data', {}).get('translations', [])]
+    if len(out) != len(texts):
+        raise TranslateError('Google Cloud Translation gave an answer the app does not understand.')
+    return out
+
+
+def _by_cloud(lang, paragraphs, src='en'):
+    """{sentence: translation} by the paid backup, when its key is saved (else nothing is tried)."""
+    key = auth.config().get('googleTranslateKey')
+    if not key:
+        raise TranslateError('No key of Google Cloud Translation is saved.')
+    sentences = [s for p in paragraphs for s in p]
+    try:
+        out = dict(zip(sentences, cloud_translate(sentences, lang, src, key)))
+    except TranslateError as e:
+        _note('googleTranslateKey', False, e)
+        raise
+    _note('googleTranslateKey', True)
+    return out
+
+
+def _note(service, ok, said=''):
+    try:
+        import services
+        services.noted(service, ok, said)
+    except Exception:
+        pass
+
+
+ENGINES = (('chrome', _by_chrome), ('gtx', _by_gtx), ('cloud', _by_cloud))
+MAX_CHARS['cloud'] = 20000
 
 
 def _batches(lines, max_chars):
@@ -267,6 +316,9 @@ def _translate_paragraphs(lang, paragraphs, found, src='en'):
     todo = _apart(paragraphs)
     errors = []
     for name, engine in ENGINES:
+        if name == 'cloud':  # (the paid backup: only with its key, only after the free ones failed)
+            if not auth.config().get('googleTranslateKey'):
+                break
         left = []
         for batch in _batches(todo, MAX_CHARS[name]):
             if left:  # this address failed already: the rest goes to the next one
@@ -279,7 +331,11 @@ def _translate_paragraphs(lang, paragraphs, found, src='en'):
                 left += batch
         todo = left
         if not todo:
+            if name != 'cloud':
+                _note('translator', True)
             return
+        if name == 'gtx':  # (both free addresses failed)
+            _note('translator', False, errors[-1] if errors else '')
     # Every address failed: say the most useful reason (busy: the shortest wait).
     busy = sorted((e for e in errors if isinstance(e, Busy)), key=lambda e: e.wait)
     raise next((e for e in errors if isinstance(e, Offline)), None) or (busy[0] if busy else errors[0])

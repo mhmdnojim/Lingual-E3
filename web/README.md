@@ -661,6 +661,12 @@ them. Prepared translations (Translation tab → **Prepare**) make the cards wor
   uses the Windows voices (David, Zira) automatically.
 - This copy is for use on your own computer. The book content belongs to Oxford University Press.
 
+## On a website: admins, plans, offline use
+
+What a public website adds — the Admin page (Users, Features, Plans and payments, Statistics,
+API), the plans with "I paid", the free trial, the devices limit, offline use with its time limit,
+and the student's Windows copy — is described in `deploy/README.md`.
+
 ## Several levels (Level 1, 2, 3) in one app
 
 This app shows the books of every level listed in `web\levels.json` (in that order), named

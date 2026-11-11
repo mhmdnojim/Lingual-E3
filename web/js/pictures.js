@@ -110,7 +110,8 @@ export async function replacePicture(app, view, rect) {
       }
       make.disabled = false;
     });
-    return [el('label', { class: 'field' }, el('span', {}, 'Describe it (only if you want)'), prompt),
+    return [info.left != null ? el('p', { class: 'hint' }, `Your account can make ${info.left} more picture${info.left === 1 ? '' : 's'} with AI.`) : null,
+      el('label', { class: 'field' }, el('span', {}, 'Describe it (only if you want)'), prompt),
       el('label', { class: 'check' }, like, ' Start from the old picture (with a description: the AI changes it as you say)'),
       el('div', { class: 'form-buttons' }, info.owner ? changeKey() : null, el('span', { class: 'push' }), make), state, tries];
   };
@@ -134,9 +135,9 @@ export async function replacePicture(app, view, rect) {
   };
   // (a key saved: it can be changed — one of another AI, or a new one)
   const changeKey = () => el('button', { class: 'link-btn pic-key', type: 'button', onclick: () => ai.replaceChildren(...keyForm()) }, 'Change the key');
-  ai.replaceChildren(...(!info.admin ? [el('p', { class: 'hint' }, 'Only an admin can make pictures with AI: each one costs money.')]
+  ai.replaceChildren(...(!info.admin ? [el('p', { class: 'hint' }, 'Pictures made by AI cost money: the admin gives an account a number of them.')]
     : info.ready ? aiForm() : info.owner ? keyForm()
-      : [el('p', { class: 'hint' }, 'The owner of the website has not added the key of OpenAI yet (only the owner changes the keys).')]));
+      : [el('p', { class: 'hint' }, 'The owner of the website has not added the key of OpenAI yet (only the owner changes the keys).')]).filter(Boolean));
 
   const ways = el('div', { class: 'seg pic-ways', role: 'radiogroup', 'aria-label': 'Where the new picture comes from' },
     ...[['own', 'A picture of yours'], ['ai', 'Made by AI']].map(([k, label]) =>

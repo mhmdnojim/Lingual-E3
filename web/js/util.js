@@ -35,6 +35,16 @@ export const store = {
   },
 };
 
+/** This browser's random device id (a website: at most 2 devices per account, web/devices.py). Made once, kept. */
+export function deviceId() {
+  let id = store.get('device', '');
+  if (!/^[0-9a-f]{32}$/.test(id)) {
+    id = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
+    store.set('device', id);
+  }
+  return id;
+}
+
 const jsonCache = new Map();
 export function getJSON(url) {
   if (!jsonCache.has(url)) {

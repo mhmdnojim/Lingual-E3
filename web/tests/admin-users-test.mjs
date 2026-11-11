@@ -69,20 +69,59 @@ try {
 
   // The owner: every account, the roles, finding one.
   await logIn(page, 'boss@example.com');
-  const all = await rows(page);
-  assert.equal(all.length, 3);
-  assert.ok(all.some((t) => /Boss.*You.*Owner/.test(t)), all.join(' | '));
+  const listed = await rows(page);
+  assert.equal(listed.length, 3);
+  assert.ok(listed.some((t) => /Boss.*You.*Owner/.test(t)), listed.join(' | '));
   await page.type('.users-tools input', 'ann');
   assert.equal((await rows(page)).length, 1);
 
   // Plan days without a code: 30, then they show; the server agrees.
   let text = await open(page, id.Ann);
-  assert.match(text, /No plan yet/);
+  assert.match(text, /Free trial/); // (a new account's free days, given by itself)
   await page.click('.give-days [data-days="30"]');
   assert.match(await page.$eval('.give-until', (x) => x.textContent), /Access until/);
   assert.ok(await button(page, 'Give the days'));
   await says(page, /Given by Boss/);
   assert.equal((await ann('GET', '/api/me')).data.subscription.active, true, 'Ann has a plan now');
+
+  // Features: Translation off for Ann (the server refuses it, her page hides it), on again;
+  // off for everyone (Bob too), on again; for the chosen users.
+  await boss('POST', `/api/admin/users/${id.Bob}`, { action: 'give-days', days: 5, books: '*' }); // (Bob has a plan too)
+  const translate = (who) => who('POST', '/api/translate', { lang: 'fr', book: 'L0000000000', page: 'p1', paragraphs: [] });
+  await page.click('.user-features input[data-feature="translation"]');
+  await says(page, /off here/);
+  let refused = await translate(ann);
+  assert.ok(refused.status === 403 && refused.data.feature === 'translation', JSON.stringify(refused));
+  assert.equal((await ann('GET', '/api/me')).data.features.translation, false);
+  assert.notEqual((await translate(bob)).data.feature, 'translation', 'Bob is not touched');
+  assert.equal((await ann('POST', '/api/books', { kind: 'text', title: 'Still allowed' })).status, 200);
+  assert.ok(await button(page, 'As for everyone again'));
+  await page.waitForFunction(() => !/off here/.test(document.querySelector('#md-body').textContent), { timeout: 10000 });
+  assert.notEqual((await translate(ann)).data.feature, 'translation');
+  let all = await boss('POST', '/api/admin/features', { users: 'everyone', feature: 'add_books', value: false });
+  assert.equal(all.data.features.find((f) => f.key === 'add_books').on, false);
+  refused = await bob('POST', '/api/books', { kind: 'text', title: 'No' });
+  assert.ok(refused.status === 403 && /switched off adding books/.test(refused.data.error), JSON.stringify(refused));
+  assert.equal((await boss('POST', '/api/books', { kind: 'text', title: 'Admins always' })).status, 200);
+  await boss('POST', '/api/admin/features', { users: [id.Bob], feature: 'add_books', value: true });
+  assert.equal((await bob('GET', '/api/me')).data.features.add_books, true, 'his own setting counts first');
+  await boss('POST', '/api/admin/features', { users: 'everyone', feature: 'add_books', value: null });
+  assert.equal((await ann('POST', '/api/admin/features', { users: 'everyone', feature: 'words', value: false })).status, 403);
+
+  // Paid AI: off until an amount is given; given here, the server counts it.
+  assert.deepEqual((await ann('GET', '/api/me')).data.ai, { scripts: 0, pictures: 0, layout: 0 });
+  assert.equal((await ann('GET', '/api/speech-ai')).data.can, false);
+  await page.type('.ai-kind[data-ai="scripts"] input[type=number]', '30');
+  await page.click('[data-give-ai="scripts"]');
+  await says(page, /30 minutes left/);
+  await page.type('.ai-kind[data-ai="pictures"] input[type=number]', '2');
+  await page.click('[data-give-ai="pictures"]');
+  await says(page, /2 pictures left/);
+  assert.deepEqual((await ann('GET', '/api/me')).data.ai, { scripts: 30, pictures: 2, layout: 0 });
+  assert.equal((await ann('GET', '/api/speech-ai')).data.can, true);
+  const pic = (await ann('GET', '/api/picture-ai')).data;
+  assert.ok(pic.admin && pic.left === 2 && !pic.owner, JSON.stringify(pic));
+  assert.equal((await ann('PUT', '/api/picture-ai', { key: 'sk-x' })).status, 403, 'an amount is not a right to change the key');
 
   // Admin, then a user again.
   assert.ok(await button(page, 'Make admin'));
@@ -125,6 +164,8 @@ try {
   assert.equal((await bob('POST', `/api/admin/users/${id.Boss}`, { action: 'block' })).status, 403);
   const key = await bob('PUT', '/api/picture-ai', { key: 'sk-test' });
   assert.ok(key.status === 403 && /owner/.test(key.data.error), 'only the owner changes the API keys');
+  assert.equal((await bob('GET', '/api/admin/services')).status, 403, 'a helper admin: no API page');
+  assert.ok(!(await bobPage.$('[data-admin-tab="api"]')), 'no API part for a helper admin');
   assert.equal((await boss('PUT', '/api/picture-ai', { key: '' })).status, 200);
   await ctx.close();
 
@@ -133,6 +174,17 @@ try {
   assert.ok(await button(page, 'Delete the account'));
   await page.waitForFunction((uid) => !document.querySelector(`.users-table tr[data-user="${uid}"]`), { timeout: 10000 }, id.Ann);
   assert.equal((await boss('GET', `/api/admin/users/${id.Ann}`)).status, 404);
+
+  // The API part: only the owner; a key saved, told by its last 4 characters only, taken out.
+  await page.click('[data-admin-tab="api"]');
+  await page.waitForSelector('.service[data-service="speechKey"]', { timeout: 10000 });
+  await page.type('.service[data-service="speechKey"] input[type=password]', 'sk_test_elevenlabs_key_1234');
+  await page.click('[data-save="speechKey"]');
+  await page.waitForFunction(() => /Key saved …1234/.test(document.querySelector('.service[data-service="speechKey"]')?.textContent || ''), { timeout: 10000 });
+  const told = await boss('GET', '/api/admin/services');
+  assert.ok(!JSON.stringify(told.data).includes('sk_test_elevenlabs'), 'the key is never sent back');
+  assert.equal((await ann('GET', '/api/admin/services')).status, 403);
+  await boss('PUT', '/api/admin/services', { speechKey: '' });
 
   // The other parts of the Admin page.
   await page.click('[data-admin-tab="books"]');

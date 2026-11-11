@@ -95,6 +95,61 @@ generate a code and QR link, cancel unused codes, or revoke a user's active subs
 QR opens the sign-in and redemption page. `LB_PUBLIC_URL` must be the site's HTTPS address so the
 QR works on phones.
 
+### The Admin page
+
+**Users** (above). **Features**: in a user's page, or **Features for everyone…** above the list
+(tick users first to switch features for the chosen ones): Add books, My audio, Translation,
+Sentence breakdown, New words and flashcards, Correction mode, Download the PDF, Offline use —
+on for everyone unless switched off. **Paid AI** (scripts of audio and video by ElevenLabs,
+pictures made by AI, page layouts by AI) is off until an admin gives an account an amount (minutes
+of scripts, a number of pictures or pages), with or without an end date; the server counts every
+use and stops at zero.
+
+**Plans and payments**: a plan is a name, a price as it is shown, the days it gives, all shared
+books or chosen ones, how long the app may stay offline with it (3 days unless changed), and up to
+two pictures of your payment QR codes (WeChat, Alipay, a bank …). There is no online payment: a
+user pays you, presses **I paid** (with a note and a screenshot if they like), and the request
+appears here — **Approve** (the plan's days are given; the amount you type is your own note of
+what you received, not a proof) or **Refuse** (with a word for the user). A new account gets a
+**free trial** (3 days of all shared books; set 0 for none). Access codes can be of a plan.
+
+**Statistics**: today, this week, this month, this year or two dates; everyone or one account:
+accounts active, time active, sign-ups, who has a plan, payments approved and the money recorded,
+the paid AI used and about what it cost you. The app keeps a record of use for this (the terms
+page says so): per account and day, the pages opened, the minutes active and how many times each
+feature was used — never what was read; kept a year.
+
+**API** (the owner only): every online service and its key — ElevenLabs (a main and a backup key,
+used when the main one is refused or out of credits), OpenAI (pictures, page layouts, their
+models), and paid backups of the free services: Google Cloud Translation, used only when the free
+translator fails, and Azure Speech, used only when Microsoft's free Natural voices refuse. Each
+shows whether a key is saved (its last 4 characters), when, and a **Test** button. Keys are kept in
+`web/server-config.json` on the server and never sent to a browser.
+
+**Devices**: an account may be logged in on at most **2 devices** (admins: any number). A third
+is refused with the names of the two. A device is freed by logging out on it, or unlinked by an
+admin in the user's page (that login ends at once).
+
+### Offline use and its time limit
+
+On a phone or computer, the website can be added to the home screen (it is a web app) and works
+without internet: the app's files and every book that was opened stay on the device, with their
+audio and scripts. Each time the server is reached, it says until when the device may stay
+offline (the plan's offline time; 3 days by default). After that — or when the device's clock was
+moved back — the whole app shows **Connect to the internet to continue** until the server is
+reached again, and then opens at once. A small sign shows how long the app still works while
+offline. An account whose **Offline use** is switched off keeps nothing on the device.
+
+### A student's computer (the Windows copy)
+
+A student can run the app on their own Windows computer with **Start as a student.bat** (change
+`SITE` in it to your website's address). It never shows the disc's books. The student logs in with
+their website account (the computer counts as one of the account's 2 devices), opens the
+**Website** tab and downloads the books their plan allows — pages, text, audio and video, play
+buttons and scripts — into **My books**. The app checks the account with the website every 10
+minutes; without the website it works for the plan's offline time, then locks the books until the
+website is reached again (as above).
+
 ### Admins and the Users tab
 
 The **owner** is the account with the e-mail in `LB_ADMIN_EMAIL`. In **Library → Admin → Users**

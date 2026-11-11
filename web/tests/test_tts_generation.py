@@ -58,7 +58,9 @@ class OfflineAudioGenerationTests(unittest.TestCase):
         self.assertEqual(state['done'], 0)
         self.assertEqual(len(calls), 1)
         encode.assert_not_called()
-        files.assert_not_called()
+        # (nothing written: a read of the server's settings — is there a backup voice? — is not a save)
+        self.assertFalse([c for c in files.call_args_list if len(c.args) > 1 and 'w' in str(c.args[1]) or 'w' in str(c.kwargs.get('mode', ''))],
+                         'no file was written')
 
     def test_successful_page_keeps_every_sentence_in_order(self):
         async def speech(text, voice, rate):

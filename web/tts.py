@@ -20,6 +20,7 @@ import threading
 import time
 import wave
 
+import auth
 import ids
 
 WEB = os.path.dirname(os.path.abspath(__file__))
@@ -446,13 +447,79 @@ KEEP = 0.25
 END_MARK = re.compile(r'[.!?;:…]["\'”’)\]]*$')
 
 
+def azure_voice_count(key, region):
+    """(a test of the key: services.py) How many voices Azure Speech offers in this region."""
+    import urllib.request
+    req = urllib.request.Request(f'https://{region}.tts.speech.microsoft.com/cognitiveservices/voices/list',
+                                 headers={'Ocp-Apim-Subscription-Key': key})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return len(json.load(r))
+
+
+def _azure_speak(text, voice, rate):
+    """The same Natural voice through Azure Speech (paid: the owner's key, services.py), with word
+    timings: (MP3 bytes, [(start, end, word)])."""
+    import urllib.request
+    import xml.sax.saxutils
+    config = auth.config()
+    key, region = config.get('azureSpeechKey'), config.get('azureSpeechRegion') or 'eastasia'
+    if not key:
+        raise RuntimeError('Microsoft’s free voices refused, and no key of Azure Speech is saved (the owner adds one in Admin → API).')
+    lang = '-'.join(voice.split('-')[:2])
+    ssml = (f'<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="{lang}">'
+            f'<voice name="{voice}"><prosody rate="{rate:+d}%">{xml.sax.saxutils.escape(text)}</prosody></voice></speak>')
+    headers = {'Ocp-Apim-Subscription-Key': key, 'Content-Type': 'application/ssml+xml', 'User-Agent': 'lingua-books',
+               'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3'}
+    req = urllib.request.Request(f'https://{region}.tts.speech.microsoft.com/cognitiveservices/v1', ssml.encode('utf-8'), headers)
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            audio = r.read()
+    except urllib.error.HTTPError as e:
+        _note('azureSpeechKey', False, f'{e.code}')
+        raise RuntimeError(f'Azure Speech answered {e.code}: check the key and region in Admin → API.') from e
+    if not audio:
+        raise RuntimeError('Azure Speech returned no audio.')
+    _note('azureSpeechKey', True)
+    # (the REST API gives no word boundaries: the words are spread over the sound evenly, by their length)
+    words = text.split()
+    seconds = _mp3_seconds(audio)
+    total = sum(len(w) for w in words) or 1
+    bounds, at = [], 0.0
+    for w in words:
+        span = seconds * len(w) / total
+        bounds.append((at, at + span, w))
+        at += span
+    return audio, bounds
+
+
+def _mp3_seconds(mp3):
+    """How long an MP3 is, from its sound (ffmpeg decodes it)."""
+    return len(_decode(mp3)) / 2 / RATE
+
+
+def _note(service, ok, said=''):
+    try:
+        import services
+        services.noted(service, ok, said)
+    except Exception:
+        pass
+
+
 async def _speak_again(text, voice, rate):
-    """_speak, tried up to 3 times (an online voice sometimes fails for a moment); a refusal is not tried again."""
+    """_speak, tried up to 3 times (an online voice sometimes fails for a moment); a refusal is not
+    tried again — a refused Natural voice is spoken by Azure Speech instead, when its key is saved."""
     for attempt in range(3):
         try:
-            return await _speak(text, voice, rate)
+            out = await _speak(text, voice, rate)
+            if not WINDOWS_VOICE_RE.fullmatch(voice):
+                _note('voices', True)
+            return out
         except Exception as e:
             denied = friendly_error(e)
+            if denied and not WINDOWS_VOICE_RE.fullmatch(voice):
+                _note('voices', False, denied)
+                if auth.config().get('azureSpeechKey'):
+                    return await asyncio.to_thread(_azure_speak, text, voice, rate)
             if denied:
                 raise RuntimeError(denied) from e
             if WINDOWS_VOICE_RE.fullmatch(voice):

@@ -162,23 +162,36 @@ def _sign(text):
     return hmac.new(_secret(), text.encode('ascii'), hashlib.sha256).hexdigest()
 
 
-def new_session(u):
-    body = f"{u['id']}.{u['version']}.{int(time.time()) + DAYS * 86400}"
+def new_session(u, device=''):
+    """The login cookie's value; device: the device it is on (devices.py), on a website."""
+    body = f"{u['id']}.{u['version']}.{int(time.time()) + DAYS * 86400}" + (f'.{device}' if device else '')
     return f'{body}.{_sign(body)}'
 
 
-def session_user(token):
-    """The user of a login cookie, or None (unknown, run out, logged out everywhere, closed)."""
-    try:
-        uid, version, until, sig = (token or '').split('.')
-    except ValueError:
-        return None
+def session_user(token, with_device=False):
+    """The user of a login cookie, or None (unknown, run out, logged out everywhere, closed, its
+    device unlinked). with_device: (user, device id) instead."""
+    parts = (token or '').split('.')
+    if len(parts) == 4:
+        (uid, version, until, sig), device = parts, ''
+    elif len(parts) == 5:
+        uid, version, until, device, sig = parts
+    else:
+        return (None, '') if with_device else None
+    nothing = (None, '') if with_device else None
     if not (uid.isdigit() and version.isdigit() and until.isdigit()) or int(until) < time.time():
-        return None
-    if not hmac.compare_digest(sig, _sign(f'{uid}.{version}.{until}')):
-        return None
+        return nothing
+    body = f'{uid}.{version}.{until}' + (f'.{device}' if device else '')
+    if not hmac.compare_digest(sig, _sign(body)):
+        return nothing
     u = user(int(uid))
-    return u if u and not u['disabled'] and u['version'] == int(version) else None
+    if not (u and not u['disabled'] and u['version'] == int(version)):
+        return nothing
+    if device:
+        import devices
+        if not devices.linked(u['id'], device):
+            return nothing
+    return (u, device) if with_device else u
 
 
 def cookie(token, secure, max_age=DAYS * 86400):

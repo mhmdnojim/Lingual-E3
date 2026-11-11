@@ -10,9 +10,10 @@ import { Library } from './library.js';
 import { Follower, followSettings, setFollow } from './follow.js';
 import { Words } from './words.js';
 import { Breakdown } from './breakdown.js';
+import { offlineLock } from './offline-lock.js';
 
 const RATIO = 1984 / 2496;
-const NEEDS_API = 34; // server features this page needs (API_VERSION in web/server.py)
+const NEEDS_API = 40; // server features this page needs (API_VERSION in web/server.py)
 const CHUNK_UNITS = 10; // sentences (or clauses) read in one go, for a smooth flow
 const CHUNK_CHARS = 1500;
 const MODES = ['sentence', 'clause', 'word', 'off'];
@@ -209,6 +210,7 @@ class Reader {
     this.lastWord = from;
     if (!text) { this.pos = lastK; this.finished(); return; }
     this.app.readingChanged(this.state, this.label());
+    this.app.counted?.('read'); // (a website: a record of use, for the admins' statistics)
     let heardWords = false;
     speech.speak(text, {
       onWord: (ci) => {
@@ -378,6 +380,8 @@ class App {
       return;
     }
     this.checkServer();
+    this.applyFeatures();
+    offlineLock.start(this); // (a website: the app and the books opened work offline, for the plan's time)
     this.books = new Map(); // book id -> Promise of the book with its pages (from /api/books/<id>)
     this.discList = this.me.disc ? await fetch('/api/books?scope=local').then((r) => r.json()).catch(() => []) : [];
     this.views = [];
@@ -449,7 +453,29 @@ class App {
   }
 
   /** Logged in or out: what may be done changes. */
+  /**
+   * A website's admin switches features off for an account (web/access.py; the server refuses
+   * them too): their buttons go (css: body.off-<feature>).
+   */
+  applyFeatures() {
+    const f = this.me?.features || {};
+    for (const key of ['add_books', 'my_audio', 'translation', 'breakdown', 'words', 'correction', 'download_pdf', 'offline']) {
+      document.body.classList.toggle(`off-${key}`, f[key] === false);
+    }
+  }
+
+  /** A website keeps a record of use for its admins (web/stats.py): a sentence read aloud, at most once a minute. */
+  counted(what) {
+    if (this.me?.mode !== 'public' || !this.me.user) return;
+    const now = Date.now();
+    if (now < (this.countedAt || 0) + 60000) return;
+    this.countedAt = now;
+    fetch('/api/activity', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ what }) }).catch(() => {});
+  }
+
   accountChanged() {
+    this.applyFeatures();
+    offlineLock.apply(this.me);
     this.books.clear();
     this.recordings.load();
     this.translator.loadLanguages?.();
@@ -1818,4 +1844,5 @@ class App {
 
 const app = new App();
 window.aef = app; // handy for debugging in the browser console
+app.offlineLock = offlineLock;
 app.init();

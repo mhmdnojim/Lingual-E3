@@ -12,6 +12,9 @@ for learning languages:
 - **Your library**: add a text, a PDF, a Word file or photos of pages; keep them private or share them with
   everyone (with a licence). Reports and an admin page for a public website.
 - Works on computers, **Android and iPhone** (tap, swipe, pinch; add it to the home screen).
+- As a **website**: accounts, plans paid by hand (your QR codes) with a free trial, features and
+  paid AI amounts per user, statistics, offline use for the plan's time, at most 2 devices per
+  account, and a Windows copy for students that downloads the books (`deploy/README.md`).
 
 ## Start
 

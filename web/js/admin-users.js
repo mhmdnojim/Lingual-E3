@@ -50,7 +50,9 @@ export function usersAdmin(o) {
       .map(([v, label]) => el('option', { value: v }, label)));
   const count = el('p', { class: 'hint' }, 'Loading the accounts…');
   const rows = el('tbody');
-  const head = ['Name', 'Role', ...(o.plans ? ['Plan'] : []), 'Last seen', 'Joined', ''];
+  const picked = new Set(); // (users ticked: their features switched together)
+  const featuresBtn = el('button', { class: 'btn', type: 'button', onclick: () => featuresDialog() }, 'Features for everyone…');
+  const head = ['', 'Name', 'Role', ...(o.plans ? ['Plan'] : []), 'Last seen', 'Joined', ''];
   const table = el('div', { class: 'table-scroll' }, el('table', { class: 'admin-table users-table' },
     el('thead', {}, el('tr', {}, ...head.map((h) => el('th', {}, h)))), rows));
 
@@ -66,7 +68,11 @@ export function usersAdmin(o) {
     count.textContent = users.length
       ? `${list.length === users.length ? '' : `${list.length} of `}${users.length} account${users.length === 1 ? '' : 's'}.`
       : 'No accounts yet: people sign up on the website.';
+    for (const id of [...picked]) if (!users.some((u) => u.id === id && u.role === 'user')) picked.delete(id);
+    featuresBtn.textContent = picked.size ? `Features for the ${picked.size} chosen…` : 'Features for everyone…';
     rows.replaceChildren(...list.map((u) => el('tr', { dataset: { user: u.id } },
+      el('td', { class: 'pick' }, u.role === 'user' ? el('input', { type: 'checkbox', checked: picked.has(u.id), 'aria-label': `Choose ${u.name}`,
+        onchange: (e) => { if (e.target.checked) picked.add(u.id); else picked.delete(u.id); draw(); } }) : null),
       el('td', {}, el('b', {}, u.name), u.id === o.me.id ? el('span', { class: 'badge' }, 'You') : null,
         u.blocked ? el('span', { class: 'badge warn' }, 'Blocked') : null, el('div', { class: 'hint' }, u.email)),
       el('td', {}, el('span', { class: `badge role-${u.role}` }, ROLE[u.role])),
@@ -82,13 +88,44 @@ export function usersAdmin(o) {
   find.addEventListener('input', draw);
   filter.addEventListener('change', draw);
 
+  /** The features switched for everyone (no user ticked), or on / off for the ticked users. */
+  async function featuresDialog() {
+    let d;
+    try { d = await api('GET', '/api/admin/features'); } catch (err) { toast(err.message); return; }
+    const ids = [...picked];
+    const set = async (feature, value, said) => {
+      try { d = await api('POST', '/api/admin/features', { users: ids.length ? ids : 'everyone', feature, value }); } catch (err) { toast(err.message); return; }
+      toast(said);
+      if (!ids.length) o.openDialog('Features for everyone', body());
+    };
+    const body = () => el('div', { class: 'user-page features-all' },
+      el('p', { class: 'hint' }, ids.length
+        ? `For the ${ids.length} chosen user${ids.length === 1 ? '' : 's'}: switch a feature on or off, or back to “as for everyone”.`
+        : 'For everyone who has no setting of their own. An account’s own setting (on its page) counts first. Admins always have everything.'),
+      el('div', { class: ids.length ? '' : 'feature-list' }, ...d.features.map((f) => {
+        if (!ids.length) {
+          const box = el('input', { type: 'checkbox', checked: f.on, dataset: { feature: f.key } });
+          box.addEventListener('change', () => set(f.key, box.checked, `${f.name}: ${box.checked ? 'on' : 'off'} for everyone.`));
+          return el('label', { class: 'check' }, box, ` ${f.name}`);
+        }
+        return el('div', { class: 'ai-give', dataset: { feature: f.key } }, el('b', { style: 'min-width: 200px' }, f.name),
+          el('button', { class: 'btn small', type: 'button', onclick: () => set(f.key, true, `${f.name}: on for the chosen.`) }, 'On'),
+          el('button', { class: 'btn small', type: 'button', onclick: () => set(f.key, false, `${f.name}: off for the chosen.`) }, 'Off'),
+          el('button', { class: 'link-btn', type: 'button', onclick: () => set(f.key, null, `${f.name}: as for everyone.`) }, 'As for everyone'));
+      })),
+      el('p', { class: 'hint' }, 'The paid AI services (scripts, AI pictures, AI page layouts) are given to one account at a time, as an amount: open the user.'));
+    o.openDialog(ids.length ? 'Features for the chosen users' : 'Features for everyone', body());
+  }
+
   let publicBooks = null; // (for days given for chosen books: the ready, shared books)
+  let plans = [];         // (the plans offered: one can be given as it is)
   async function open(id) {
     let d;
     try { d = await api('GET', `/api/admin/users/${id}`); } catch (err) { toast(err.message); return; }
     if (o.plans && !publicBooks) {
       publicBooks = (await api('GET', '/api/books?scope=all').catch(() => []))
         .filter((b) => b.visibility === 'public' && b.status === 'ready' && !b.link);
+      plans = ((await api('GET', '/api/admin/plans').catch(() => null))?.plans || []).filter((p) => p.active);
     }
     o.openDialog(`User: ${d.name}`, page(d));
   }
@@ -111,6 +148,8 @@ export function usersAdmin(o) {
         .flatMap(([k, v]) => [el('dt', {}, k), el('dd', {}, v)]));
     const parts = [facts];
     if (o.plans) parts.push(planPart(d));
+    if (d.devices) parts.push(devicePart(d));
+    if (d.role === 'user' && d.may.feature) parts.push(featurePart(d), aiPart(d));
     parts.push(accountPart(d));
     return el('div', { class: 'user-page' }, ...parts);
   }
@@ -120,7 +159,7 @@ export function usersAdmin(o) {
     const grantRows = d.grants.map((g) => el('tr', {},
       el('td', {}, g.books.includes('*') ? 'All shared books' : `${g.books.length} chosen`),
       el('td', {}, day(g.starts_at)), el('td', {}, day(g.ends_at)), el('td', {}, g.status),
-      el('td', {}, g.kind === 'given' ? (g.label || 'Given by an admin') : `Code •••• ${g.code_hint}`),
+      el('td', {}, g.kind === 'code' ? `Code •••• ${g.code_hint}` : (g.label || 'Given by an admin')),
       el('td', { class: 'admin-acts' }, d.may['revoke-plan'] && ['active', 'scheduled'].includes(g.status)
         ? el('button', { class: 'btn small danger-btn', type: 'button', onclick: () => {
           if (confirm(`Take this plan away from ${d.name} now?`)) act(d, { action: 'revoke-plan', grant: g.id }, 'The plan is taken away.');
@@ -172,7 +211,66 @@ export function usersAdmin(o) {
     part.push(el('div', { class: 'lib-form give-form' },
       el('span', { class: 'field-label' }, 'Give days (no code needed)'), el('div', { class: 'give-row' }, presets, other),
       scope, chosen, until, el('div', { class: 'form-buttons' }, give)));
+    if (plans.length && d.may['give-plan']) { // (a plan as it is: its days, books and offline time)
+      const which = el('select', { class: 'select', 'aria-label': 'Plan to give' }, ...plans.map((p) => el('option', { value: p.id }, `${p.name} (${p.days} days)`)));
+      part.push(el('div', { class: 'ai-give give-plan' }, el('span', { class: 'field-label' }, 'Or give a plan:'), which,
+        el('button', { class: 'btn small', type: 'button', onclick: () => act(d, { action: 'give-plan', plan: Number(which.value) }, `The plan is given to ${d.name}.`) }, 'Give the plan')));
+    }
     return el('section', { class: 'user-plan' }, ...part);
+  }
+
+  /** The devices the account is logged in on (at most 2 for a user): unlinked here, it is logged out there at once. */
+  function devicePart(d) {
+    const rows = d.devices.map((v) => el('div', { class: 'ai-give device-row', dataset: { device: v.id } },
+      el('b', {}, v.name), el('span', { class: 'hint' }, `linked ${day(v.linkedAt)} · last seen ${ago(v.lastSeen)}`),
+      v.inUse ? el('span', { class: 'badge public' }, 'In use') : null,
+      el('button', { class: 'link-btn', type: 'button', onclick: () => {
+        if (confirm(`Unlink “${v.name}”? ${d.name} is logged out there and can log in on another device.`)) act(d, { action: 'unlink-device', device: v.id }, 'Unlinked.');
+      } }, 'Unlink')));
+    return el('section', { class: 'user-devices' }, el('h4', {}, `Devices (${d.devices.length}${d.role === 'user' ? ' of 2' : ''})`),
+      ...(rows.length ? rows : [el('p', { class: 'hint' }, 'Not logged in on any device.')]));
+  }
+
+  /** The features of an account: each on or off (a change is saved at once), or as for everyone again. */
+  function featurePart(d) {
+    const boxes = d.features.map((f) => {
+      const box = el('input', { type: 'checkbox', checked: f.on, dataset: { feature: f.key } });
+      box.addEventListener('change', () => act(d, { action: 'feature', feature: f.key, value: box.checked },
+        `${f.name}: ${box.checked ? 'on' : 'off'} for ${d.name}.`));
+      return el('label', { class: 'check', title: f.own == null ? 'As for everyone' : 'Set for this account' }, box, ` ${f.name}`,
+        f.own != null && f.own !== f.everyone ? el('span', { class: 'badge' }, f.own ? 'only here on' : 'off here') : null);
+    });
+    const changed = d.features.filter((f) => f.own != null);
+    return el('section', { class: 'user-features' }, el('h4', {}, 'Features'),
+      el('div', { class: 'feature-list' }, ...boxes),
+      changed.length ? el('div', { class: 'form-buttons user-acts' }, el('button', { class: 'link-btn', type: 'button', onclick: async () => {
+        for (const f of changed.slice(0, -1)) await api('POST', `/api/admin/users/${d.id}`, { action: 'feature', feature: f.key, value: null }).catch(() => {});
+        act(d, { action: 'feature', feature: changed.at(-1).key, value: null }, 'As for everyone again.');
+      } }, 'As for everyone again')) : null);
+  }
+
+  /** The paid AI services: how much the account has left, an amount given (with an end date or without), taken away. */
+  function aiPart(d) {
+    const kinds = Object.entries(d.ai).map(([kind, a]) => {
+      const amount = el('input', { type: 'number', class: 'input', min: 1, max: 100000, placeholder: a.unit, 'aria-label': `${a.name}: ${a.unit} to give` });
+      const until = el('input', { type: 'date', class: 'input', 'aria-label': `${a.name}: until (optional)`, title: 'Until this day (optional)' });
+      const give = el('button', { class: 'btn small', type: 'button', dataset: { giveAi: kind } }, 'Give');
+      give.addEventListener('click', () => {
+        if (!(Number(amount.value) > 0)) { amount.focus(); return; }
+        const end = until.value ? Math.floor(new Date(`${until.value}T23:59:59`).getTime() / 1000) : 0;
+        act(d, { action: 'give-ai', kind, amount: Number(amount.value), expiresAt: end }, `${amount.value} ${a.unit} given to ${d.name}.`);
+      });
+      const rows = a.rows.filter((r) => r.state === 'active').map((r) => el('div', { class: 'hint' },
+        `${r.left} of ${r.amount} ${a.unit} left${r.expiresAt ? `, until ${day(r.expiresAt)}` : ''} `,
+        el('button', { class: 'link-btn', type: 'button', onclick: () => {
+          if (confirm(`Take the ${r.left} ${a.unit} left away from ${d.name}?`)) act(d, { action: 'take-ai', amount: r.id }, 'Taken away.');
+        } }, 'Take away')));
+      return el('div', { class: 'ai-kind', dataset: { ai: kind } },
+        el('div', {}, el('b', {}, a.name), ': ', el('span', { class: 'ai-left' }, a.left ? `${a.left} ${a.unit} left` : 'off (nothing given)')),
+        ...rows, el('div', { class: 'ai-give' }, amount, until, give));
+    });
+    return el('section', { class: 'user-ai' }, el('h4', {}, 'Paid AI (off until you give an amount)'),
+      el('p', { class: 'hint' }, 'Each use is counted on the server and stops at zero. The end date is optional.'), ...kinds);
   }
 
   function accountPart(d) {
@@ -219,7 +317,7 @@ export function usersAdmin(o) {
 
   load();
   return el('section', { class: 'users-admin' },
-    el('div', { class: 'users-tools' }, find, filter), count, table,
+    el('div', { class: 'users-tools' }, find, filter, featuresBtn), count, table,
     el('p', { class: 'hint' }, o.me.owner ? 'You are the owner: only you make admins and change the API keys. Helper admins manage the users.'
       : 'You are a helper admin: the owner makes admins and changes the API keys.'));
 }

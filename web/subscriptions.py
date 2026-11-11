@@ -17,6 +17,7 @@ from urllib.parse import quote
 
 import db
 
+OFFLINE_DEFAULT = 3 * 24 * 60  # minutes the app may stay offline (a plan can say another time)
 CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 CODE_RE = re.compile(r'^[A-HJ-NP-Z2-9]{16}$')
 BOOK_RE = re.compile(r'^L[0-9a-f]{10}$')
@@ -67,7 +68,10 @@ def _qr_data(url):
     return 'data:image/svg+xml;base64,' + base64.b64encode(out.getvalue()).decode('ascii')
 
 
-def create_code(admin_id, days, books, label='', redeem_days=90, public_url=''):
+def create_code(admin_id, days, books, label='', redeem_days=90, public_url='', plan=None):
+    """plan (a row of plans): a code of this plan — its days, books and offline time."""
+    if plan:
+        days, books = plan['days'], json.loads(plan['books'] or '["*"]')
     try:
         days, redeem_days = int(days), int(redeem_days)
     except (TypeError, ValueError):
@@ -85,9 +89,10 @@ def create_code(admin_id, days, books, label='', redeem_days=90, public_url=''):
     url = f"{public_url.rstrip('/')}/web/redeem.html?code={quote(code)}" if public_url else ''
     qr = _qr_data(url) if url else ''
     code_id = db.run(
-        'INSERT INTO subscription_codes (code_hash, code_hint, label, duration_days, books, created_by, created, redeem_until) '
-        'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        (code_hash, code[-4:], label, days, json.dumps(books), int(admin_id), now, redeem_until))
+        'INSERT INTO subscription_codes (code_hash, code_hint, label, duration_days, books, created_by, created, redeem_until, '
+        'plan_id, offline_minutes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        (code_hash, code[-4:], label, days, json.dumps(books), int(admin_id), now, redeem_until,
+         plan['id'] if plan else None, plan['offline_minutes'] if plan else OFFLINE_DEFAULT))
     return {
         'id': code_id,
         'code': '-'.join(code[i:i + 4] for i in range(0, len(code), 4)),
@@ -121,12 +126,13 @@ def redeem(raw, user_id):
             (int(user_id), now, row['id'])).rowcount
         if changed != 1:
             raise SubscriptionError('That access code has already been used.')
-        return _add(c, user_id, row['id'], json.loads(row['books'] or '["*"]'), row['duration_days'], now)
+        return _add(c, user_id, row['id'], json.loads(row['books'] or '["*"]'), row['duration_days'], now,
+                    row['plan_id'], row['offline_minutes'])
 
     return db.transaction(apply)
 
 
-def _add(c, user_id, code_id, books, days, now):
+def _add(c, user_id, code_id, books, days, now, plan_id=None, offline_minutes=OFFLINE_DEFAULT):
     """A grant of days for these books. The same books as a grant not ended yet: from its end
     date (days added); other books: from now."""
     existing = c.execute(
@@ -137,13 +143,15 @@ def _add(c, user_id, code_id, books, days, now):
         if json.loads(grant['books'] or '["*"]') == books:
             start = max(start, int(grant['ends_at']))
     end = start + int(days) * 86400
-    c.execute('INSERT INTO subscriptions (user_id, code_id, books, starts_at, ends_at) VALUES (?, ?, ?, ?, ?)',
-              (int(user_id), int(code_id), json.dumps(books), start, end))
+    c.execute('INSERT INTO subscriptions (user_id, code_id, books, starts_at, ends_at, plan_id, offline_minutes) VALUES (?, ?, ?, ?, ?, ?, ?)',
+              (int(user_id), int(code_id), json.dumps(books), start, end, plan_id, int(offline_minutes)))
     return {'startsAt': start, 'expiresAt': end, 'books': books, 'days': int(days)}
 
 
-def grant(admin_id, user_id, days, books, label=''):
-    """Days given by an admin to an account (no code: the Users tab), added as a code would add them."""
+def grant(admin_id, user_id, days, books, label='', kind='given', plan_id=None, offline_minutes=OFFLINE_DEFAULT):
+    """Days given to an account without a code, added as a code would add them: by an admin in
+    the Users tab ('given'), of a plan whose payment an admin approved ('plan'), the free trial
+    of a new account ('trial')."""
     try:
         days = int(days)
     except (TypeError, ValueError):
@@ -158,19 +166,19 @@ def grant(admin_id, user_id, days, books, label=''):
         # (a hash nobody can type: "given" codes are never redeemed)
         code_id = c.execute(
             'INSERT INTO subscription_codes (code_hash, code_hint, label, duration_days, books, created_by, created, '
-            "redeem_until, redeemed_by, redeemed_at, kind) VALUES (?, '', ?, ?, ?, ?, ?, 0, ?, ?, 'given')",
+            "redeem_until, redeemed_by, redeemed_at, kind, plan_id, offline_minutes) VALUES (?, '', ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)",
             (_hash('given:' + secrets.token_hex(16)), label, days, json.dumps(books), int(admin_id), now,
-             int(user_id), now)).lastrowid
-        return _add(c, user_id, code_id, books, days, now)
+             int(user_id), now, kind, plan_id, int(offline_minutes))).lastrowid
+        return _add(c, user_id, code_id, books, days, now, plan_id, offline_minutes)
 
     return db.transaction(apply)
 
 
 def status(user_id, admin=False, now=None):
     if admin:
-        return {'active': True, 'expiresAt': None, 'books': ['*'], 'admin': True}
+        return {'active': True, 'expiresAt': None, 'books': ['*'], 'admin': True, 'offlineMinutes': OFFLINE_DEFAULT}
     now = int(time.time()) if now is None else int(now)
-    rows = db.rows('SELECT books, starts_at, ends_at FROM subscriptions '
+    rows = db.rows('SELECT books, starts_at, ends_at, offline_minutes FROM subscriptions '
                    'WHERE user_id = ? AND revoked = 0 AND starts_at <= ? AND ends_at > ?',
                    (int(user_id), now, now))
     all_books = False
@@ -186,6 +194,8 @@ def status(user_id, admin=False, now=None):
         'expiresAt': max((int(r['ends_at']) for r in rows), default=None),
         'books': ['*'] if all_books else sorted(books),
         'admin': False,
+        # (how long the app may stay offline: the longest of the plans it has now)
+        'offlineMinutes': max((int(r['offline_minutes']) for r in rows), default=OFFLINE_DEFAULT),
     }
 
 

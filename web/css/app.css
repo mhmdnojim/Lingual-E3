@@ -1320,6 +1320,14 @@ a.btn { text-decoration: none; } /* (a link that looks like a button: Download t
 .admin-table th, .admin-table td { padding: 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
 .admin-table th { color: var(--muted); font-weight: 600; font-size: 12.5px; }
 .admin-acts { display: flex; flex-wrap: wrap; gap: 4px; }
+/* Features an admin switched off for this account (js/main.js applyFeatures; the server refuses them too) */
+body.off-add_books :is(#lib-add, #lib-migrate),
+body.off-my_audio [role="tab"][data-tab="audio"],
+body.off-translation :is(#btn-translate, #tr-toggle),
+body.off-breakdown .bd-btn,
+body.off-words #btn-collect,
+body.off-correction #edit-text,
+body.off-download_pdf .pdf-download { display: none !important; }
 /* (its parts: Users, Books and reports, Access codes) */
 .admin-tabs { margin: 4px 0 14px; flex-wrap: wrap; }
 .users-tools { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
@@ -1337,6 +1345,61 @@ a.btn { text-decoration: none; } /* (a link that looks like a button: Download t
 .give-row .input { width: 110px; }
 .field-label { font-size: 13px; color: var(--muted); }
 .user-acts { justify-content: flex-start; }
+.feature-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 4px 14px; margin: 4px 0; }
+.feature-list .check { display: flex; align-items: center; gap: 6px; }
+.ai-kind { display: grid; gap: 4px; padding: 8px 0; border-top: 1px solid var(--line); }
+.ai-kind:first-of-type { border-top: 0; }
+.ai-give { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ai-give .input { width: 110px; }
+.ai-give input[type="date"] { width: 160px; }
+.users-table .pick { width: 28px; }
+/* Plans (js/plans.js) */
+.plans-page { display: grid; gap: 10px; min-width: min(520px, 100%); }
+.plans-state { font-weight: 600; margin: 0; }
+.plan-card { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.plan-card h4 { margin: 0; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+.plan-card p { margin: 0; }
+.plan-price { color: var(--accent); }
+.plan-qrs { display: flex; flex-wrap: wrap; gap: 12px; }
+.plan-qrs figure { margin: 0; text-align: center; font-size: 12.5px; color: var(--muted); }
+.plan-qrs img { display: block; width: 180px; max-width: 100%; height: auto; padding: 6px; background: white; border: 1px solid var(--line); border-radius: 6px; }
+.plan-qr-small { width: 56px; height: 56px; object-fit: contain; background: white; border: 1px solid var(--line); border-radius: 4px; }
+.plan-qr-edit { display: grid; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.plan-form { min-width: min(560px, 100%); }
+.give-plan { margin-top: 6px; }
+/* The API part of the Admin page (js/admin-services.js) */
+.services-admin { display: grid; gap: 8px; max-width: 760px; }
+.service-group h3 { margin: 14px 0 4px; }
+.service { padding: 10px 0; border-top: 1px solid var(--line); }
+.service p { margin: 4px 0; }
+.service-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.service-fields { display: grid; gap: 8px; margin: 6px 0; }
+.service-fields .field { margin: 0; }
+.service-said.err { color: var(--accent); }
+.service.free .service-head .btn { margin-left: auto; }
+/* Offline use and its time limit (js/offline-lock.js) */
+.offline-lock { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; padding: 16px; background: rgba(20, 22, 28, .72); backdrop-filter: blur(3px); }
+.offline-lock[hidden] { display: none; }
+.offline-lock-box { width: min(440px, 100%); padding: 22px 24px; border-radius: 14px; background: var(--surface); color: var(--text); box-shadow: var(--shadow-lg, 0 12px 40px rgba(0, 0, 0, .35)); }
+.offline-lock-box h2 { margin: 0 0 10px; font-size: 20px; }
+.offline-lock-box p { margin: 6px 0; }
+body.offline-locked { overflow: hidden; }
+.offline-pill { position: fixed; left: 50%; bottom: 14px; z-index: 900; transform: translateX(-50%); padding: 5px 12px; border-radius: 999px; background: var(--surface-3); color: var(--muted); font-size: 12.5px; box-shadow: var(--shadow-sm); pointer-events: none; }
+.offline-pill[hidden] { display: none; }
+/* A student's computer: the website's books (js/library.js renderSite) */
+.site-books { display: grid; gap: 10px; max-width: 760px; }
+.site-book { display: grid; grid-template-columns: 56px 1fr auto; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.site-book img, .site-cover { width: 56px; height: 74px; object-fit: cover; border-radius: 4px; background: var(--surface-3); }
+/* Statistics (js/admin-stats.js) */
+.stats-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; margin: 10px 0; }
+.stat { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.stat b { font-size: 22px; }
+.stat span { color: var(--muted); font-size: 13px; }
+.stat small { color: var(--muted); font-size: 11.5px; }
+.stats-two { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(0, 2fr); gap: 16px; }
+.stats-two h4 { margin: 8px 0 4px; }
+.admin-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+@media (max-width: 800px) { .stats-two { grid-template-columns: 1fr; } }
 .subscription-admin { margin-top: 30px; padding-top: 16px; border-top: 1px solid var(--line); }
 .subscription-code-form { width: min(680px, 100%); padding: 10px 0; }
 .subscription-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }

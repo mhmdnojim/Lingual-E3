@@ -95,7 +95,9 @@ CREATE TABLE IF NOT EXISTS subscription_codes (
   redeemed_by INTEGER,
   redeemed_at INTEGER,
   revoked INTEGER NOT NULL DEFAULT 0,
-  kind TEXT NOT NULL DEFAULT 'code'        -- code | given (days given by an admin in the Users tab)
+  kind TEXT NOT NULL DEFAULT 'code',       -- code | given (by an admin in the Users tab) | plan (a payment approved) | trial
+  plan_id INTEGER,                         -- the plan it is of (plans.py), if any
+  offline_minutes INTEGER NOT NULL DEFAULT 4320
 );
 CREATE TABLE IF NOT EXISTS subscriptions (
   id INTEGER PRIMARY KEY,
@@ -106,9 +108,80 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   ends_at INTEGER NOT NULL,
   revoked INTEGER NOT NULL DEFAULT 0,
   revoked_at INTEGER,
+  plan_id INTEGER,
+  offline_minutes INTEGER NOT NULL DEFAULT 4320,  -- how long the app may stay offline with it
   FOREIGN KEY(code_id) REFERENCES subscription_codes(id)
 );
 CREATE INDEX IF NOT EXISTS subscriptions_user ON subscriptions(user_id, starts_at, ends_at, revoked);
+CREATE TABLE IF NOT EXISTS settings (       -- of the website, changed by admins (plans.py: the free trial …)
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL                      -- JSON
+);
+CREATE TABLE IF NOT EXISTS plans (          -- subscription plans (plans.py)
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  price_label TEXT NOT NULL DEFAULT '',    -- as it is shown ("¥30 a month")
+  about TEXT NOT NULL DEFAULT '',
+  days INTEGER NOT NULL,
+  books TEXT NOT NULL DEFAULT '["*"]',
+  offline_minutes INTEGER NOT NULL DEFAULT 4320,  -- how long the app may stay offline with it
+  active INTEGER NOT NULL DEFAULT 1,
+  sort INTEGER NOT NULL DEFAULT 0,
+  qr1 TEXT NOT NULL DEFAULT '', qr1_label TEXT NOT NULL DEFAULT '',  -- pictures of the owner's payment QR codes
+  qr2 TEXT NOT NULL DEFAULT '', qr2_label TEXT NOT NULL DEFAULT '',
+  amount_minor INTEGER, currency TEXT NOT NULL DEFAULT '', stripe_price TEXT NOT NULL DEFAULT '',  -- (card payments, later)
+  created INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS payment_requests (  -- "I paid": approved or refused by an admin (plans.py)
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  plan_id INTEGER NOT NULL,
+  plan_name TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  proof TEXT NOT NULL DEFAULT '',          -- a screenshot (a file in DATA/plans)
+  status TEXT NOT NULL DEFAULT 'pending',  -- pending | approved | refused
+  amount_label TEXT NOT NULL DEFAULT '',   -- what the admin says was paid (not a proof)
+  reply TEXT NOT NULL DEFAULT '',
+  created INTEGER NOT NULL,
+  decided_at INTEGER NOT NULL DEFAULT 0,
+  decided_by INTEGER
+);
+CREATE INDEX IF NOT EXISTS payment_requests_user ON payment_requests(user_id, status);
+CREATE TABLE IF NOT EXISTS devices (        -- the devices an account is logged in on (devices.py)
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  device TEXT NOT NULL,                    -- the browser's random id
+  name TEXT NOT NULL DEFAULT '',           -- "Chrome on Windows"
+  linked_at INTEGER NOT NULL,
+  last_seen INTEGER NOT NULL,
+  UNIQUE (user_id, device)
+);
+CREATE TABLE IF NOT EXISTS activity (       -- a record of use, one row per account and day (stats.py)
+  user_id INTEGER NOT NULL,
+  day TEXT NOT NULL,                       -- YYYY-MM-DD
+  minutes INTEGER NOT NULL DEFAULT 0,
+  pages INTEGER NOT NULL DEFAULT 0, reads INTEGER NOT NULL DEFAULT 0, translations INTEGER NOT NULL DEFAULT 0,
+  mp3s INTEGER NOT NULL DEFAULT 0, words INTEGER NOT NULL DEFAULT 0,
+  scripts INTEGER NOT NULL DEFAULT 0, pictures INTEGER NOT NULL DEFAULT 0, layout INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, day)
+);
+CREATE TABLE IF NOT EXISTS user_features (  -- a feature switched on or off by an admin (access.py)
+  user_id INTEGER NOT NULL,                -- 0: for everyone
+  feature TEXT NOT NULL,
+  allowed INTEGER NOT NULL,
+  PRIMARY KEY (user_id, feature)
+);
+CREATE TABLE IF NOT EXISTS ai_amounts (     -- an amount of a paid AI service given to an account (access.py)
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  kind TEXT NOT NULL,                      -- scripts (seconds) | pictures | layout (pages)
+  amount INTEGER NOT NULL,
+  used INTEGER NOT NULL DEFAULT 0,
+  expires_at INTEGER NOT NULL DEFAULT 0,   -- 0: no end date
+  given_by INTEGER NOT NULL,
+  created INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ai_amounts_user ON ai_amounts(user_id, kind);
 """
 
 _lock = threading.RLock()
@@ -138,6 +211,13 @@ def conn():
                 c.execute('ALTER TABLE users ADD COLUMN last_seen INTEGER NOT NULL DEFAULT 0')
             if 'kind' not in {r[1] for r in c.execute('PRAGMA table_info(subscription_codes)').fetchall()}:
                 c.execute("ALTER TABLE subscription_codes ADD COLUMN kind TEXT NOT NULL DEFAULT 'code'")
+            # (plans: a code or a grant of a plan, and how long the app may stay offline with it)
+            for table in ('subscription_codes', 'subscriptions'):
+                have = {r[1] for r in c.execute(f'PRAGMA table_info({table})').fetchall()}
+                if 'plan_id' not in have:
+                    c.execute(f'ALTER TABLE {table} ADD COLUMN plan_id INTEGER')
+                if 'offline_minutes' not in have:
+                    c.execute(f'ALTER TABLE {table} ADD COLUMN offline_minutes INTEGER NOT NULL DEFAULT 4320')
             if not c.execute('SELECT 1 FROM users WHERE id = ?', (LOCAL_USER,)).fetchone():
                 c.execute("INSERT INTO users (id, email, name, admin, created) VALUES (?, 'local', 'You', 1, ?)",
                           (LOCAL_USER, int(time.time())))

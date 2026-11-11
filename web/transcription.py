@@ -270,6 +270,22 @@ def speech_settings(config):
     return key, config.get('speechModel') or SPEECH_MODEL, engine
 
 
+def _backup_key(key):
+    """The backup key of ElevenLabs (services.py), when `key` is the main one and there is one."""
+    import auth
+    config = auth.config()
+    backup = config.get('speechKey2')
+    return backup if backup and key == config.get('speechKey') else None
+
+
+def _note(service, ok, said=''):
+    try:
+        import services
+        services.noted(service, ok, said)
+    except Exception:
+        pass
+
+
 def _ffmpeg():
     """The app's ffmpeg (web/vendor/python: imageio-ffmpeg), or None."""
     if str(PACKAGES) not in sys.path and PACKAGES.is_dir():
@@ -315,7 +331,24 @@ def _said(error):
 def eleven(path, key, model=SPEECH_MODEL, language=None, speakers=True, timeout=1800, info=None):
     """The timed lines of a recording or video, written down by ElevenLabs: as transcribe() gives
     ([{"t", "x", "words", "speaker"?}]). language: its code (en, zh …), or None: found by itself.
-    info (a dict): its 'language' put in (as the translator knows it: spoken_language)."""
+    info (a dict): its 'language' put in (as the translator knows it: spoken_language).
+    The main key refused, or out of credits: the backup key (services.py), if there is one."""
+    try:
+        out = _eleven(path, key, model, language, speakers, timeout, info)
+    except SpeechError as e:
+        backup = _backup_key(key)
+        if backup and ('accept the key' in str(e) or 'no credits' in str(e)):
+            _note('speechKey', False, str(e))
+            out = _eleven(path, backup, model, language, speakers, timeout, info)
+            _note('speechKey2', True)
+            return out
+        _note('speechKey', False, str(e))
+        raise
+    _note('speechKey', True)
+    return out
+
+
+def _eleven(path, key, model, language, speakers, timeout, info):
     if not key:
         raise SpeechError('There is no key of ElevenLabs yet.')
     data, name, kind = _sound_of(path)
@@ -526,7 +559,7 @@ def _run(aid, path, language='en', how=None, keep=True):
 
 # ---------------------------------------------------------------- Transcribe a file (any one)
 
-def start_file(name, data, language=None, how=None):
+def start_file(name, data, language=None, how=None, check=None):
     """Any audio or video file transcribed (not kept: its lines told by file_status, for an hour):
     the job's id. Its lines' translations are kept under its script id (AU-<its content's
     sha256>, of the book 'files'): the same file transcribed again finds them."""
@@ -541,6 +574,12 @@ def start_file(name, data, language=None, how=None):
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f'file{ext}'
     path.write_bytes(data)
+    if check:  # (server.py: its length counted against the account's minutes; refused: nothing kept)
+        try:
+            check(path)
+        except Exception:
+            shutil.rmtree(folder, ignore_errors=True)
+            raise
     with _lock:
         _jobs[job] = {'state': 'queued', 'message': 'Waiting to transcribe…', 'at': time.time()}
         _scripts[job] = f'AU-{hashlib.sha256(data).hexdigest()[:32]}'

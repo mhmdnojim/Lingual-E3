@@ -15,12 +15,17 @@ import os
 import shutil
 import time
 
+import access
 import accounts
 import db
+import devices
 import library
+import plans
+import stats
 import subscriptions
 
-ACTIONS = ('block', 'unblock', 'make-admin', 'remove-admin', 'password', 'give-days', 'revoke-plan', 'delete')
+ACTIONS = ('block', 'unblock', 'make-admin', 'remove-admin', 'password', 'give-days', 'revoke-plan', 'delete',
+           'feature', 'give-ai', 'take-ai', 'give-plan', 'unlink-device')
 LIST_MOST = 5000
 
 
@@ -110,6 +115,9 @@ def details(actor, uid, now=None):
     out['grants'] = subscriptions.of_user(u['id'], now)
     out['bookList'] = db.rows('SELECT id, title, status, visibility, bytes FROM books WHERE owner = ? ORDER BY updated DESC LIMIT 200',
                               (u['id'],))
+    out['devices'] = devices.of_user(u['id'], now)
+    out['features'] = access.feature_rows(u['id'])
+    out['ai'] = access.amounts(u['id'], now)
     out['may'] = {k: v is True for k, v in allowed(actor, u).items()}
     out['you'] = actor['id'] == u['id']
     return out
@@ -152,6 +160,14 @@ def change(actor, uid, body):
             subscriptions.grant(actor['id'], tid, body.get('days'), books, f"Given by {actor['name']}")
         except subscriptions.SubscriptionError as e:
             raise UsersError(str(e))
+    elif action == 'unlink-device':
+        if not devices.unlink(tid, row_id=body.get('device')):
+            raise UsersError('This device was not found.', 404)
+    elif action == 'give-plan':
+        plan = plans.get(body.get('plan'))
+        if not plan:
+            raise UsersError('This plan was not found.', 404)
+        plans.give(actor['id'], tid, plan)
     elif action == 'revoke-plan':
         try:
             gid = int(body.get('grant'))
@@ -160,6 +176,16 @@ def change(actor, uid, body):
         if not db.one('SELECT 1 FROM subscriptions WHERE id = ? AND user_id = ?', (gid, tid)):
             raise UsersError('This plan is not this account’s.', 404)
         subscriptions.revoke_subscription(gid)
+    elif action in ('feature', 'give-ai', 'take-ai'):
+        try:
+            if action == 'feature':
+                access.set_feature([tid], str(body.get('feature', '')), body.get('value'))
+            elif action == 'give-ai':
+                access.give(actor['id'], tid, str(body.get('kind', '')), body.get('amount'), body.get('expiresAt'))
+            else:
+                access.take_away(tid, body.get('amount'))
+        except (access.AccessError, TypeError, ValueError) as e:
+            raise UsersError(str(e) or 'Bad request.')
     elif action == 'delete':
         delete(tid)
         return {'deleted': True}
@@ -184,5 +210,9 @@ def delete(uid):
         c.execute('DELETE FROM subscriptions WHERE user_id = ?', (uid,))
         c.execute('UPDATE subscription_codes SET redeemed_by = NULL WHERE redeemed_by = ?', (uid,))
         c.execute('UPDATE reports SET user = NULL WHERE user = ?', (uid,))
+        access.forget(c, uid)
+        plans.forget(c, uid)
+        stats.forget(c, uid)
+        devices.forget(c, uid)
         c.execute('DELETE FROM users WHERE id = ?', (uid,))
     db.transaction(apply)

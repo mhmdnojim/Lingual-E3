@@ -81,7 +81,7 @@ export async function speechDialog(app, onChange = null) {
     return [seg, state, info.owner ? el('div', { class: 'form-buttons' },
       el('button', { class: 'link-btn speech-key', type: 'button', onclick: () => how.replaceChildren(...keyForm()) }, info.ready ? 'Change the key of ElevenLabs' : 'Add a key of ElevenLabs')) : null,
     info.admin && !info.owner ? el('p', { class: 'hint' }, 'Only the owner of the website changes this.') : null,
-    info.can ? null : el('p', { class: 'hint' }, 'Only an admin can transcribe here: ElevenLabs costs money.')].filter(Boolean);
+    info.can ? null : el('p', { class: 'hint' }, 'Scripts cost money here: the admin gives an account minutes of them.')].filter(Boolean);
   };
   const keyForm = () => {
     const key = el('input', { type: 'password', class: 'input', autocomplete: 'off', placeholder: 'sk_…', 'aria-label': 'The key of ElevenLabs' });

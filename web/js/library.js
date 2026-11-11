@@ -1,12 +1,15 @@
 // Lingua Books: the library (the home screen), adding a book (a text, a PDF or photos of pages),
 // a book's settings and sharing it with everyone, reports, accounts, and the admin page.
 // Everything is kept by the server (web/library.py, web/accounts.py).
-import { $, $$, el, icon, store, toast } from './util.js';
+import { $, $$, deviceId, el, icon, store, toast } from './util.js';
 import { openDialog as showDialog, closeDialog } from './media.js';
 import { designEditor, framed } from './designs.js';
 import { speechDialog } from './transcription.js';
 import { requestAILayout } from './layout-ai.js';
 import { usersAdmin } from './admin-users.js';
+import { plansAdmin, plansDialog } from './plans.js';
+import { servicesAdmin } from './admin-services.js';
+import { statsAdmin } from './admin-stats.js';
 
 /** The library's dialogs (adding a book, settings, names, accounts …) stay open when the page outside them is clicked. */
 const openDialog = (title, body) => showDialog(title, body, null, { keep: true });
@@ -258,7 +261,8 @@ export class Library {
   }
 
   scopes() {
-    const out = [['public', 'Public library'], ['mine', 'My books']];
+    // (a student's computer: the website's books to download, no public library, no disc)
+    const out = this.me.student ? [['mine', 'My books'], ['site', 'Website']] : [['public', 'Public library'], ['mine', 'My books']];
     if (this.me.disc) out.push(['local', 'On this computer']);
     if (this.user?.admin && this.onWebsite) out.push(['admin', 'Admin']);
     return out;
@@ -269,7 +273,7 @@ export class Library {
     this.closeMenu();
     clearTimeout(this.poll);
     const scopes = this.scopes();
-    if (!scopes.some(([s]) => s === this.scope)) this.scope = this.me.disc ? 'local' : this.user && this.onWebsite ? 'mine' : 'public';
+    if (!scopes.some(([s]) => s === this.scope)) this.scope = this.me.student ? (this.user ? 'mine' : 'site') : this.me.disc ? 'local' : this.user && this.onWebsite ? 'mine' : 'public';
     $$('#library [role=tab]').forEach((t) => {
       t.hidden = !scopes.some(([s]) => s === t.dataset.scope);
       t.setAttribute('aria-selected', String(t.dataset.scope === this.scope));
@@ -277,6 +281,7 @@ export class Library {
     this.renderAccount();
     const body = $('#lib-body');
     if (this.scope === 'admin') { this.renderTree(null); this.renderAdmin(gen); return; }
+    if (this.scope === 'site') { this.renderTree(null); this.renderSite(gen); return; }
     if (this.scope === 'mine' && !this.user) {
       this.renderTree(null);
       body.replaceChildren(el('div', { class: 'lib-empty' },
@@ -335,12 +340,22 @@ export class Library {
       el('button', { class: 'btn primary', html: `${icon('plus')}Add a book`, onclick: () => this.addDialog() }));
   }
 
+  /** The plans offered, with "I paid" and the way to an access code (js/plans.js). */
+  plansDialog() {
+    if (!this.user) { this.accountDialog('signup', 'Create an account or log in first, then choose a plan.'); return; }
+    plansDialog({ openDialog, closeDialog, redeem: () => this.redeemDialog(),
+      changed: () => { if (!this.me.subscription?.active) this.refreshMe(); } });
+  }
+
   subscriptionEmptyState(message = '') {
     return el('div', { class: 'lib-empty' },
-      el('h3', {}, 'An access code is needed'),
-      el('p', {}, message || 'Create an account or log in, then enter the code from your administrator.'),
+      el('h3', {}, 'A plan is needed'),
+      el('p', {}, this.user ? 'Your free days are over, or you have no plan yet. Choose a plan, or enter an access code from the admin.'
+        : message || 'Create an account or log in, then choose a plan or enter an access code.'),
       this.user
-        ? el('button', { class: 'btn primary', onclick: () => this.redeemDialog() }, 'Redeem access code')
+        ? el('div', { class: 'lib-actions' },
+          el('button', { class: 'btn primary', onclick: () => this.plansDialog() }, 'See the plans'),
+          el('button', { class: 'btn', onclick: () => this.redeemDialog() }, 'Redeem access code'))
         : el('div', { class: 'lib-actions' },
           el('button', { class: 'btn primary', onclick: () => this.accountDialog('signup') }, 'Create an account'),
           el('button', { class: 'btn', onclick: () => this.accountDialog('login') }, 'Log in')));
@@ -1290,7 +1305,7 @@ export class Library {
         ['new', 'error'].includes(b.status) && b.kind !== 'text'  // change how they are made, with a sample
           ? el('button', { class: 'btn', type: 'button', onclick: () => this.resume(b) }, b.sample ? 'Check the sample' : 'Make a sample') : null,
         b.status === 'error' && b.kind === 'text' ? el('button', { class: 'btn', type: 'button', onclick: () => this.makeAgain(b) }, 'Try again') : null,
-        b.pdf ? el('a', { class: 'btn', href: b.pdf, download: '', title: 'The book’s PDF, with the pictures you replaced' }, 'Download the PDF') : null,
+        b.pdf ? el('a', { class: 'btn pdf-download', href: b.pdf, download: '', title: 'The book’s PDF, with the pictures you replaced' }, 'Download the PDF') : null,
         el('span', { class: 'push' }),
         el('button', { class: 'btn', type: 'button', onclick: closeDialog }, 'Cancel'),
         el('button', { class: 'btn primary', type: 'submit' }, 'Save')));
@@ -1351,7 +1366,11 @@ export class Library {
       if (!confirm('Write down what is said in every recording of this book not transcribed yet? '
         + 'With ElevenLabs each hour of sound costs some of your credits; on this computer it takes long.')) return;
       transcribe.disabled = true;
-      try { show(await api('POST', `/api/books/${b.id}/tracks/transcribe`)); } catch (err) { toast(err.message); }
+      try {
+        const d = await api('POST', `/api/books/${b.id}/tracks/transcribe`);
+        show(d);
+        if (d.stopped) toast(d.stopped, 6000); // (an account's minutes of scripts ran out: the rest is not started)
+      } catch (err) { toast(err.message); }
       transcribe.disabled = false;
     };
     const changed = () => { if (this.app.book?.id === b.id) this.app.reloadBook(); };
@@ -1553,17 +1572,17 @@ export class Library {
 
   renderAccount() {
     const box = $('#lib-account');
-    if (this.me.mode === 'local') { box.replaceChildren(); return; }
+    if (this.me.mode === 'local' && !this.me.student) { box.replaceChildren(); return; } // (a student's computer: the website's account)
     if (!this.user) {
-      box.replaceChildren(
-        el('button', { class: 'btn', onclick: () => this.accountDialog('login') }, 'Log in'),
-        el('button', { class: 'btn primary', onclick: () => this.accountDialog('signup') }, 'Sign up'));
+      box.replaceChildren(...[
+        el('button', { class: 'btn', onclick: () => this.accountDialog('login') }, this.me.student ? 'Log in to the website' : 'Log in'),
+        this.me.student ? null : el('button', { class: 'btn primary', onclick: () => this.accountDialog('signup') }, 'Sign up')].filter(Boolean));
       return;
     }
     const account = el('button', { class: 'btn', html: `${icon('user')}<span>${this.user.name.replace(/[<&>]/g, '')}</span>`,
       title: this.user.email, onclick: () => this.accountMenu() });
-    box.replaceChildren(account, this.me.subscription?.required
-      ? el('button', { class: 'btn primary', onclick: () => this.redeemDialog() }, 'Redeem access code') : null);
+    box.replaceChildren(account, this.me.subscription?.required && !this.user.admin
+      ? el('button', { class: 'btn primary', id: 'lib-plans', onclick: () => this.plansDialog() }, 'Plans') : null);
   }
 
   accountMenu() {
@@ -1575,6 +1594,7 @@ export class Library {
       el('p', {}, el('b', {}, u.name), el('br'), u.email, u.admin ? el('span', { class: 'badge' }, 'Admin') : null),
       access ? el('p', { class: 'hint' }, access) : null,
       el('div', { class: 'form-buttons' },
+        sub?.required && !u.admin ? el('button', { class: 'btn', type: 'button', onclick: () => { closeDialog(); this.plansDialog(); } }, 'Plans') : null,
         sub?.required && !u.admin ? el('button', { class: 'btn', type: 'button', onclick: () => { closeDialog(); this.redeemDialog(); } }, 'Redeem an access code') : null,
         this.me.mode === 'public' ? el('button', { class: 'btn', type: 'button', onclick: () => this.passwordDialog() }, 'Change the password') : null,
         el('button', { class: 'btn primary', type: 'button', onclick: () => this.logOut() }, 'Log out'))));
@@ -1622,7 +1642,7 @@ export class Library {
       try {
         await api('POST', tab === 'signup' ? '/api/signup' : '/api/login',
           { email: email.value, name: name.value, password: pw.value, website: trap.value,
-            adminSetupCode: setupCode.value });
+            adminSetupCode: setupCode.value, device: deviceId() });
       } catch (err) {
         msg.textContent = err.message;
         go.disabled = false;
@@ -1695,13 +1715,63 @@ export class Library {
   // ---------------------------------------------------------------- Admin
 
   /**
+   * A student's computer (web/student.py): the books of the website the account may read, each
+   * downloaded into this library (My books) with its audio, video and scripts.
+   */
+  async renderSite(gen) {
+    const body = $('#lib-body');
+    const st = this.me.student;
+    const siteName = st.site.replace(/^https?:\/\//, '');
+    if (!this.user) {
+      body.replaceChildren(el('div', { class: 'lib-empty' }, el('h3', {}, 'Log in with your website account'),
+        el('p', {}, `The books of ${siteName} that your plan allows are downloaded to this computer.`),
+        el('button', { class: 'btn primary', onclick: () => this.accountDialog('login') }, 'Log in')));
+      return;
+    }
+    let list;
+    try { list = await api('GET', '/api/student/books'); } catch (e) {
+      if (gen === this.gen) body.replaceChildren(el('div', { class: 'lib-empty' }, el('h3', {}, 'The website could not be reached'), el('p', {}, e.message),
+        el('button', { class: 'btn', onclick: () => this.render() }, 'Try again')));
+      return;
+    }
+    if (gen !== this.gen) return;
+    const cards = list.map((b) => {
+      const job = b.job;
+      const working = job?.state === 'working';
+      const act = b.here && !working ? el('button', { class: 'btn small', onclick: () => this.app.go(b.id, '1') }, 'Open')
+        : working ? el('span', { class: 'hint' }, `${job.stage} ${job.total ? Math.round((job.done / job.total) * 100) : 0}%`)
+          : el('button', { class: 'btn small primary', dataset: { download: b.id }, onclick: async () => {
+            try { await api('POST', `/api/student/download/${b.id}`); } catch (e) { toast(e.message); return; }
+            this.watchDownloads();
+            this.render();
+          } }, b.here ? 'Download again' : 'Download');
+      return el('div', { class: 'site-book', dataset: { book: b.id } },
+        b.cover ? el('img', { src: b.cover, alt: '', loading: 'lazy' }) : el('div', { class: 'site-cover' }),
+        el('div', {}, el('b', {}, b.title), el('div', { class: 'hint' }, `${b.pageCount} pages${b.author ? ` · ${b.author}` : ''}${b.here ? ' · on this computer' : ''}`),
+          job?.state === 'error' ? el('div', { class: 'form-msg' }, job.error) : null),
+        act);
+    });
+    body.replaceChildren(el('div', { class: 'site-books' },
+      el('p', { class: 'hint' }, `${st.online ? 'Connected to' : 'Not connected to'} ${siteName}. Downloaded books work without internet, for the time your plan allows.`),
+      ...(cards.length ? cards : [el('div', { class: 'lib-empty' }, 'No books for your account yet.')])));
+    if (list.some((b) => b.job?.state === 'working')) this.watchDownloads();
+  }
+
+  /** While a download runs: the Website page drawn again every second. */
+  watchDownloads() {
+    if (this.watching) return;
+    this.watching = setTimeout(() => { this.watching = null; if (this.scope === 'site' && this.isOpen) this.render(); }, 1000);
+  }
+
+  /**
    * The Admin page, in parts: Users (js/admin-users.js), Books and reports, and Access codes
    * (when the website asks for them). The part last chosen opens again.
    */
   async renderAdmin(gen) {
     const body = $('#lib-body');
     const codes = Boolean(this.me.subscription?.required);
-    const parts = [['users', 'Users'], ['books', 'Books and reports'], ...(codes ? [['codes', 'Access codes']] : [])];
+    const parts = [['users', 'Users'], ['books', 'Books and reports'], ...(codes ? [['plans', 'Plans and payments'], ['codes', 'Access codes']] : []),
+      ['stats', 'Statistics'], ...(this.user?.owner ? [['api', 'API']] : [])];
     let part = store.get('adminTab', 'users');
     if (!parts.some(([k]) => k === part)) part = 'users';
     const bar = el('div', { class: 'seg admin-tabs', role: 'radiogroup', 'aria-label': 'Admin' },
@@ -1712,10 +1782,29 @@ export class Library {
         usersAdmin({ me: this.me.user, plans: codes, openDialog: showDialog, closeDialog })));
       return;
     }
+    if (part === 'api') {
+      body.replaceChildren(el('div', { class: 'admin' }, bar, servicesAdmin()));
+      return;
+    }
+    if (part === 'stats') {
+      const users = (await api('GET', '/api/admin/users').catch(() => ({ users: [] }))).users;
+      if (gen !== this.gen) return;
+      body.replaceChildren(el('div', { class: 'admin' }, bar, statsAdmin({ users })));
+      return;
+    }
     let reports, books, access = null;
     try {
       [reports, books] = await Promise.all([api('GET', '/api/admin/reports'), api('GET', '/api/books?scope=all')]);
-      if (part === 'codes') access = await api('GET', '/api/admin/subscriptions');
+      if (gen !== this.gen) return;
+      if (part === 'plans') {
+        body.replaceChildren(el('div', { class: 'admin' }, bar, plansAdmin({ openDialog: showDialog, closeDialog,
+          books: books.filter((b) => b.visibility === 'public' && b.status === 'ready' && !b.link) })));
+        return;
+      }
+      if (part === 'codes') {
+        access = await api('GET', '/api/admin/subscriptions');
+        access.plans = (await api('GET', '/api/admin/plans').catch(() => ({ plans: [] }))).plans.filter((p) => p.active);
+      }
     } catch (e) {
       body.replaceChildren(el('div', { class: 'admin' }, bar, el('div', { class: 'lib-empty' }, e.message)));
       return;
@@ -1756,9 +1845,14 @@ export class Library {
     const days = el('input', { class: 'input', type: 'number', min: 1, max: 3650, value: 30, required: true });
     const redeemDays = el('input', { class: 'input', type: 'number', min: 1, max: 3650, value: 90, required: true });
     const label = el('input', { class: 'input', type: 'text', maxlength: 80, placeholder: 'Optional note, e.g. Student 1' });
+    // (a code of a plan: its days, books and offline time)
+    const plan = el('select', { class: 'select', 'aria-label': 'Plan' }, el('option', { value: '' }, 'No plan: days and books chosen here'),
+      ...(access.plans || []).map((p) => el('option', { value: p.id }, `${p.name} (${p.days} days)`)));
+    plan.addEventListener('change', () => { days.disabled = mode.disabled = Boolean(plan.value); choose.hidden = Boolean(plan.value) || mode.value !== 'selected'; });
     const msg = el('p', { class: 'form-msg', role: 'alert' });
     const submit = el('button', { class: 'btn primary', type: 'submit' }, 'Generate code and QR');
     const form = el('form', { class: 'lib-form subscription-code-form' },
+      access.plans?.length ? el('label', { class: 'field' }, el('span', {}, 'A code of a plan'), plan) : null,
       el('div', { class: 'subscription-fields' },
         el('label', { class: 'field' }, el('span', {}, 'Subscription length (days)'), days),
         el('label', { class: 'field' }, el('span', {}, 'Code valid for (days)'), redeemDays)),
@@ -1768,13 +1862,14 @@ export class Library {
       el('p', { class: 'hint' }, 'Each code works once. Access begins when the user redeems it.'), msg, submit);
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
-      const selected = mode.value === '*' ? '*' : [...choose.selectedOptions].map((o) => o.value);
+      const selected = mode.value === '*' || plan.value ? '*' : [...choose.selectedOptions].map((o) => o.value);
       if (selected !== '*' && !selected.length) { msg.textContent = 'Choose at least one public book.'; return; }
       submit.disabled = true;
       msg.textContent = '';
       try {
         this.lastSubscriptionCode = await api('POST', '/api/admin/subscription-codes',
-          { days: Number(days.value), redeemDays: Number(redeemDays.value), books: selected, label: label.value });
+          { days: Number(days.value), redeemDays: Number(redeemDays.value), books: selected, label: label.value,
+            ...(plan.value ? { plan: Number(plan.value) } : {}) });
         await this.renderAdmin(this.gen);
       } catch (error) {
         msg.textContent = error.message;
