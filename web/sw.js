@@ -16,7 +16,7 @@ const VERSION = 'lingua-books-1';
 const SHELL = ['/web/', '/web/index.html', '/web/css/app.css', '/web/manifest.webmanifest',
   '/web/icons/icon.svg', '/web/icons/icon-180.png', '/web/icons/icon-192.png', '/web/icons/icon-512.png',
   '/web/fonts/AtkinsonHyperlegible-Regular.ttf', '/web/fonts/AtkinsonHyperlegible-Bold.ttf',
-  ...['admin-services', 'admin-stats', 'admin-users', 'breakdown', 'designs', 'device', 'editor', 'follow', 'layout-ai', 'library', 'main',
+  ...['admin-services', 'admin-stats', 'admin-users', 'assistant', 'breakdown', 'designs', 'device', 'editor', 'follow', 'layout-ai', 'library', 'main',
     'media', 'migration', 'offline-audio', 'pagetext', 'pageview', 'pictures', 'plans', 'playbuttons', 'recordings', 'search', 'segment',
     'speech', 'transcription', 'translation', 'util', 'voice-options', 'words', 'offline-lock'].map((n) => `/web/js/${n}.js`)];
 const AUDIO = /^\/lib\/L[0-9a-f]{10}\/migration-media\/[0-9a-f]{64}\.(?:mp3|wav|ogg|m4a)$/;

@@ -310,7 +310,11 @@ export class PageView {
     this.gEdit.replaceChildren(...items.filter((it) => it.rects.length).map(({ rects, n, cls }) => {
       const g = svg('g', { class: cls });
       for (const r of rects) g.append(svg('rect', { x: r.x, y: r.y, width: r.w, height: r.h, rx: 4 }));
-      const label = svg('text', { x: rects[0].x, y: rects[0].y - 3 });
+      // Offset by screen pixels so the index clears the selected frame's northwest resize handle
+      // at every zoom level.
+      const scale = this.el.clientWidth / this.W;
+      const clearHandle = scale > 0 ? 18 / scale : this.W / 40;
+      const label = svg('text', { x: rects[0].x + clearHandle, y: rects[0].y - 3 });
       label.textContent = n;
       g.append(label);
       return g;

@@ -81,9 +81,9 @@ def _image(path):
 
 def request_layout(path, page, key, model):
     if not key:
-        raise LayoutError('Add an OpenAI API key in AI layout settings first.')
+        raise LayoutError('Add an OpenAI API key under Admin → API first.')
     if not re.fullmatch(r'[A-Za-z0-9_.:\-]{1,100}', model):
-        raise LayoutError('Choose a valid OpenAI model ID in AI layout settings.')
+        raise LayoutError('Choose a valid OpenAI model ID under Admin → API.')
     words = page['words']
     if not words:
         raise LayoutError('No OCR words were found. Correct the page language or OCR settings first.')
@@ -107,7 +107,7 @@ def request_layout(path, page, key, model):
             data = json.loads(response.read(4 * 1024 * 1024).decode('utf-8'))
     except urllib.error.HTTPError as error:
         # Provider error bodies can echo API credentials. Never return them to a page.
-        messages = {401: 'OpenAI did not accept this API key. Change it in AI layout settings.',
+        messages = {401: 'OpenAI did not accept this API key. Change it under Admin → API.',
                     403: 'This OpenAI project is not allowed to use the selected model.',
                     404: 'The selected model is unavailable to this OpenAI project. Change its model ID.',
                     429: 'OpenAI usage or rate limit reached. Check API billing and limits before retrying.',

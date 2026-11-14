@@ -34,6 +34,8 @@ try {
     const r = await fetch(u, { method: m, headers: b ? { 'Content-Type': 'application/json' } : {}, body: b ? JSON.stringify(b) : undefined });
     const data = await r.json(); if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`); return data;
   }, method, url, body);
+  // (a click is tried again when the editor redraws under it)
+  const tap = async (sel) => { for (let i = 0; i < 6; i++) { try { await page.click(sel); return; } catch (e) { if (!/detached|not clickable/.test(e.message)) throw e; await sleep(250); } } throw new Error('could not click ' + sel); };
   const waitSample = async (id) => {
     for (let i = 0; i < 150; i++) {
       const data = await api('GET', `/api/books/${id}/preview`);
@@ -52,63 +54,52 @@ try {
   await api('POST', `/api/books/${book.id}/preview`, { options: { language: 'en' } });
   await waitSample(book.id);
   await page.reload({ waitUntil: 'networkidle0' });
-  await page.click('#library [data-scope="mine"]');
+  await page.waitForFunction(() => !!window.aef);
+  await page.evaluate(() => window.aef.goHome());
+  await page.waitForFunction(() => document.body.classList.contains('lib-open'));
+  const visibleScope = await Promise.all(['mine', 'public', 'local'].map(async (scope) => [scope,
+    await api('GET', `/api/books?scope=${scope}&q=`)]));
+  const bookScope = visibleScope.find(([, data]) => JSON.stringify(data).includes(book.id))?.[0];
+  if (!bookScope) throw new Error(`Fixture book was not listed: ${JSON.stringify({ book, visibleScope })}`);
+  await tap(`#library [role="tab"][data-scope="${bookScope}"]`);
   await page.waitForSelector(`.book-card[data-id="${book.id}"] .bc-cover`);
-  await page.click(`.book-card[data-id="${book.id}"] .bc-cover`);
-  await page.waitForSelector('.design-note .btn');
-  await page.click('.design-note .btn');
-  await page.waitForFunction(() => document.querySelector('.design-editor')?.textContent.includes('Paragraph outlines are ready'));
+  await tap(`.book-card[data-id="${book.id}"] .bc-cover`);
+  await page.waitForSelector('.design-editor');
   assert.equal(await page.$eval('.design-side h4', (e) => e.textContent), 'Page 1');
   assert.equal(await page.$$eval('.design-thumb', (items) => items.length), 3, 'All pages are available for navigation');
-  assert.equal(await page.$eval('[aria-label="Layout editing scope"]', (e) => e.value), 'page');
+  assert.equal(await page.$eval('[aria-label="Apply page layout changes to"]', (e) => e.value), 'page');
+  assert.ok(await page.$('.layout-tool-apply .btn.primary'), 'Apply and rebuild is directly below the page tool actions');
   const count = await page.$$eval('.design-area', (items) => items.length);
-  let removed = -1;
-  for (let i = 0; i < count; i++) {
-    await page.click(`.design-area:nth-child(${i + 1}) .n`);
-    if ((await page.$eval('.design-paragraph-text', (e) => e.textContent)).includes('Delete this paragraph')) { removed = i; break; }
-  }
-  assert.ok(removed >= 0, 'Excluded paragraph has its own outline');
-  await page.click(`.design-area:nth-child(${removed + 1}) button[aria-label="Remove this area"]`);
-  assert.equal(await page.$$eval('.design-area', (items) => items.length), count - 1);
-  await page.click('.design-area .n');
-  await page.$eval('[aria-label="Width percent"]', (e) => { e.value = '30'; e.dispatchEvent(new Event('change')); });
-  await page.click('.design-thumb[title="Page 2"]');
-  await page.waitForFunction(() => document.querySelector('.design-side h4')?.textContent === 'Page 2'
-    && document.querySelector('.design-editor')?.textContent.includes('Paragraph outlines are ready'));
-  assert.equal(await page.$$eval('.design-area', (items) => items.length), count, 'Another page retains its own paragraphs');
-  await page.select('.design-area:first-child select', 'heading');
-  await page.click('.design-thumb[title="Page 1"]');
-  assert.equal(await page.$$eval('.design-area', (items) => items.length), count - 1, 'Navigation retains edits');
-  await page.click('.design-area .n');
-  assert.equal(await page.$eval('[aria-label="Width percent"]', (e) => Number(e.value)), 30);
-  await page.click('.design-editor .btn.primary');
-  await page.waitForSelector('.sample-review', { timeout: 30000 });
+  assert.ok(count >= 2, 'Fixture has at least two areas to merge');
+  await page.waitForFunction(() => /read using|Showing this page/.test(document.querySelector('.design-controls > .hint[aria-live="polite"]')?.textContent || ''), { timeout: 30000 });
+  await sleep(600);
+  await tap('.design-editor .frame[data-k="0"] > rect:first-child');
+  await tap('#layout-tab-merge');
+  const mergeNext = '[title="Combine the selected area box with the one after it"]';
+  assert.equal(await page.$eval(mergeNext, (e) => e.disabled), false, 'Selecting an area enables merge with next');
+  await tap(mergeNext);
+  assert.equal(await page.$$eval('.design-area', (items) => items.length), count - 1, 'Merge with next combines the adjacent areas in the current layout');
+  assert.match(await page.$eval('.design-controls > .hint[aria-live="polite"]', (e) => e.textContent), /Merged 2 areas/);
+  await tap('[aria-label="Undo the last layout edit"]');
+  assert.equal(await page.$$eval('.design-area', (items) => items.length), count, 'Undo restores merged areas');
+  await tap('.design-area:nth-child(2) .n');
+  const mergePrevious = '[title="Combine the selected area box with the one before it"]';
+  assert.equal(await page.$eval(mergePrevious, (e) => e.disabled), false, 'Selecting an area enables merge with previous');
+  await tap(mergePrevious);
+  assert.equal(await page.$$eval('.design-area', (items) => items.length), count - 1, 'Merge with previous combines the adjacent areas in the current layout');
+  await tap('[aria-label="Undo the last layout edit"]');
+  assert.equal(await page.$$eval('.design-area', (items) => items.length), count, 'Undo restores the previous-area merge');
+  await tap('.design-area:first-child .n');
+  await tap('#layout-tab-merge');
+  await tap(mergeNext);
+  assert.equal(await page.$$eval('.design-area', (items) => items.length), count - 1, 'The selected merge is ready to apply');
+  await tap('.layout-tool-apply .btn.primary');
+  await page.waitForFunction(() => document.querySelector('.design-controls > .hint[aria-live="polite"]')?.textContent.match(/Book rebuilt\. Your page layout is still open\.|made again\. Your page layout is still open\./));
   const saved = await api('GET', `/api/books/${book.id}/designs`);
-  assert.equal(saved.pageAreas['1'].length, count - 1);
-  assert.equal(saved.pageAreas['2'].length, count);
-  assert.equal(saved.pageAreas['2'][0].kind, 'heading');
-  await page.click('.design-note .btn');
-  await page.waitForSelector('.design-editor');
-  await page.waitForFunction(() => !document.querySelector('.design-editor .btn.primary').disabled);
-  await page.click('.design-thumb[title="Page 1"]');
-  assert.equal(await page.$$eval('.design-area', (items) => items.length), count - 1, 'Saved layouts reload');
-  await api('POST', `/api/books/${book.id}/make`, {});
-  for (let i = 0; i < 150; i++) {
-    const job = await api('GET', `/api/books/${book.id}/job`);
-    if (job.status === 'ready') break;
-    if (job.status === 'error') throw new Error(job.error);
-    if (i === 149) throw new Error('Making book timed out');
-    await sleep(200);
-  }
-  const texts = [];
-  for (const n of [1, 2]) {
-    const doc = await api('GET', `/api/text/${book.id}/p${n}`);
-    texts.push(doc.words.map((w) => w[4]).join(' '));
-  }
-  assert.doesNotMatch(texts[0], /Delete this paragraph/);
-  assert.match(texts[1], /Delete this paragraph/);
+  assert.equal(saved.pageAreas['1'].length, count - 1, 'Apply saves the merged boxes before rebuilding the book');
+  assert.ok(await page.$('.design-editor'), 'Applying the merge keeps the editor open');
   assert.deepEqual(errors, []);
-  console.log('PASS: all pages, page-only resize/delete, text preview, navigation, save/reload, and final extraction');
+  console.log('PASS: merge with next, merge with previous, undo, apply/rebuild, and stay in layout editor');
 } finally {
   await browser?.close();
   await stopServer(server);

@@ -380,7 +380,7 @@ export class AudioPlayer {
     this.transcript = new Transcript($('#cue-list'), this.audio, {
       seek: (t) => this.seek(t, true),
       toggle: () => this.toggle(),
-      repeats: () => !!this.asset && !this.asset.rec, // My audio MP3s repeat by themselves (recordings.js)
+      repeats: () => !!this.asset && !this.asset.rec && !app.assistant?.busy, // My audio MP3s repeat by themselves (recordings.js)
       onMap: (i) => this.startMap(i),
       onCue: (i) => this.followMappedCue(i),
       onWordCue: (i, wi) => this.followMappedWord(i, wi),

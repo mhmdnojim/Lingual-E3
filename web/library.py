@@ -78,6 +78,7 @@ LIMITS = {
     'books_per_user': 100, 'user_mb': 600,
 }
 ADMIN_PDF_MB = 500  # an admin's PDF (on this computer you are the admin): a whole textbook, often 80-220 MB
+_pdfium_lock = threading.RLock()  # PDFium handles are process-global on some Windows builds
 
 
 def limits(user):
@@ -454,12 +455,15 @@ def _selection(b, options):
         if 'book.pdf' not in files:
             raise LibraryError('Upload the PDF first.')
         import pypdfium2 as pdfium
-        try:
-            pdf = pdfium.PdfDocument(os.path.join(src, 'book.pdf'))
-        except Exception:
-            raise LibraryError('The PDF could not be opened (damaged, or protected with a password).')
-        total = len(pdf)
-        pdf.close()
+        with _pdfium_lock:
+            try:
+                pdf = pdfium.PdfDocument(os.path.join(src, 'book.pdf'))
+            except Exception:
+                raise LibraryError('The PDF could not be opened (damaged, or protected with a password).')
+            try:
+                total = len(pdf)
+            finally:
+                pdf.close()
         chosen = _page_numbers(options['pages'], total)
         if len(chosen) > LIMITS['pages']:
             raise LibraryError(f"{len(chosen)} pages are chosen; at most {LIMITS['pages']} can be used. "
@@ -483,6 +487,27 @@ def start(b):
     _queue_up(('make', b['id']))
 
 
+def start_pages(b, pages):
+    """Make again only these source pages (numbers from 1) of a book that is made already, in the
+    background: the other pages, and the corrections made on them, stay. The book stays readable."""
+    if b['status'] != 'ready' or b['kind'] == 'text':
+        raise LibraryError('Only the pages of a finished PDF or photo book can be made again one by one.')
+    chosen, _ = _selection(b, _options(b))
+    try:
+        wanted = sorted({int(n) for n in pages})
+    except (TypeError, ValueError):
+        raise LibraryError('Choose valid page numbers.')
+    wanted = [n for n in wanted if n - 1 in chosen]
+    if not wanted:
+        raise LibraryError('None of these pages is in the book.')
+    with _jobs_lock:
+        if (_jobs.get(b['id']) or {}).get('state') in ('waiting', 'working'):
+            raise LibraryError('The pages of this book are being made. Wait until it is done.')
+        _jobs[b['id']] = {'state': 'waiting', 'done': 0, 'total': len(wanted), 'stage': 'Waiting…', 'pages': wanted}
+    _queue_up(('pages', b['id'], wanted))
+    return wanted
+
+
 def sample_size(n):
     """How many pages a sample of a book of n pages has: 1 of a very short one … 5 of a long one."""
     return 1 if n <= 2 else 2 if n <= 5 else 3 if n <= 15 else 4 if n <= 40 else 5
@@ -494,7 +519,7 @@ def start_sample(b, raw_options, same=False, again=False):
     again: the designs found again) finds the designs of the pages, and is a page of each."""
     if b['kind'] == 'text':
         raise LibraryError('A text needs no sample: its pages are made at once.')
-    if b['status'] in ('working', 'ready'):
+    if b['status'] == 'working' or (b['status'] == 'ready' and not again):
         raise LibraryError('The pages of this book are made already.' if b['status'] == 'ready'
                            else 'The pages of this book are being made.')
     options = save_options(b, raw_options)
@@ -504,6 +529,22 @@ def start_sample(b, raw_options, same=False, again=False):
     with _jobs_lock:
         _samples[b['id']] = {'state': 'working', 'stage': 'Waiting…', 'done': 0, 'total': 0}
     _queue_up(('sample', b['id'], bool(same)))
+    return sample(b['id'])
+
+
+def start_layouts(b, raw_options, again=False):
+    """Prepare page thumbnails and page groups for the box editor without OCRing sample pages."""
+    if b['kind'] == 'text':
+        raise LibraryError('A text book has no scanned page boxes to prepare.')
+    if b['status'] == 'working':
+        raise LibraryError('The pages of this book are being made.')
+    options = save_options(b, raw_options)
+    _selection(b, options)
+    if again and os.path.isfile(_designs_path(b['id'])):
+        os.remove(_designs_path(b['id']))
+    with _jobs_lock:
+        _samples[b['id']] = {'state': 'working', 'stage': 'Waiting…', 'done': 0, 'total': 0}
+    _queue_up(('layouts', b['id']))
     return sample(b['id'])
 
 
@@ -556,25 +597,24 @@ def _small_pages(b, chosen, progress):
     pics = folder(b['id'], 'designs')
     shutil.rmtree(pics, ignore_errors=True)
     os.makedirs(pics)
-    what = 'page' if b['kind'] == 'pdf' else 'photo'
-
     def keep(n, img):
         img.save(os.path.join(pics, f'{n}.webp'), 'WEBP', quality=70)
         out.append((n, img))
     if b['kind'] == 'pdf':
         import pypdfium2 as pdfium
-        pdf = pdfium.PdfDocument(os.path.join(src, 'book.pdf'))
-        try:
-            for k, i in enumerate(chosen):
-                progress(f'Looking at the design of {what} {i + 1} ({k + 1} of {len(chosen)})', k, len(chosen))
-                page = pdf[i]
-                keep(i + 1, page.render(scale=designs.SMALL_W / page.get_size()[0]).to_pil().convert('RGB'))
-        finally:
-            pdf.close()
+        with _pdfium_lock:
+            pdf = pdfium.PdfDocument(os.path.join(src, 'book.pdf'))
+            try:
+                for k, i in enumerate(chosen):
+                    progress(f'Preparing page preview {i + 1} of {len(chosen)}', k, len(chosen))
+                    page = pdf[i]
+                    keep(i + 1, page.render(scale=designs.SMALL_W / page.get_size()[0]).to_pil().convert('RGB'))
+            finally:
+                pdf.close()
         return out
     names = _photo_names(src)
     for k, i in enumerate(chosen):
-        progress(f'Looking at the design of {what} {i + 1} ({k + 1} of {len(chosen)})', k, len(chosen))
+        progress(f'Preparing page preview {i + 1} of {len(chosen)}', k, len(chosen))
         try:
             with Image.open(os.path.join(src, names[i])) as im:
                 im.draft('RGB', (designs.SMALL_W * 2, designs.SMALL_W * 4))  # (a JPEG: decoded smaller, faster)
@@ -589,7 +629,7 @@ def _small_pages(b, chosen, progress):
 def _find_designs(b, options, chosen, total, progress):
     """Find the designs of the chosen pages, and keep them (no areas yet: the sample reads them)."""
     small = _small_pages(b, chosen, progress)
-    progress('Comparing the designs of the pages…', len(chosen), len(chosen))
+    progress('Grouping pages by visual layout…', len(chosen), len(chosen))
     found, other = designs.find([n for n, _ in small], [designs.signature(img) for _, img in small])
     return designs.save(_designs_path(b['id']), {'for': {'kind': b['kind'], 'pages': options['pages'], 'total': total},
                                                  'designs': found, 'other': other})
@@ -605,6 +645,10 @@ def designs_info(b):
     except LibraryError:
         return None
     saved = _designs_for(b, options, total)
+    if not saved and b['status'] == 'ready' and b['kind'] in ('pdf', 'images'):
+        # Older books may predate saved page layouts. Build their page map when the owner opens
+        # the editor so they can be corrected without uploading the source again.
+        saved = _find_designs(b, options, chosen, total, lambda *_: None)
     if not saved:
         return None
     return {'designs': saved['designs'], 'other': saved['other'], 'pages': [i + 1 for i in chosen],
@@ -613,9 +657,8 @@ def designs_info(b):
 
 def save_designs(b, raw):
     """The designs as the owner changed them (their pages, areas …): checked and kept."""
-    if b['status'] in ('working', 'ready'):
-        raise LibraryError('The pages of this book are made already.' if b['status'] == 'ready'
-                           else 'The pages of this book are being made.')
+    if b['status'] == 'working':
+        raise LibraryError('The pages of this book are being made.')
     options = _options(b)
     chosen, total = _selection(b, options)
     saved = _designs_for(b, options, total)
@@ -632,37 +675,138 @@ def save_designs(b, raw):
 
 
 def design_picture(bid, n, large=False):
-    """The small picture of page n (to see its design), or None."""
+    """A page image for the layout editor, rendered from the original PDF when first requested."""
     path = folder(bid, 'designs', f'{n}-big.webp' if large else f'{n}.webp')
-    return path if os.path.isfile(path) else None
+    if os.path.isfile(path):
+        return path
+    b = get(bid)
+    if not b or b['kind'] not in ('pdf', 'images'):
+        return None
+    chosen, _ = _selection(b, _options(b))
+    if n - 1 not in chosen:
+        return None
+    source_page = n - 1
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        target = designs.SMALL_W if not large else 1400
+        if b['kind'] == 'pdf':
+            import pypdfium2 as pdfium
+            with _pdfium_lock:
+                pdf = pdfium.PdfDocument(folder(bid, 'source', 'book.pdf'))
+                try:
+                    page = pdf[source_page]
+                    width = page.get_size()[0]
+                    img = page.render(scale=target / width).to_pil().convert('RGB')
+                finally:
+                    pdf.close()
+        else:
+            names = _photo_names(folder(bid, 'source'))
+            with Image.open(os.path.join(folder(bid, 'source'), names[source_page])) as source:
+                img = ImageOps.exif_transpose(source).convert('RGB')
+                img.thumbnail((target, target * 4), Image.Resampling.LANCZOS)
+        img.save(path, 'WEBP', quality=88 if large else 72)
+        return path
+    except (OSError, ValueError, IndexError):
+        return None
 
 
 _layout_lock = threading.Lock()
 
 
-def review_layout(b, n):
-    """Read one selected source page on demand; never rebuild the book or its edits."""
-    if b['status'] in ('working', 'ready'):
-        raise LibraryError('Review layouts before making the complete book.')
+def _layout_sentence_records(doc, dx=0, dy=0):
+    """Return editable page-layout sentence text and its OCR line boxes in page coordinates."""
+    result = []
+    for number, (start, end) in enumerate(doc.get('sent', []), 1):
+        words = doc.get('words', [])[start:end]
+        if not words:
+            continue
+        line_boxes = {}
+        rendered = []
+        for word in words:
+            x, y, w, h, text, line, space = word
+            rendered.append(text + (' ' if space else ''))
+            if w <= 0 or h <= 0:
+                continue
+            box = line_boxes.get(line)
+            if box is None:
+                line_boxes[line] = [x + dx, y + dy, x + dx + w, y + dy + h]
+            else:
+                box[0] = min(box[0], x + dx)
+                box[1] = min(box[1], y + dy)
+                box[2] = max(box[2], x + dx + w)
+                box[3] = max(box[3], y + dy + h)
+        result.append({
+            'n': number, 'a': start, 'b': end,  # (its words in the page's text: new audio is made from them)
+            'speak': [w[4] for w in doc.get('words', [])[start:end]],
+            'text': ''.join(rendered).strip(),
+            'words': [{'x': w[0] + dx, 'y': w[1] + dy, 'w': w[2], 'h': w[3], 't': w[4], 'line': w[5]}
+                      for w in words if w[2] > 0 and w[3] > 0],
+            'bounds': [{'x': b[0], 'y': b[1], 'w': b[2] - b[0], 'h': b[3] - b[1]} for b in line_boxes.values()],
+        })
+    return result
+
+
+def review_layout(b, n, fresh=False):
+    """Read one selected source page on demand; never rebuild the book or its edits.
+    fresh: read it again from the PDF or photo (its text, or OCR), not what the book has."""
+    if b['status'] == 'working':
+        raise LibraryError('Wait for the current book process to finish before editing its boxes.')
     options = _options(b)
-    chosen, total = _selection(b, options)
-    if n - 1 not in chosen:
-        raise LibraryError('This page is outside the selected page range.')
-    saved = _designs_for(b, options, total)
-    if not saved:
-        raise LibraryError('Make a sample first.')
+    # A completed book already has its recognized sentence document and exact page coordinates.
+    # Load those saved results first: opening the layout editor should not rerun OCR on a page the
+    # app has already read. The raw-source path below remains available for a new/unbuilt book.
+    if b['status'] == 'ready' and not fresh:
+        chosen, total = _selection(b, options)
+        if n - 1 not in chosen:
+            raise LibraryError('This page is outside the selected page range.')
+        saved = _designs_for(b, options, total)
+        k = chosen.index(n - 1) + 1  # (its number in the book)
+        doc, img = text_doc(b['id'], k), _page_picture(b['id'], k)
+        if saved and doc and img:
+            design = next((item for item in saved['designs'] if n in item['pages']), None)
+            areas = saved.get('pageAreas', {}).get(str(n), (design or {}).get('areas') or [])
+            if not areas and doc.get('words'):
+                # No boxes were ever saved for this page: show the paragraphs of its text as boxes
+                # (found from the book's own text, no new OCR), ready to be changed.
+                areas = designs.paragraph_areas(doc, img.width, img.height)
+            words = [{'x': w[0], 'y': w[1], 'w': w[2], 'h': w[3], 't': w[4], 'line': w[5]}
+                     for w in doc.get('words', [])]
+            return {'n': n, 'k': k, 'areas': areas, 'how': 'saved', 'fingerprint': str(b['updated']),
+                    'words': words, 'sentences': _layout_sentence_records(doc),
+                    'width': img.width, 'height': img.height,
+                    'picture': f"/lib/{b['id']}/pages/{k}.webp?v={b['updated']}"}
     # Serialize OCR calls: rapid navigation must not launch many engines at once.
     with _layout_lock:
+        # Keep PDF validation inside the same lock as page OCR. Several quick page changes used to
+        # open the same PDF in parallel; PDFium can reject one of those opens as a damaged PDF.
+        chosen, total = _selection(b, options)
+        if n - 1 not in chosen:
+            raise LibraryError('This page is outside the selected page range.')
+        saved = _designs_for(b, options, total)
+        if not saved:
+            raise LibraryError('Prepare page layouts first.')
         source = folder(b['id'], 'source', 'book.pdf') if b['kind'] == 'pdf' else folder(b['id'], 'source', _photo_names(folder(b['id'], 'source'))[n - 1])
         stat = os.stat(source)
         fingerprint = hashlib.sha256(json.dumps([options, stat.st_size, stat.st_mtime_ns], sort_keys=True).encode()).hexdigest()
         cache_dir = folder(b['id'], 'layout-review')
         os.makedirs(cache_dir, exist_ok=True)
         path = os.path.join(cache_dir, f'{n}.json')
-        cached = designs.load(path)
+        cached = None if fresh else designs.load(path)
         picture = folder(b['id'], 'designs', f'{n}-big.webp')
         if not cached or cached.get('fingerprint') != fingerprint or not os.path.isfile(picture):
-            with tempfile.TemporaryDirectory(prefix='reading-', dir=cache_dir) as build:
+            # Keep OCR scratch files in the OS temp directory. On Windows, creating nested
+            # temporary directories with TemporaryDirectory can get a private ACL that the OCR
+            # runtime cannot reopen. A normal mkdir inherits the temp folder's usable ACL.
+            for _ in range(10):
+                build = os.path.join(tempfile.gettempdir(), f'lingua-reading-{secrets.token_hex(12)}')
+                try:
+                    os.mkdir(build)
+                    break
+                except FileExistsError:
+                    continue
+            else:
+                raise OSError('Could not create a unique OCR temporary folder.')
+            try:
                 img, doc, info = _read(b, options, [n - 1], build, lambda *_: None)[0]
                 os.makedirs(os.path.dirname(picture), exist_ok=True)
                 img.save(picture, 'WEBP', quality=90)
@@ -671,10 +815,66 @@ def review_layout(b, n):
                 with open(path + '.tmp', 'w', encoding='utf-8') as f:
                     json.dump(cached, f, ensure_ascii=False)
                 os.replace(path + '.tmp', path)
+            finally:
+                shutil.rmtree(build, ignore_errors=True)
+        sentence_doc, _ = _doc(cached['raw'], options)
         return {'n': n, 'areas': cached['areas'], 'how': cached['how'], 'fingerprint': fingerprint,
                 'words': [{**w, 'line': i} for i, ln in enumerate(cached['raw']['lines']) for w in ln['words']],
+                'sentences': _layout_sentence_records(sentence_doc),
                 'width': cached['raw']['w'], 'height': cached['raw']['h'],
                 'picture': f"/lib/{b['id']}/designs/{n}.webp?full=1&v={fingerprint[:16]}"}
+
+
+def review_layout_area(b, n, area):
+    """Reread only a selected page-layout region with OCR; return its words in page coordinates."""
+    if b['status'] == 'working':
+        raise LibraryError('Wait for the current book process to finish before rereading an area.')
+    options = _options(b)
+    chosen, _ = _selection(b, options)
+    if n - 1 not in chosen:
+        raise LibraryError('This page is outside the selected page range.')
+    if not isinstance(area, dict):
+        raise LibraryError('Draw a box around the text to reread.')
+    try:
+        x, y, w, h = (float(area[k]) for k in ('x', 'y', 'w', 'h'))
+    except (KeyError, TypeError, ValueError):
+        raise LibraryError('Draw a valid box around the text to reread.')
+    if any(not 0 <= v <= 1 for v in (x, y, w, h)) or w < 0.004 or h < 0.004 or x + w > 1.001 or y + h > 1.001:
+        raise LibraryError('The selected text area is too small or outside the page.')
+    source = _page_picture(b['id'], n) or None
+    if source is None:
+        path = design_picture(b['id'], n, large=True)
+        if not path:
+            raise LibraryError('The page picture is not available yet.')
+        with Image.open(path) as opened:
+            source = opened.convert('RGB')
+    W, H = source.size
+    x0, y0 = max(0, round(x * W)), max(0, round(y * H))
+    x1, y1 = min(W, round((x + w) * W)), min(H, round((y + h) * H))
+    if x1 - x0 < 12 or y1 - y0 < 8:
+        raise LibraryError('Select a larger area around the missed text.')
+    with _layout_lock:
+        for _ in range(10):
+            build = os.path.join(tempfile.gettempdir(), f'lingua-reading-{secrets.token_hex(12)}')
+            try:
+                os.mkdir(build)
+                break
+            except FileExistsError:
+                continue
+        else:
+            raise OSError('Could not create a unique OCR temporary folder.')
+        try:
+            crop = source.crop((x0, y0, x1, y1))
+            raw = _ocr([crop], build, options, lambda *_: None)[0]
+            sentence_doc, _ = _doc(raw, options, img=crop)
+        finally:
+            shutil.rmtree(build, ignore_errors=True)
+    words = []
+    for line_no, line in enumerate(raw.get('lines', [])):
+        for word in line.get('words', []):
+            words.append({**word, 'x': word['x'] + x0, 'y': word['y'] + y0, 'line': line_no})
+    return {'n': n, 'words': words, 'sentences': _layout_sentence_records(sentence_doc, x0, y0),
+            'width': W, 'height': H, 'how': 'ocr-area'}
 
 
 _layout_ai_lock = threading.Lock()
@@ -708,14 +908,39 @@ def _work():
     while True:
         what, bid, *args = _queue.get()
         try:
-            (_make if what == 'make' else _make_sample)(bid, *args)
+            ({'make': _make, 'sample': _make_sample, 'layouts': _prepare_layouts, 'pages': _make_pages}[what])(bid, *args)
         except Exception as e:  # tell the owner instead of failing silently
             msg = str(e) if isinstance(e, (LibraryError, ocr.OcrError)) else f'Something went wrong ({e.__class__.__name__}: {e}).'
             if what == 'make':
                 db.run("UPDATE books SET status = 'error', error = ?, updated = ? WHERE id = ?", (msg[:400], int(time.time()), bid))
                 _set_job(bid, state='error', error=msg)
+            elif what == 'pages':  # (the book stays as it was: ready)
+                _set_job(bid, state='error', error=msg)
             else:
                 _set_sample(bid, state='error', error=msg)
+
+
+def _prepare_layouts(bid):
+    """Find visual page groups and thumbnails only; OCR runs as the user opens pages in the editor."""
+    b = get(bid)
+    if not b:
+        return
+    options = _options(b)
+    chosen, total = _selection(b, options)
+    progress = lambda stage, done, total: _set_sample(bid, stage=stage, done=done, total=total)  # noqa: E731
+    saved = _designs_for(b, options, total) or _find_designs(b, options, chosen, total, progress)
+    result = {'total': total, 'chosen': len(chosen), 'pages': [], 'options': options,
+              'token': secrets.token_hex(8), 'designs': len(saved['designs']), 'checked': bool(saved.get('checked')),
+              'layoutOnly': True}
+    build = folder(bid, 'layout-build')
+    shutil.rmtree(build, ignore_errors=True)
+    os.makedirs(os.path.join(build, 'preview'))
+    with open(os.path.join(build, 'preview', 'preview.json'), 'w', encoding='utf-8') as f:
+        json.dump(result, f, ensure_ascii=False)
+    shutil.rmtree(folder(bid, 'preview'), ignore_errors=True)
+    os.replace(os.path.join(build, 'preview'), folder(bid, 'preview'))
+    shutil.rmtree(build, ignore_errors=True)
+    _set_sample(bid, state='done')
 
 
 def _make(bid):
@@ -767,6 +992,50 @@ def _make(bid):
     db.run("UPDATE books SET status = 'ready', error = '', pages = ?, bytes = ?, updated = ? WHERE id = ?",
            (json.dumps(meta), size, int(time.time()), bid))
     _set_job(bid, state='done', stage='Ready', done=len(meta), total=len(meta))
+
+
+def _make_pages(bid, wanted):
+    """Make again these source pages (from 1) of a finished book, in place (start_pages)."""
+    b = get(bid)
+    if not b or b['status'] != 'ready':
+        raise LibraryError('The book is not ready.')
+    _set_job(bid, state='working', stage='Starting…')
+    options = _options(b)
+    chosen, total = _selection(b, options)
+    meta = json.loads(b['pages'] or '[]')
+    if len(meta) != len(chosen):
+        raise LibraryError('The pages chosen for this book changed: make the whole book again.')
+    indices = [n - 1 for n in wanted if n - 1 in chosen]
+    build = folder(bid, 'build-pages')
+    shutil.rmtree(build, ignore_errors=True)
+    os.makedirs(build)
+    try:
+        progress = lambda stage, done, total: _set_job(bid, stage=stage, done=done, total=total)  # noqa: E731
+        plan = designs.plan(_designs_for(b, options, total))
+        read = _read(b, options, indices, build, progress, plan)
+        for j, (i, (img, doc, _)) in enumerate(zip(indices, read), 1):
+            k = chosen.index(i) + 1  # (its number in the book)
+            _set_job(bid, stage=f'Saving page {i + 1} ({j} of {len(indices)})', done=j, total=len(indices))
+            tmp = os.path.join(build, 'page.webp')
+            img.save(tmp, 'WEBP', quality=80, method=4)
+            os.replace(tmp, folder(bid, 'pages', f'{k}.webp'))
+            th = img.copy()
+            th.thumbnail((240, 2000))
+            th.save(tmp, 'WEBP', quality=75)
+            os.replace(tmp, folder(bid, 'thumbs', f'{k}.webp'))
+            tmp = os.path.join(build, 'page.json')
+            with open(tmp, 'w', encoding='utf-8') as f:
+                json.dump(doc, f, ensure_ascii=False, separators=(',', ':'))
+            os.replace(tmp, folder(bid, 'text', f'{k}.json'))
+            for old in (folder(bid, 'edits', f'{k}.json'), folder(bid, 'layout-review', f'{i + 1}.json')):
+                if os.path.isfile(old):  # (the corrections belonged to the old text of this page)
+                    os.remove(old)
+            meta[k - 1] = {'n': str(k), 'w': img.width, 'h': img.height, 'words': len(doc['words'])}
+    finally:
+        shutil.rmtree(build, ignore_errors=True)
+    size = sum(os.path.getsize(os.path.join(dp, f)) for dp, _, fs in os.walk(folder(bid)) for f in fs)
+    db.run("UPDATE books SET pages = ?, bytes = ?, updated = ? WHERE id = ?", (json.dumps(meta), size, int(time.time()), bid))
+    _set_job(bid, state='done', stage='Ready', done=len(indices), total=len(indices))
 
 
 def _pick(chosen, k, avoid=()):
@@ -1010,36 +1279,37 @@ def _pdf_pages(path, indices, ocr_all, progress):
     """[(picture, its words from the PDF, or None: to be read with OCR, how)] of these pages."""
     import pdfplumber
     import pypdfium2 as pdfium
-    pdf = pdfium.PdfDocument(path)
     out = []
-    try:
-        with pdfplumber.open(path) as plumb:
-            for k, i in enumerate(indices):
-                progress(f'Reading page {i + 1} ({k + 1} of {len(indices)})', k, len(indices))
-                page = pdf[i]
-                wpt, hpt = page.get_size()
-                img = page.render(scale=min(PAGE_W / wpt, 4000 / hpt)).to_pil().convert('RGB')
-                if ocr_all:
-                    out.append((img, None, 'ocr'))
-                    continue
-                p = plumb.pages[i]
-                words = []
-                if not (p.rotation or 0) % 360:  # turned pages: the words' places would not match; read with OCR
-                    try:
-                        words = p.extract_words(use_text_flow=True, keep_blank_chars=False, x_tolerance=1.5)
-                    except Exception:
-                        words = []
-                if sum(any(ch.isalnum() for ch in w['text']) for w in words) < 3:
-                    out.append((img, None, 'scan'))
-                elif _broken(words):
-                    out.append((img, None, 'broken'))
-                else:
-                    x0, top = p.bbox[0], p.bbox[1]
-                    sx, sy = img.width / p.width, img.height / p.height
-                    out.append((img, {'w': img.width, 'h': img.height, 'lines': _lines(words, x0, top, sx, sy)},
-                                'hidden' if _hidden_text(page) else 'pdf'))
-    finally:
-        pdf.close()
+    with _pdfium_lock:
+        pdf = pdfium.PdfDocument(path)
+        try:
+            with pdfplumber.open(path) as plumb:
+                for k, i in enumerate(indices):
+                    progress(f'Reading page {i + 1} ({k + 1} of {len(indices)})', k, len(indices))
+                    page = pdf[i]
+                    wpt, hpt = page.get_size()
+                    img = page.render(scale=min(PAGE_W / wpt, 4000 / hpt)).to_pil().convert('RGB')
+                    if ocr_all:
+                        out.append((img, None, 'ocr'))
+                        continue
+                    p = plumb.pages[i]
+                    words = []
+                    if not (p.rotation or 0) % 360:  # turned pages: the words' places would not match; read with OCR
+                        try:
+                            words = p.extract_words(use_text_flow=True, keep_blank_chars=False, x_tolerance=1.5)
+                        except Exception:
+                            words = []
+                    if sum(any(ch.isalnum() for ch in w['text']) for w in words) < 3:
+                        out.append((img, None, 'scan'))
+                    elif _broken(words):
+                        out.append((img, None, 'broken'))
+                    else:
+                        x0, top = p.bbox[0], p.bbox[1]
+                        sx, sy = img.width / p.width, img.height / p.height
+                        out.append((img, {'w': img.width, 'h': img.height, 'lines': _lines(words, x0, top, sx, sy)},
+                                    'hidden' if _hidden_text(page) else 'pdf'))
+        finally:
+            pdf.close()
     return out
 
 
@@ -1509,10 +1779,74 @@ def _doc_in_areas(raw, options, img, stops, areas):
     order; and what was found on it (as _doc)."""
     docs, info = [], {'pinyin': 0, 'margins': 0, 'lists': []}
     for area, part in designs.parts(raw, areas):
-        doc, found = _doc(part, options, img, stops, area['kind'])
+        if 'text' in area:
+            doc = _manual_area_doc(area['text'], area, raw)
+            found = {'pinyin': 0, 'margins': 0, 'lists': []}
+        elif area.get('parts'):
+            pieces = []
+            for child, child_raw in designs.parts(part, [{**p, 'strict': True} for p in area['parts']]):
+                child_doc, child_found = _doc(child_raw, options, img, stops, child['kind'])
+                pieces.append(child_doc)
+                info = {k: info[k] + child_found[k] for k in info}
+            doc = designs.join(pieces)
+            if doc['words']:
+                doc['sent'] = [[0, len(doc['words'])]]
+                doc['clause'] = [[0, len(doc['words'])]]
+                doc['blocks'] = [[0, 1]]
+            found = {'pinyin': 0, 'margins': 0, 'lists': []}
+        else:
+            doc, found = _doc(part, options, img, stops, area['kind'])
         docs.append(doc)
         info = {k: info[k] + found[k] for k in info}
     return designs.join(docs), info
+
+
+def _manual_area_doc(text, area, raw):
+    """Make a page text document from the corrected text of one layout area, keeping word positions
+    inside its box so the normal sentence and word controls continue to work."""
+    lines = [line.strip() for line in str(text).splitlines() if line.strip()]
+    if not lines:
+        return {'words': [], 'sent': [], 'clause': [], 'blocks': []}
+    W, H = raw['w'], raw['h']
+    x0, y0, box_w, box_h = area['x'] * W, area['y'] * H, area['w'] * W, area['h'] * H
+    blocks = []
+    for row, line in enumerate(lines):
+        tokens, latin = [], ''
+        for char in line:
+            if CJK.search(char):
+                if latin:
+                    tokens.append(latin); latin = ''
+                tokens.append(char)
+            elif char.isalnum() or char in "'’":
+                latin += char
+            else:
+                if latin:
+                    tokens.append(latin); latin = ''
+                if not char.isspace():
+                    tokens.append(char)
+        if latin:
+            tokens.append(latin)
+        if not tokens:
+            continue
+        units = sum(max(1, len(token)) for token in tokens) + max(0, len(tokens) - 1)
+        slot = box_w / max(1, units)
+        line_h = box_h / len(lines)
+        x = x0
+        words = []
+        for token in tokens:
+            token_w = max(1, slot * max(1, len(token)))
+            words.append({'t': token, 'x': round(x), 'y': round(y0 + row * line_h + line_h * 0.1),
+                          'w': max(1, round(token_w)), 'h': max(1, round(line_h * 0.8))})
+            x += token_w + slot
+        blocks.append([{'words': words}])
+    doc = doc_from_blocks(blocks)
+    if area['kind'] == 'heading' and doc['words']:
+        doc['sent'] = [[0, len(doc['words'])]]
+        doc['clause'] = [[0, len(doc['words'])]]
+        doc['blocks'] = [[0, len(doc['sent'])]]
+    elif area['kind'] == 'paragraph' and doc['blocks']:
+        doc['blocks'] = [[doc['blocks'][0][0], doc['blocks'][-1][1]]]
+    return doc
 
 
 # ---------------------------------------------------------------- Text of a page, search
@@ -1753,6 +2087,13 @@ def replace_picture(b, n, box, data, fit='cover'):
     _save_pictures(bid, items)
     words = _drop_words_in(bid, n, item['box'])
     _new_addresses(bid)
+    for name in (f'{n}.webp', f'{n}-big.webp'):
+        cached = folder(bid, 'designs', name)
+        if os.path.isfile(cached):
+            os.remove(cached)
+    layout_cache = folder(bid, 'layout-review', f'{n}.json')
+    if os.path.isfile(layout_cache):
+        os.remove(layout_cache)
     return {'picture': item, 'words': words}
 
 

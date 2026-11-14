@@ -19,6 +19,12 @@ Python must be installed. The first start installs the app's tools (`web\require
 
 ## The library
 
+**Conversation tutor:** open the tutor icon in a book, select a sentence, and press **Start
+conversation**. The icon always opens the panel; **End conversation** stops the microphone.
+Start asks for the selected sentence's explanation immediately, without a greeting. During
+conversation, a clicked sentence plays once before its explanation. See [tutor setup and
+verification](ASSISTANT.md) for the ElevenLabs agent, server key and tests.
+
 | Tab | What is there |
 |---|---|
 | **Public library** | Books people shared with everyone. |
@@ -142,6 +148,45 @@ pictures stay intact. Local review is always available: it adds conservative col
 separation and support for large opening capitals, but it cannot guarantee automatic
 understanding of every textbook exercise. Word files use this same review after being converted
 to PDF.
+
+### The page-layout tools
+
+The layout window has six tabs; the open one is filled in blue. Under the tabs are the tool's
+buttons, then the **Apply** button, then the message about what just happened (it stays in view).
+Everything you do is a **draft** (Undo takes it back) until you press **Apply**. For a book that is
+made already, Apply makes again **only the pages with changes** (the button says which: "Apply
+changes to page 7"); the other pages, and the corrections made on them, stay as they are. The
+sentence corrections of a page made again are replaced. For a new book, Apply builds the whole book.
+After Apply the page shows its new sentences, numbered in reading order.
+
+- **Read**: **Read this page again** reads the page from the PDF's text, or with OCR, and finds its
+  areas again (also for a finished book); **Read the selected area again** reads that area with OCR
+  and replaces its text at once;
+  **Draw boxes to read**: drag one or more boxes around missing or badly read text (they are
+  lettered A, B, C on the page), press **Read boxes**, then check what was found: every sentence
+  is numbered here and on the page, can be unticked or corrected. A box drawn around one area
+  replaces that area's text; any other box becomes a new area (placed where it is on the page).
+  **Play this page aloud** reads each sentence with the app's voice (a Natural voice when the
+  browser has one: Microsoft Edge does) and highlights it on the page; ▶ by a sentence in the list
+  starts from it.
+- **Order**: **Draw areas in reading order**: the first box you draw (or click, if it is there
+  already) is number 1, then 2, 3 … Boxes you do not number follow after yours, faded;
+  **Delete the boxes I did not number** keeps only yours. **Finish ordering** ends it. Other
+  buttons: reference order, order top to bottom, clear the page's areas.
+- **Merge**: **Merge in chosen order**: click the areas in the order you want; each gets a number 1,
+  2, 3 on the page; **Finish merge** joins them (a draft, shown at once). Also merge with the
+  previous or next area, or all areas inside a box you draw. **Sentences on the page**: every
+  sentence is numbered on the page; click it (or tick it in the list) to choose it: the chosen ones
+  are numbered 1, 2, 3 in the order chosen, the result is shown, and **Merge selected sentences**
+  joins them into the first one chosen.
+- **Audio**: play this page aloud. **Audio and video** (the same box as in the book's Settings): **Add a
+  folder…** / **Add files…** adds the book's recordings (for example its Student's Book CD): a play button
+  goes where each one's number is printed on the pages. **Put a play button on this page** places one by
+  hand; drag a button (▶) on the page to move it; **Listen**, **Move**, **Remove** in the list.
+  **Make new audio (natural voice)…** opens the page in the reader with My audio → New audio.
+- **Pictures**: replace a picture on the page.
+- **Text**: edit the text of the selected area; **Dictate** (a microphone: Microsoft Edge or Google
+  Chrome) types what you say into it, in the book's language; **Add a text area**.
 
 ### Optional AI layout suggestions
 

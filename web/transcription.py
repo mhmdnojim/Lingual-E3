@@ -62,6 +62,11 @@ _lock = threading.Lock()
 _jobs = {}
 _scripts = {}  # a file's job -> its script id (its lines' translations kept under it)
 _models = {}
+_stopping = {}  # a job being written now -> 'pause' or 'stop' (asked for: it ends at its next step)
+
+
+class Stopped(Exception):
+    """A transcription ended by the user (Pause, Cancel)."""
 
 
 def asset_id(src):
@@ -484,14 +489,53 @@ def start(src, path, language='en', force=False, how=None):
     if current['state'] in ('queued', 'running') or current['state'] == 'done' and not force:
         return current
     aid = cache_id(src)
+    token = uuid.uuid4().hex  # (a job taken out of the queue and started again: only the new one runs)
     with _lock:
         current = _jobs.get(aid)
         if current and current['state'] in ('queued', 'running'):
             return dict(current)
-        _jobs[aid] = {'state': 'queued', 'message': 'Waiting to transcribe…'}
+        _jobs[aid] = {'state': 'queued', 'message': 'Waiting to transcribe…', 'token': token}
+        _stopping.pop(aid, None)
     online = bool(how and how[2] == 'eleven')
-    (_online if online else _pool).submit(_run, aid, path, language, how, True)
+    (_online if online else _pool).submit(_run, aid, path, language, how, True, token)
     return {'state': 'queued', 'message': 'Waiting to transcribe…'}
+
+
+def stop(srcs, pause=False):
+    """Pause (kept to go on later) or cancel the transcription of these recordings: the ones waiting
+    leave the queue at once; one being written on this computer stops at its next step; one being
+    written by ElevenLabs is finished (it is paid already). Returns how many were stopped or are stopping."""
+    n = 0
+    for src in srcs:
+        aid = cache_id(src)
+        with _lock:
+            job = _jobs.get(aid) or {}
+            if job.get('state') == 'queued':
+                if pause:
+                    _jobs[aid] = {'state': 'paused', 'message': 'Paused'}
+                else:
+                    del _jobs[aid]
+                n += 1
+            elif job.get('state') == 'running' and job.get('engine') != 'eleven':
+                _stopping[aid] = 'pause' if pause else 'stop'
+                n += 1
+    return n
+
+
+def file_state(src):
+    """One recording's transcription: {'state': idle, queued, running, paused, error or done, 'progress' (percent,
+    on this computer), 'message', 'error'}."""
+    aid = cache_id(src)
+    with _lock:
+        job = dict(_jobs.get(aid) or {})
+        stopping = aid in _stopping
+    state = job.get('state')
+    if state in ('queued', 'running', 'paused', 'error'):
+        return {'state': state, 'progress': job.get('progress'), 'message': 'Stopping…' if stopping else job.get('message', ''),
+                'error': job.get('error', '')}
+    if state == 'done' or (CACHE / f'{aid}.json').is_file():
+        return {'state': 'done'}
+    return {'state': 'idle'}
 
 
 def done_by(aid, engine=None):
@@ -526,8 +570,12 @@ def _update(aid, **values):
         _jobs[aid] = values
 
 
-def _run(aid, path, language='en', how=None, keep=True):
+def _run(aid, path, language='en', how=None, keep=True, token=None):
     """keep: saved in web/transcripts (a book's recording); else only told (a file: file_status)."""
+    if token:
+        with _lock:
+            if (_jobs.get(aid) or {}).get('token') != token:  # (cancelled or paused while it waited)
+                return
     try:
         key, model_id, engine = how or ('', '', 'local')
         if engine == 'eleven':
@@ -537,13 +585,22 @@ def _run(aid, path, language='en', how=None, keep=True):
             made_by, spoken = f'elevenlabs/{model_id}', found.get('language')
         else:
             _update(aid, state='running', message='Preparing speech recognition…')
-            progress = lambda p: _update(aid, state='running', message='Transcribing…', progress=p)  # noqa: E731
+            def progress(p):
+                if aid in _stopping:
+                    raise Stopped()
+                _update(aid, state='running', message='Transcribing…', progress=p)
             cues = transcribe(path, threads=min(4, os.cpu_count() or 2), progress=progress, language=language or 'en',
                               speakers=diarization_ready())
             made_by, spoken = None, spoken_language(language) or 'en'
         if keep:
             save(aid, cues, made_by)
         _update(aid, state='done', cues=cues, generated=True, at=time.time(), language=spoken)
+    except Stopped:
+        if _stopping.pop(aid, 'stop') == 'pause':
+            _update(aid, state='paused', message='Paused')
+        else:
+            with _lock:
+                _jobs.pop(aid, None)
     except ImportError:
         _update(aid, state='error', at=time.time(), error='Speech recognition is not set up. Add a key of ElevenLabs (Speech recognition…), '
                                          'or run Setup transcription.bat and restart the app.')
@@ -553,6 +610,7 @@ def _run(aid, path, language='en', how=None, keep=True):
         print(f'Transcription failed: {error}', file=sys.stderr)
         _update(aid, state='error', error='Transcription failed. Check the app window for details and try again.', at=time.time())
     finally:
+        _stopping.pop(aid, None)
         if not keep:
             shutil.rmtree(Path(path).parent, ignore_errors=True)
 

@@ -103,6 +103,7 @@
     <button class="icon-btn" id="btn-fit" title="Fit: whole page → page width → paragraph → sentence → word, then out again: sentence → paragraph → page width → whole page (0)" aria-label="Fit: zoom in step by step to the word, then out again"><svg class="i"><use href="#i-fit"/></svg></button>
     <button class="icon-btn" id="btn-zoom-in" title="Zoom in (+)" aria-label="Zoom in"><svg class="i"><use href="#i-zoom-in"/></svg></button>
     <button class="icon-btn" id="btn-spread" title="Two pages side by side" aria-label="Two-page view" aria-pressed="false"><svg class="i"><use href="#i-spread"/></svg></button>
+    <button class="icon-btn" id="btn-layout" title="Open the full page-layout stage" aria-label="Open page layouts" hidden><svg class="i"><use href="#i-select-area"/></svg></button>
   </div>
 
   <div class="tb-group read-tools">
@@ -212,15 +213,23 @@
   <p class="pop-foot" id="logout-row" hidden><button class="link-btn" id="btn-logout">Log out on this device</button></p>
 </div>
 
-<div class="popover assistant-pop" id="assistant-pop" hidden>
-  <div class="assistant-head"><h3>Conversation tutor</h3><span class="assistant-agent-label">ElevenLabs</span></div>
-  <p class="hint">Ask about the current book, page, sentence, vocabulary, or how to use Lingua Books.</p>
+<div class="popover assistant-pop" id="assistant-pop" role="region" aria-label="Conversation tutor" hidden>
+  <div class="assistant-head"><h3>Conversation tutor</h3><span class="assistant-agent-label">ElevenLabs</span><button class="btn icon-btn" id="assistant-close" type="button" aria-label="Hide conversation panel" title="Hide panel (conversation continues)">×</button></div>
+  <p class="hint">Start with the highlighted sentence. During conversation, click another sentence to hear it once, then get its explanation.</p>
+  <blockquote id="assistant-sentence">Select a sentence on the page first.</blockquote>
   <div class="assistant-messages" id="assistant-messages" aria-live="polite"></div>
-  <p class="assistant-status" id="assistant-status" role="status"></p>
+  <div class="assistant-head"><p class="assistant-status" id="assistant-status" role="status"></p><span id="assistant-elapsed"></span></div>
   <div class="assistant-actions">
     <button class="btn primary" id="assistant-start" type="button"><svg class="i"><use href="#i-microphone"/></svg>Start conversation</button>
-    <button class="btn" id="assistant-stop" type="button" hidden><svg class="i"><use href="#i-stop"/></svg>End</button>
+    <button class="btn" id="assistant-mute" type="button" hidden>Mute mic</button>
+    <button class="btn" id="assistant-stop" type="button" hidden><svg class="i"><use href="#i-stop"/></svg>End conversation</button>
   </div>
+  <details id="assistant-settings"><summary>Tutor settings</summary>
+    <label>Teaching style<select id="assistant-teaching"><option value="direct">Direct</option><option value="gentle">Gentle</option><option value="encouraging">Encouraging</option></select></label>
+    <label>Speaking style<select id="assistant-speaking"><option value="calm">Calm</option><option value="cheerful">Cheerful</option><option value="energetic">Energetic</option></select></label>
+    <label>Microphone<select id="assistant-mic"><option value="">Default microphone</option></select></label>
+  </details>
+  <p class="hint assistant-privacy">Starting sends your microphone audio, selected sentence, its saved translation and book/page names to ElevenLabs. An internet connection is required.</p>
 </div>
 
 <main class="layout">
@@ -351,6 +360,7 @@
           <span class="bulk-chosen bulk-count" id="bulk-count" hidden></span>
           <button class="tbtn danger bulk-chosen" data-op="delete-checked" title="Delete the chosen sentences (Delete key; Undo brings them back)" hidden><svg class="i"><use href="#i-trash"/></svg>Delete</button>
           <button class="tbtn" data-op="merge-checked" aria-pressed="false" title="Use the selected sentence as the start, then click following sentences in order"><svg class="i"><use href="#i-merge-down"/></svg>Merge in order</button>
+          <button class="tbtn bulk-chosen" data-op="merge-selected" title="Merge the chosen sentences in page order" hidden><svg class="i"><use href="#i-merge-down"/></svg>Merge selected</button>
           <button class="tbtn bulk-chosen" data-op="move-checked" title="Move the chosen sentences after the selected sentence (click it first)" hidden><svg class="i"><use href="#i-arrow-down"/></svg>Move after selected</button>
           <button class="tbtn bulk-chosen" data-op="check-none" title="Choose none" hidden>Clear</button>
         </div>

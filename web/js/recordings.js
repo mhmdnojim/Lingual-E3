@@ -476,6 +476,7 @@ export class Recordings {
   }
 
   async playOfflineForUnit(view, unit, fromPage) {
+    const clickId = this.pageClickId;
     if (!this.offlineItems.size || !view.text) return false;
     const text = view.text.text(unit.a, unit.b);
     const language = /[\u3400-\u9fff\uf900-\ufaff]/u.test(text) ? 'zh' : 'en';
@@ -493,9 +494,10 @@ export class Recordings {
       const ids = language === 'zh' ? [rec.zhVoice, rec.zhVoiceB] : [rec.voice, rec.voiceB];
       if (!ids.some((id) => expected && id?.toLowerCase() === expected) && !(language === 'en' && item.id === this.pageOfflineId)) continue;
       const hit = await this.locate(view, unit, rec.id);
+      if (clickId !== this.pageClickId) return false;
       if (!hit) continue;
       if (this.deletedIds.has(item.id) || this.deletingIds.has(item.id)) continue;
-      this.playFrom(hit, fromPage);
+      await this.playFrom(hit, fromPage);
       return true;
     }
     return false;
@@ -986,12 +988,12 @@ export class Recordings {
   async playFrom(hit, fromPage) {
     const a = this.app.audio;
     const asset = this.assetFor(hit.rec);
-    if (!hit.end && a.asset === asset && a.open && this.followKey === `${hit.rec.id}:${hit.k}`) {
+    if (!this.app.assistant?.busy && !hit.end && a.asset === asset && a.open && this.followKey === `${hit.rec.id}:${hit.k}`) {
       a.toggle();
       return;
     }
     this.cancelWait();
-    this.stopAt = hit.end;
+    this.stopAt = this.app.assistant?.busy ? (hit.rec.sentences[hit.k]?.end ?? hit.rec.sentences[hit.k + 1]?.start ?? hit.end) : hit.end;
     this.stopFrom = hit.t;
     this.wordRound = 1;
     this.loop = { id: hit.rec.id, k: hit.k, round: 1 }; // "Repeat each sentence" counts from here
@@ -1017,6 +1019,7 @@ export class Recordings {
 
   /** The MP3 ended: repeat its last sentence if wanted. Returns true if it plays again. */
   ended(asset) {
+    if (this.app.assistant?.busy) return false;
     const rec = asset?.rec, L = this.loop;
     if (!rec || !L || L.id !== rec.id || L.k !== rec.sentences.length - 1 || L.round >= repeatTimes()) return false;
     L.round++;
@@ -1188,15 +1191,16 @@ export class Recordings {
   follow(rec, ms) {
     if (this.wait) return; // waiting to repeat: the sentence stays highlighted
     const t = ms / 1000;
-    const times = repeatTimes();
+    const times = this.app.assistant?.busy ? 1 : repeatTimes();
     if (this.stopAt != null && t >= this.stopAt) { // word mode: just the clicked word (again, if wanted)
       if (this.wordRound < times) {
         this.wordRound++;
         this.replay(this.stopFrom, Math.max(600, gapMs()));
         return;
       }
-      this.stopAt = null;
+      if (!this.app.assistant?.busy) this.stopAt = null;
       this.app.audio.pause();
+      return; // Keep the clicked sentence highlighted at the clip's end.
     }
     // "Repeat each sentence": the MP3 has just gone on to the next sentence by itself (after the
     // pause the MP3 has between sentences), so go back to the start of the one being repeated.
@@ -1729,7 +1733,18 @@ export class Recordings {
     }
   }
 
-  openCreate({ existing = null, original = [], additions = null, offlineImport = false } = {}) {
+  /** New audio from the sentences chosen in the page-layout window (host: the box in that window where the form is shown). */
+  createFromLayout({ book, page, sentences, host }) {
+    if (this.app.me.mode === 'public' && !this.app.me.user) {
+      toast('Create a free account (or log in) to make MP3s with a natural voice.');
+      return;
+    }
+    const view = { book: { slug: book.id, id: book.id, type: book.title }, page: { n: page, path: `p${page}` } };
+    this.openCreate({ host, additions: sentences.map((s) => ({ view, path: view.page.path, a: s.a, b: s.b, text: s.text, words: (s.speak || []).map(speakable) })) });
+  }
+
+  openCreate({ existing = null, original = [], additions = null, offlineImport = false, host = null } = {}) {
+    const leave = () => { if (host) host.close(); else closeDialog(); }; // (the layout window must stay open)
     const newlyPicked = additions || this.pickedSentences();
     const sents = [...original, ...newlyPicked];
     if (!sents.length) return;
@@ -1789,7 +1804,7 @@ export class Recordings {
     const status = el('p', { class: 'hint', hidden: true });
     const create = el('button', { class: 'btn primary', type: 'button', disabled: true, dataset: { role: 'audio-create' }, html: `${icon(offlineImport ? 'download' : 'wave')}${offlineImport ? 'Import offline' : existing ? 'Regenerate audio' : 'Create MP3'}` });
     const cancel = el('button', { class: 'btn', type: 'button' }, 'Cancel');
-    cancel.addEventListener('click', () => closeDialog());
+    cancel.addEventListener('click', () => leave());
     const replaceOld = existing ? el('input', { type: 'checkbox', checked: true }) : null;
     let voicesValid = false;
     let generating = false;
@@ -2014,6 +2029,12 @@ export class Recordings {
             if (this.app.audio.asset?.rec?.id === existing.id) this.app.audio.close();
           } else replaceFailed = true;
         }
+        if (host) { // (made from the page-layout window: it stays as it is)
+          this.list.unshift(rec);
+          this.renderList();
+          host.done(rec);
+          return;
+        }
         closeDialog();
         this.stopPicking();
         this.list.unshift(rec);
@@ -2051,7 +2072,8 @@ export class Recordings {
       }
     });
 
-    openDialog(existing ? 'Edit existing audio' : 'New audio', el('div', { class: 'rec-form' },
+    const form = (...parts) => el('div', { class: 'rec-form' }, ...parts);
+    (host ? (title_, body) => host.show(body) : openDialog)(existing ? 'Edit existing audio' : 'New audio', form(
       field('Title', title),
       sentenceEditor,
       field('Read', languageMode),

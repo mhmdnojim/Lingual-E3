@@ -5,7 +5,7 @@ Serves the app (/web/), with HTTP Range support so audio and video can seek, and
 
 Accounts (accounts.py) and the library (library.py: books made from a text, a PDF or photos)
     GET    /api/me                         {mode, user, disc}: who is logged in
-    GET    /api/assistant-token             short-lived ElevenLabs conversation token (key stays server-side)
+    POST   /api/assistant-token             prepared tutor and short-lived ElevenLabs token (key stays server-side)
     POST   /api/signup  /api/login  /api/logout  /api/password
     GET    /api/books?scope=public|mine|local|all&q=…   lists of books
     GET    /api/books/<id>                 one book with its pages (to read it)
@@ -14,7 +14,8 @@ Accounts (accounts.py) and the library (library.py: books made from a text, a PD
     DELETE /api/books/<id>
     PUT    /api/books/<id>/source/<part>   upload: pdf, word (a Word file, made into the PDF), image-<k>, text ({text}), picture
     GET    /api/page-languages             the languages of pages, and which OCR reads here
-    POST   /api/books/<id>/preview         make a sample of 1-5 pages first {options, same, again: find the designs again}
+    POST   /api/books/<id>/preview         make an OCR sample of 1-5 pages {options, same, again}
+    POST   /api/books/<id>/layouts         prepare page boxes without OCR; each page is read on demand in the editor
     GET    /api/books/<id>/preview         the sample (with tips), or how far making it is
     GET    /lib/<id>/preview/<n>.webp?token=…   a page of the sample
     GET    /api/books/<id>/designs         the designs of the pages and their areas (designs.py)
@@ -30,7 +31,7 @@ Accounts (accounts.py) and the library (library.py: books made from a text, a PD
     POST   /api/books/<id>/buttons/<n>     a play button put by hand {file, x, y}   PUT {src, from: [x, y], x, y}: moved
     DELETE /api/books/<id>/buttons/<n>?src=&x=&y=   taken away (each: the page's buttons)
     GET    /api/picture-ai   PUT (admins: {key, model})   POST {book, page, box, prompt, like}: a picture made by AI
-    POST   /api/books/<id>/make            make all the pages (in the background) {options}
+    POST   /api/books/<id>/make            make all the pages (in the background) {options}; {pages: [n]}: only these again
     GET    /api/books/<id>/job             how far that is
     POST   /api/books/<id>/report          report a public book {reason, note}
     GET    /api/admin/reports              admins: open reports
@@ -141,6 +142,7 @@ import pictures
 import pinyin
 import plans
 import services
+import assistant
 import stats
 import student
 import subscriptions
@@ -151,7 +153,7 @@ import words
 
 # Raise when the app needs new server features; web/js/main.js checks it (NEEDS_API) and asks
 # to restart the app if an older server is still running.
-API_VERSION = 41  # 41: ElevenLabs conversation assistant token endpoint; 40: enforce cached feature switches and stream student downloads; 39: at most 2 devices per account, the offline lease told; 38: the Statistics part of the Admin page, a record of use; 37: the API part of the Admin page, backups of the free services; 36: plans, the free trial, payments told by hand; 35: features switched for accounts, amounts of the paid AI services; 34: the Users tab of the Admin page, the owner and helper admins; 33: optional, permission-checked AI layout suggestions
+API_VERSION = 44  # 44: prepare page layouts without OCRing sample pages; 43: edit and reprocess layouts
 
 # The agent id is not a secret. The ElevenLabs API key, when needed for a private
 # agent, stays in server-config.json and is never sent to the browser.
@@ -173,7 +175,7 @@ API_WORD = re.compile(r'^/api/words/(w[0-9a-f]{12})$')
 API_WORD_CATEGORY = re.compile(r'^/api/words/categories(?:/(def|common|c[0-9a-f]{8}))?$')
 API_JOB = re.compile(r'^/api/jobs/([0-9a-f]{12})$')
 API_BOOK = re.compile(r'^/api/books/(\w{1,20})$')
-API_BOOK_PART = re.compile(r'^/api/books/(L[0-9a-f]{10})/(source|make|job|report|preview|designs|layout|layout-ai|pictures|tracks|buttons)(?:/([\w-]{1,20}))?$')
+API_BOOK_PART = re.compile(r'^/api/books/(L[0-9a-f]{10})/(source|make|job|report|preview|layouts|designs|layout|layout-ai|pictures|tracks|buttons)(?:/([\w-]{1,20}))?$')
 LIB_PDF = re.compile(r'^/lib/(L[0-9a-f]{10})/book\.pdf$')
 API_ADMIN_BOOK = re.compile(r'^/api/admin/books/(L[0-9a-f]{10})$')
 API_BRANCH = re.compile(r'^/api/branches(?:/(\d{1,9})(/copy)?)?$')
@@ -1116,6 +1118,8 @@ class Handler(SimpleHTTPRequestHandler):
                 body = self.read_body()
                 if body is None:
                     return None
+                if isinstance(body, dict) and isinstance(body.get('pages'), list):  # (only these pages again)
+                    return self.send_json({'ok': True, 'pages': library.start_pages(b, body['pages'])})
                 if isinstance(body, dict) and body:  # (else: as before)
                     library.save_options(b, body)
                 library.start(b)
@@ -1128,6 +1132,14 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.send_json({'error': 'You made many samples today. Try again tomorrow.'}, 429)
                 body = body if isinstance(body, dict) else {}
                 return self.send_json(library.start_sample(b, body.get('options'), body.get('same'), body.get('again') is True))
+            if part == 'layouts' and method == 'POST':
+                body = self.read_body()
+                if body is None:
+                    return None
+                if not u['admin'] and accounts.limited('sample', str(u['id']), 100, 86400):
+                    return self.send_json({'error': 'You prepared many page layouts today. Try again tomorrow.'}, 429)
+                body = body if isinstance(body, dict) else {}
+                return self.send_json(library.start_layouts(b, body.get('options'), body.get('again') is True))
             if part == 'designs' and method == 'PUT':
                 body = self.read_body()
                 if body is None:
@@ -1137,7 +1149,19 @@ class Handler(SimpleHTTPRequestHandler):
                 number = m.group(3) or ''
                 if not number.isdigit():
                     raise library.LibraryError('Choose a valid source page.')
-                return self.send_json(library.review_layout(b, int(number)))
+                try:
+                    body = self.read_body() if int(self.headers.get('Content-Length') or 0) else {}
+                    if body is None:
+                        return None
+                    if not isinstance(body, dict):
+                        raise library.LibraryError('The selected area is not valid.')
+                    if isinstance(body.get('area'), dict):
+                        return self.send_json(library.review_layout_area(b, int(number), body['area']))
+                    return self.send_json(library.review_layout(b, int(number), fresh=body.get('fresh') is True))
+                except OSError:
+                    # Return a JSON error instead of dropping the connection and leaving the
+                    # page-layout UI stuck in its "reading" state.
+                    return self.send_json({'error': 'The page could not be read because temporary OCR files could not be created. Try again.'}, 503)
             if part == 'layout-ai' and method == 'POST':
                 number = m.group(3) or ''
                 if not number.isdigit():
@@ -1160,12 +1184,28 @@ class Handler(SimpleHTTPRequestHandler):
             if part == 'tracks' and method == 'POST' and m.group(3) == 'place':
                 library.place_tracks(b)
                 return self.send_json(self.tracks_info(library.get(b['id'])))
-            if part == 'tracks' and method == 'POST' and m.group(3) == 'transcribe':  # (all not done yet)
+            if part == 'tracks' and method == 'POST' and m.group(3) == 'transcribe-stop':  # (pause or cancel: these files, or all)
                 if not self.may_transcribe():
                     return self.denied('Only an admin can transcribe here.')
+                body = self.read_body() if int(self.headers.get('Content-Length') or 0) else {}
+                if body is None:
+                    return None
+                wanted = {str(x) for x in body['files']} if isinstance(body.get('files'), list) else None
+                transcription.stop([src for src, file in library.track_files(b) if wanted is None or Path(file).name in wanted],
+                                   pause=body.get('pause') is True)
+                return self.send_json(self.tracks_info(b))
+            if part == 'tracks' and method == 'POST' and m.group(3) == 'transcribe':  # (the chosen files, or all not done yet)
+                if not self.may_transcribe():
+                    return self.denied('Only an admin can transcribe here.')
+                body = self.read_body() if int(self.headers.get('Content-Length') or 0) else {}
+                if body is None:
+                    return None
+                wanted = {str(x) for x in body['files']} if isinstance(body.get('files'), list) else None
                 how = transcription.speech_settings(auth.config())
                 stopped = None
                 for src, file in library.track_files(b):
+                    if wanted is not None and Path(file).name not in wanted:
+                        continue
                     if transcription.status(src, Path(file), b.get('lang') or 'en')['state'] in ('idle', 'error'):
                         try:
                             self.count_script(Path(file))  # (an account's minutes: until they run out)
@@ -1263,7 +1303,7 @@ class Handler(SimpleHTTPRequestHandler):
         if path == '/api/version':
             return self.send_json({'api': API_VERSION})
         if path == '/api/assistant-token':
-            return self.assistant_token()
+            return self.send_json({'error': 'Use POST to start a conversation.'}, 405, [('Allow', 'POST')])
         if path == '/api/me':
             user = self.user()
             subscription = {'required': MODE == 'public' and subscriptions.required()}
@@ -1553,6 +1593,8 @@ class Handler(SimpleHTTPRequestHandler):
             return None
         if not self.subscription_gate(path):
             return None
+        if path == '/api/assistant-token':
+            return self.assistant_token()
         if path.startswith('/api/admin/subscription-codes'):
             return self.change_subscriptions('POST', path)
         if path == '/api/migrations' or path.startswith('/api/migrations/'):
@@ -1668,7 +1710,11 @@ class Handler(SimpleHTTPRequestHandler):
         """library.tracks_info, with how far their transcription is ({'transcripts': {done, running,
         failed}}) and whether this user may start it."""
         info = library.tracks_info(b)
-        info['transcripts'] = transcription.counts([src for src, _ in library.track_files(b)])
+        files = library.track_files(b)
+        info['transcripts'] = transcription.counts([src for src, _ in files])
+        states = {Path(file).name: transcription.file_state(src) for src, file in files}
+        for item in info['items']:  # (each recording: how far its script is)
+            item['transcript'] = states.get(item['file'], {'state': 'idle'})
         info['canTranscribe'] = self.may_transcribe()
         return info
 
@@ -1766,34 +1812,22 @@ class Handler(SimpleHTTPRequestHandler):
                 'admin': bool(u and u['admin']), 'owner': accounts.is_owner(u), 'can': self.may_transcribe() and bool(u)}
 
     def assistant_token(self):
-        """Give the browser a short-lived ElevenLabs conversation token.
-
-        The agent id is public, but the API key is not.  Prefer a server-created
-        token for a private agent; if no ElevenLabs key is configured, return the
-        public-agent fallback and let the SDK connect with the id directly.
-        """
+        """Prepare the sentence tutor as owner; issue credentials only through the app's gates."""
+        if STUDENT:
+            return self.send_json({'error': 'Open the website to use the online conversation tutor.'}, 503)
         user = self.user()
-        if MODE == 'public' and not user:
+        if not user:
             return self.need_account()
+        if accounts.limited('assistant', str(user['id']), 20, 900):
+            return self.send_json({'error': 'Too many conversation starts. Wait a few minutes and try again.'}, 429)
         # A separate key can be supplied for ConvAI (LB_ASSISTANT_KEY); the
         # existing ElevenLabs speech key remains a convenient fallback.
         key = str(os.environ.get('LB_ASSISTANT_KEY') or auth.config().get('speechKey') or '').strip()
-        if not key:
-            return self.send_json({'agentId': ASSISTANT_AGENT_ID, 'public': True})
-        url = 'https://api.elevenlabs.io/v1/convai/conversation/token?agent_id=' + quote(ASSISTANT_AGENT_ID, safe='')
-        request = Request(url, headers={'xi-api-key': key, 'Accept': 'application/json'})
         try:
-            with urlopen(request, timeout=20) as response:
-                data = json.loads(response.read(100_000).decode('utf-8', 'replace'))
-            token = str(data.get('token') or '').strip() if isinstance(data, dict) else ''
-            if not token:
-                return self.send_json({'error': 'ElevenLabs returned no conversation token.'}, 502)
-            return self.send_json({'conversationToken': token, 'agentId': ASSISTANT_AGENT_ID})
-        except urllib.error.HTTPError as e:
-            # Do not echo ElevenLabs' response: it can contain account details.
-            return self.send_json({'error': f'ElevenLabs rejected the conversation request ({e.code}).'}, 502)
-        except (urllib.error.URLError, TimeoutError, OSError, ValueError):
-            return self.send_json({'error': 'ElevenLabs could not be reached for a conversation token.'}, 502)
+            data = assistant.token(key, ASSISTANT_AGENT_ID, can_configure=accounts.is_owner(user))
+            return self.send_json(data, headers=[('Cache-Control', 'no-store')])
+        except assistant.AssistantError as error:
+            return self.send_json({'error': str(error)}, error.status, [('Cache-Control', 'no-store')])
 
     def layout_ai_info(self):
         user, config = self.user(), auth.config()
@@ -1839,7 +1873,7 @@ class Handler(SimpleHTTPRequestHandler):
         if not isinstance(body, dict):
             return self.send_json({'error': 'Invalid AI layout request.'}, 400)
         if not info['ready']:
-            return self.send_json({'error': 'Add an OpenAI API key in AI layout settings first.'}, 400)
+            return self.send_json({'error': 'Add an OpenAI API key under Admin → API first.'}, 400)
         user = self.user()
         # An account's own pages (given by an admin) are counted; else, when the owner allowed everyone: 20 a day.
         counted = MODE == 'public' and not user['admin'] and bool(access.left(user, 'layout'))

@@ -728,7 +728,9 @@ export class TextEditor {
   constructor(app) {
     this.app = app;
     this.active = false;
+    this.returnToLayout = null; // returning from the layout editor keeps its unsaved page boxes
     this.sel = null;        // {view, bi, si}
+    this.pendingTool = null; // a page-layout action waiting for the user to choose a sentence
     this.moveByClick = null; // selected sentence awaiting a destination click
     this.mergeSequence = null; // {view, list}: anchor and following sentences in the order to merge
     this.splitting = false;
@@ -791,8 +793,11 @@ export class TextEditor {
     return false;
   }
 
-  start() {
+  start({ returnToLayout = null, initialTool = null } = {}) {
     if (this.active || !this.allowed()) return;
+    this.returnToLayout = returnToLayout;
+    $('#edit-done').innerHTML = `${icon('check')}${returnToLayout ? 'Return to page layouts' : 'Done'}`;
+    $('#edit-done').title = returnToLayout ? 'Finish correcting and return to the page layout editor' : 'Finish correcting (E)';
     this.saveInline();
     // Start on the sentence being read or last used (or the one in the middle of the list).
     const focus = this.app.currentFocus();
@@ -807,13 +812,20 @@ export class TextEditor {
     this.app.setPanelOpen(true);
     this.app.applyMode();
     this.editingText = false;
-    this.sel = focus ? this.selAt(focus.view, focus.w) : null;
+    const selectFirst = ['edit', 'split', 'mergePrev', 'mergeNext', 'merge-checked', 'move-click', 'add'].includes(initialTool);
+    this.pendingTool = selectFirst ? initialTool : null;
+    this.sel = selectFirst ? null : focus ? this.selAt(focus.view, focus.w) : null;
     this.render();
     this.showSelection(false, false);
+    if (initialTool === 'merge-area') this.tool('check-area');
+    else if (this.pendingTool) toast('Click the sentence to apply this action.');
+    else if (['read-page', 'ocr', 'order-areas', 'picture', 'buttons'].includes(initialTool)) this.tool(initialTool);
   }
 
   stop() {
     if (!this.active) return;
+    const returnToLayout = this.returnToLayout;
+    this.returnToLayout = null;
     this.commitText();
     // Go back to reading on the same sentence.
     const keep = this.sel ? { view: this.sel.view, unit: this.unitOf(this.sel) } : null;
@@ -826,6 +838,7 @@ export class TextEditor {
     this.flush();
     this.active = false;
     this.sel = null;
+    this.pendingTool = null;
     this.moveByClick = null;
     this.mergeSequence = null;
     this.splitting = false;
@@ -836,10 +849,13 @@ export class TextEditor {
     this.box.classList.remove('editing');
     $('#read-actions').hidden = false;
     $('#edit-actions').hidden = true;
+    $('#edit-done').innerHTML = `${icon('check')}Done`;
+    $('#edit-done').title = 'Finish correcting (E)';
     this.app.views.forEach((v) => { v.showActive(null); v.showOutlines([]); v.showFrame(null); v.showAreas([]); v.showFound([]); });
     this.app.applyMode();
     this.app.renderPanelText();
     if (keep && this.app.views.includes(keep.view)) this.app.setFocus(keep.view, keep.unit, false);
+    if (returnToLayout) returnToLayout();
   }
 
   /** The pages on screen changed (called after their text has loaded). */
@@ -1032,6 +1048,11 @@ export class TextEditor {
     this.sel = { view, bi, si };
     this.render();
     this.showSelection(!fromPage);
+    if (this.pendingTool) {
+      const op = this.pendingTool;
+      this.pendingTool = null;
+      this.tool(op);
+    }
   }
 
   /** Select the next (dir 1) or previous (dir -1) sentence, across paragraphs and pages. */
@@ -1842,6 +1863,15 @@ export class TextEditor {
         }
         return true;
       }
+      case 'merge-selected': {
+        if (count < 2) { toast('Choose at least two sentences to merge.'); return true; }
+        if (chosen.length !== 1) { toast('Choose sentences from one page at a time.'); return true; }
+        this.commitText();
+        const { view, list } = chosen[0];
+        this.run('mergeMany', list, { view, ...list[0] });
+        toast(`Merged ${count} selected sentences in page order.`);
+        return true;
+      }
       default:
         return false;
     }
@@ -2134,6 +2164,8 @@ export class TextEditor {
     merge.title = this.mergeSequence
       ? `Finish in this order: ${mergeOrder.map((p) => this.flatIndex({ view: this.mergeSequence.view, ...p }) + 1).join(' → ')}`
       : 'Use the selected sentence as the start, then click following sentences in the order they should be joined';
+    const mergeSelected = $('#edit-bulk [data-op="merge-selected"]');
+    mergeSelected.disabled = n < 2 || this.checkedByView().length !== 1;
     $$('#edit-bulk .bulk-chosen').forEach((x) => { x.hidden = !n; });
     $('#edit-bulk [data-op="check-area"]').setAttribute('aria-pressed', String(this.boxing?.op === 'check-area'));
     const picture = $('#edit-bulk [data-op="picture"]'); // (pictures: of the library's books, by their owner)

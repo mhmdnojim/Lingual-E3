@@ -14,7 +14,7 @@ import { offlineLock } from './offline-lock.js';
 import { Assistant } from './assistant.js';
 
 const RATIO = 1984 / 2496;
-const NEEDS_API = 41; // server features this page needs (API_VERSION in web/server.py)
+const NEEDS_API = 44; // server features this page needs (API_VERSION in web/server.py)
 const CHUNK_UNITS = 10; // sentences (or clauses) read in one go, for a smooth flow
 const CHUNK_CHARS = 1500;
 const MODES = ['sentence', 'clause', 'word', 'off'];
@@ -101,7 +101,7 @@ class Reader {
 
   start(view, unit, fromPage = false) {
     const queue = [];
-    if (unit.mode === 'word') {
+    if (this.app.assistant?.busy || unit.mode === 'word') {
       queue.push({ view, unit });
     } else {
       const views = this.app.views;
@@ -142,7 +142,7 @@ class Reader {
   }
 
   /** Read each sentence's translation too: 'before' or 'after' it, or 'off' (voice settings). */
-  get trOrder() { return this.app.translator?.lang ? settings.trOrder : 'off'; }
+  get trOrder() { return !this.app.assistant?.busy && this.app.translator?.lang ? settings.trOrder : 'off'; }
 
   /**
    * Read the translation of the current sentence (or clause, or word) with the voice of its
@@ -259,7 +259,7 @@ class Reader {
     if (item) this.app.showWord(item.view, -1);
     if (item && this.trOrder === 'after' && !this.trSaid) { this.sayTranslation(item, () => this.finished()); return; }
     this.trSaid = false; // (a sentence and its translation are repeated together)
-    if (item && this.round < repeatTimes()) this.round++; // once more (the setting is read each time, so it can change while reading)
+    if (item && !this.app.assistant?.busy && this.round < repeatTimes()) this.round++; // once more (the setting is read each time, so it can change while reading)
     else {
       this.round = 1;
       this.pos++;
@@ -476,6 +476,7 @@ class App {
   }
 
   accountChanged() {
+    this.assistant?.stop();
     this.applyFeatures();
     offlineLock.apply(this.me);
     this.books.clear();
@@ -671,6 +672,10 @@ class App {
   unitClick(view, unit, fromPage) {
     const clickId = ++this.recordings.pageClickId;
     if (this.recordings.deselectFromPage(view, unit)) return;
+    if (this.assistant.busy) {
+      this.assistant.playSentence(view, unit, fromPage, clickId);
+      return;
+    }
     const readNormally = () => {
       if (clickId !== this.recordings.pageClickId) return;
       const readLive = () => {
@@ -741,6 +746,11 @@ class App {
     $('#btn-fit').addEventListener('click', () => this.toggleFit());
     $('#btn-spread').addEventListener('click', () => this.setSpread(!this.spreadOn));
     $('#btn-spread').setAttribute('aria-pressed', String(this.spreadOn));
+    $('#btn-layout').addEventListener('click', () => {
+      const page = this.book?.pages?.[this.idx];
+      if (!page || !this.book?.canEdit) return;
+      this.library.editLayouts(this.book, this.book.importOptions, page.n, { returnToReader: true });
+    });
 
     $('#stage').addEventListener('wheel', (e) => {
       if (!e.ctrlKey) return;
@@ -761,6 +771,7 @@ class App {
     $('#page-total').textContent = `/ ${pages.length}`;
     $('#btn-prev').disabled = this.group[0] === 0;
     $('#btn-next').disabled = this.group[this.group.length - 1] >= pages.length - 1;
+    $('#btn-layout').hidden = !(this.book.canEdit && this.book.status === 'ready' && ['pdf', 'images'].includes(this.book.kind));
     document.title = `${this.book.type} p.${first} · Lingua Books`;
     this.updateThumbs();
   }

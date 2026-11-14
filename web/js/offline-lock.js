@@ -91,6 +91,7 @@ export const offlineLock = {
   },
 
   lock(why) {
+    this.app.assistant?.stop('Connect to the internet to continue.');
     this.locked = true;
     let box = $('#offline-lock');
     if (!box) {

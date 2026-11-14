@@ -454,7 +454,27 @@ def _area(a):
     w, h = min(w, 1 - x), min(h, 1 - y)
     if w < 0.004 or h < 0.004:
         raise ValueError('An area is too small.')
-    return {'x': round(x, 4), 'y': round(y, 4), 'w': round(w, 4), 'h': round(h, 4), 'kind': a['kind']}
+    area = {'x': round(x, 4), 'y': round(y, 4), 'w': round(w, 4), 'h': round(h, 4), 'kind': a['kind']}
+    if 'text' in a:
+        if not isinstance(a['text'], str) or len(a['text']) > 20000:
+            raise ValueError('Corrected area text must be under 20,000 characters.')
+        area['text'] = a['text'].strip()
+    if 'parts' in a:
+        if not isinstance(a['parts'], list) or not 2 <= len(a['parts']) <= MOST_AREAS:
+            raise ValueError('A merged area must have at least two source areas.')
+        area['parts'] = []
+        for part in a['parts']:
+            if not isinstance(part, dict) or part.get('kind', area['kind']) not in KINDS or 'parts' in part or 'text' in part:
+                raise ValueError('A merged area part is not right.')
+            try:
+                px, py, pw, ph = (min(1.0, max(0.0, float(part.get(k, 0)))) for k in ('x', 'y', 'w', 'h'))
+            except (TypeError, ValueError):
+                raise ValueError('A merged area part is not right.')
+            pw, ph = min(pw, 1 - px), min(ph, 1 - py)
+            if pw < 0.004 or ph < 0.004:
+                raise ValueError('A merged area part is too small.')
+            area['parts'].append({'x': round(px, 4), 'y': round(py, 4), 'w': round(pw, 4), 'h': round(ph, 4), 'kind': part.get('kind', area['kind'])})
+    return area
 
 
 def clean(designs, numbers):
