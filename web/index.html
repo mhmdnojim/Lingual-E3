@@ -47,6 +47,7 @@
     <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></symbol>
     <symbol id="i-transcribe" viewBox="0 0 24 24"><rect x="4" y="2" width="6" height="11" rx="3"/><path d="M1 10v1a6 6 0 0 0 12 0v-1M7 17v5M4 22h6M16 7h6M16 12h6M16 17h6"/></symbol>
     <symbol id="i-microphone" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="13" rx="4"/><path d="M4 11v1a8 8 0 0 0 16 0v-1M12 20v2M8 22h8"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2.5-3 4.5"/><path d="M12 17.5h.01"/></symbol>
     <symbol id="i-repeat" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></symbol>
     <symbol id="i-repeat-fill" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M7 4.5h9.5V1l7.5 5-7.5 5V7.5H7A4.5 4.5 0 0 0 2.5 12H0a7 7 0 0 1 7-7.5ZM17 19.5H7.5V23L0 18l7.5-5v3.5H17a4.5 4.5 0 0 0 4.5-4.5H24a7 7 0 0 1-7 7.5Z"/></symbol>
     <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M21 4h-7"/><path d="M10 4H3"/><path d="M21 12h-9"/><path d="M8 12H3"/><path d="M21 20h-5"/><path d="M12 20H3"/><path d="M14 2v4"/><path d="M8 10v4"/><path d="M16 18v4"/></symbol>
@@ -132,6 +133,7 @@
       <svg class="i"><use href="#i-search"/></svg>
       <input id="search-input" type="search" placeholder="Search text  ( / )" aria-label="Search the book text" autocomplete="off">
     </label>
+    <button class="icon-btn" id="btn-help" title="Help on every button: when it is on, point at any button (or hold a finger on it) to read what it does and how to use it" aria-label="Help on every button" aria-pressed="true"><svg class="i"><use href="#i-help"/></svg></button>
     <button class="icon-btn" id="btn-panel" title="Show or hide the side panel (T)" aria-label="Side panel" aria-pressed="true"><svg class="i"><use href="#i-panel"/></svg></button>
   </div>
 </header>
@@ -247,6 +249,7 @@
       <div class="lib-tools">
         <label class="search-field lib-search"><svg class="i"><use href="#i-search"/></svg><input id="lib-q" type="search" placeholder="Find a book" aria-label="Find a book" autocomplete="off"></label>
         <button class="btn primary" id="lib-add"><svg class="i"><use href="#i-plus"/></svg>Add a book</button>
+        <button class="btn" id="lib-translator" title="Speak or write in one language, hear it in another">Translator</button>
         <button class="btn" id="lib-migrate">Import old app</button>
         <span class="lib-account" id="lib-account"></span>
       </div>

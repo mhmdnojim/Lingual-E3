@@ -7,6 +7,7 @@ import { designEditor, framed } from './designs.js';
 import { speechDialog } from './transcription.js';
 import { requestAILayout } from './layout-ai.js';
 import { usersAdmin } from './admin-users.js';
+import { giveBooksPanel, giveBooksLoad } from './give-books.js';
 import { plansAdmin, plansDialog } from './plans.js';
 import { servicesAdmin } from './admin-services.js';
 import { statsAdmin } from './admin-stats.js';
@@ -215,6 +216,13 @@ export class Library {
     window.linguaDevice?.onChange(() => this.treeState());
     this.treeState();
     this.bindSplit();
+    $('#lib-translator').addEventListener('click', async () => {
+      try {
+        const { Translator } = await import('./translator.js');
+        this.translator ??= new Translator();
+        await this.translator.open();
+      } catch (err) { toast(`Could not open the translator: ${err.message}`); }
+    });
     $('#lib-migrate').addEventListener('click', async () => {
       if (!this.user) { this.accountDialog('signup', 'Log in to import an old app into your library.'); return; }
       try {
@@ -2025,7 +2033,7 @@ export class Library {
   async renderAdmin(gen) {
     const body = $('#lib-body');
     const codes = Boolean(this.me.subscription?.required);
-    const parts = [['users', 'Users'], ['books', 'Books and reports'], ...(codes ? [['plans', 'Plans and payments'], ['codes', 'Access codes']] : []),
+    const parts = [['users', 'Users'], ['books', 'Books and reports'], ['give', 'Give books'], ...(codes ? [['plans', 'Plans and payments'], ['codes', 'Access codes']] : []),
       ['stats', 'Statistics'], ...(this.user?.owner ? [['api', 'API']] : [])];
     let part = store.get('adminTab', 'users');
     if (!parts.some(([k]) => k === part)) part = 'users';
@@ -2035,6 +2043,12 @@ export class Library {
     if (part === 'users') {
       body.replaceChildren(el('div', { class: 'admin' }, bar,
         usersAdmin({ me: this.me.user, plans: codes, openDialog: showDialog, closeDialog })));
+      return;
+    }
+    if (part === 'give') {
+      const data = await giveBooksLoad();
+      if (gen !== this.gen) return;
+      body.replaceChildren(el('div', { class: 'admin' }, bar, giveBooksPanel(data)));
       return;
     }
     if (part === 'api') {

@@ -1977,3 +1977,80 @@ body { height: 100dvh; padding-left: env(safe-area-inset-left); padding-right: e
 /* Admin: one account's books, and going through the accounts (js/admin-users.js) */
 .user-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .user-books { margin: 12px 0; }
+
+/* The Translator (js/translator.js) */
+.translator { display: flex; flex-direction: column; gap: 10px; min-width: min(560px, 90vw); }
+.tr-langs { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; }
+.tr-list { max-height: 40vh; min-height: 120px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 4px; border: 1px solid var(--line, #ccc); border-radius: 8px; }
+.tr-msg { max-width: 85%; padding: 8px 10px; border-radius: 10px; background: var(--accent-soft); }
+.tr-msg.right { align-self: flex-end; background: var(--panel, #eee); }
+.tr-said { opacity: .75; font-size: .92em; }
+.tr-result { font-size: 1.15em; font-weight: 600; margin-top: 2px; }
+.tr-tools { display: flex; align-items: center; gap: 4px; margin-top: 4px; }
+.tr-tools .hint { margin-right: auto; }
+.tr-input { width: 100%; resize: vertical; }
+.tr-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.tr-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* Admin: giving books to accounts (js/give-books.js) */
+.give { display: flex; flex-direction: column; gap: 10px; }
+.give-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.give-col { display: flex; flex-direction: column; gap: 6px; }
+.give-list { max-height: 45vh; overflow-y: auto; border: 1px solid var(--line, #ccc); border-radius: 8px; padding: 4px; }
+.give-row { display: flex; gap: 8px; align-items: baseline; padding: 3px 4px; }
+.give-row .hint { margin-left: auto; }
+.give-to { display: flex; flex-direction: column; gap: 4px; }
+.give-problem { color: var(--accent); }
+
+/* The breakdown: letter size (A− A+) and repeat (js/breakdown.js) */
+.bd { --bd-scale: 1; }
+.bd-line { font-size: calc(18px * var(--bd-scale)); }
+.bd-en span { font-size: calc(16px * var(--bd-scale)); }
+.bd-words td { font-size: calc(1em * var(--bd-scale)); }
+.bd-size { min-width: 2.4em; font-weight: 700; }
+.bd-repeat { display: inline-flex; align-items: center; gap: 4px; }
+.bd-repeat b { font-size: 1.1em; }
+
+.layout-ai-off { margin: 4px 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 6px; font-size: 13px; }
+
+/* Small phones (320–390 px wide): nothing may make the page wider than the screen. */
+:where([data-device="phone"]) .lib-head { flex-wrap: wrap; min-width: 0; }
+:where([data-device="phone"]) .lib-tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; flex-wrap: nowrap; }
+:where([data-device="phone"]) .lib-tabs [role=tab] { flex: none; }
+:where([data-device="phone"]) .topbar .tb-group:first-child .book-title { min-width: 0; flex: 0 1 auto; max-width: 100%; }
+:where([data-device="phone"]) .topbar .tb-group:first-child .book-title span { min-width: 0; }
+:where([data-device="phone"]) .read-tools { flex-wrap: wrap; row-gap: 2px; min-width: 0; }
+:where([data-device="phone"]) .tb-group.end { flex-wrap: wrap; min-width: 0; }
+@media (max-width: 370px) {
+  :where([data-device="phone"]) #page-input { width: 40px; }
+  :where([data-device="phone"]) .topbar { padding: 0 4px; }
+  :where([data-device="phone"]) .topbar .icon-btn { width: 32px; }
+}
+:where([data-device="phone"]) .translator { min-width: 0; width: 100%; }
+:where([data-device="phone"]) .tr-langs { grid-template-columns: 1fr; }
+:where([data-device="phone"]) .tr-langs .icon-btn { justify-self: center; }
+:where([data-device="phone"]) .tr-actions .btn { flex: 1 1 45%; }
+:where([data-device="phone"]) .tr-msg { max-width: 95%; }
+:where([data-device="phone"]) .give-cols { grid-template-columns: 1fr; }
+:where([data-device="phone"]) .bd { width: 100%; }
+:where([data-device="phone"]) .bd-tools { gap: 6px 8px; }
+:where([data-device="phone"]) .bd-speed input { width: 100px; }
+:where([data-device="phone"]) .user-nav { flex-wrap: wrap; }
+:where([data-device="phone"]) .layout { grid-template-columns: minmax(0, 1fr); }
+:where([data-device="phone"]) .panel, :where([data-device="phone"]) .stage-wrap { min-width: 0; }
+:where([data-device="phone"]) .panel .tabs { overflow-x: auto; scrollbar-width: none; justify-content: flex-start; flex-wrap: nowrap; }
+:where([data-device="phone"]) .panel .tabs [role=tab] { flex: none; }
+
+/* Help cards on every button (js/help.js): they follow the pointer */
+.help-tip { position: fixed; z-index: 2000; max-width: min(340px, calc(100vw - 16px)); pointer-events: none;
+  background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .22); font: 13px/1.45 var(--font-read); }
+.help-tip[hidden] { display: none; }
+.help-name { font-size: 14px; margin-right: 8px; }
+.help-key { display: inline-block; padding: 0 6px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; font: 600 11.5px/1.6 var(--font-read); color: var(--muted); }
+.help-d { margin: 4px 0 0; }
+.help-h { margin: 8px 0 2px; font-weight: 700; color: var(--accent); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+.help-use { margin: 0; padding-left: 18px; }
+.help-use li { margin: 1px 0; }
+.help-note { margin: 6px 0 0; padding: 4px 8px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 4px; font-size: 12.5px; }
+#btn-help[aria-pressed="true"] { color: var(--accent); }

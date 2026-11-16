@@ -141,6 +141,17 @@ export class Breakdown {
     const english = t.text(a, b);
     let sentenceTr = '', parts = [];
     let rate = Number(store.get('breakdown.rate', 0.9));
+    let repeat = [0, 1, 2, 3].includes(Number(store.get('breakdown.repeat', 1))) ? Number(store.get('breakdown.repeat', 1)) : 1; // (0: for ever)
+    let scale = Math.min(2.4, Math.max(0.8, Number(store.get('breakdown.font', 1)) || 1));
+    /** Do `run` (a speech that ends when it is said) as many times as chosen, until another voice or Stop. */
+    const loop = async (run) => {
+      const id = ++this.playing;
+      for (let i = 0; (repeat === 0 || i < repeat) && id === this.playing; i++) {
+        await run();
+        if (id !== this.playing) return;
+        await new Promise((ok) => setTimeout(ok, 350));
+      }
+    };
 
     // (onWord: each word as it is said, by its place in the text)
     const sayEnglish = (text, onWord) => new Promise((ok) => { if (!speech.speak(text, { rate, onWord, onEnd: ok, onError: ok })) ok(); });
@@ -299,14 +310,33 @@ export class Breakdown {
       const id = ++this.playing;
       all.dataset.on = '1';
       all.innerHTML = `${icon('stop')}Stop`;
-      for (const part of parts) {
-        if (!(await playPart(part, id))) break;
-        await new Promise((ok) => setTimeout(ok, 450));
-        if (id !== this.playing) break;
+      for (let round = 0; (repeat === 0 || round < repeat) && id === this.playing; round++) {
+        for (const part of parts) {
+          if (!(await playPart(part, id))) break;
+          await new Promise((ok) => setTimeout(ok, 450));
+          if (id !== this.playing) break;
+        }
+        if (id === this.playing) await new Promise((ok) => setTimeout(ok, 700));
       }
       if (all.isConnected) { delete all.dataset.on; all.innerHTML = `${icon('play')}Play all`; mark(null); }
     });
     const count = el('span', { class: 'bd-count' }, `${words.length} word${words.length === 1 ? '' : 's'}`);
+    // Bigger or smaller letters; how many times the sentence, its translation and "Play all" are said (∞: until Stop).
+    const sizeBtn = (label, title, by) => {
+      const b = el('button', { class: 'btn small bd-size', type: 'button', title, 'aria-label': title }, label);
+      b.addEventListener('click', () => { scale = Math.min(2.4, Math.max(0.8, Math.round((scale + by) * 100) / 100)); store.set('breakdown.font', scale); applyScale(); });
+      return b;
+    };
+    const repeatBtn = el('button', { class: 'btn small bd-repeat', type: 'button' });
+    const showRepeat = () => {
+      const label = repeat === 0 ? '∞' : `×${repeat}`;
+      repeatBtn.innerHTML = `${icon('repeat')}<b>${label}</b>`;
+      repeatBtn.title = repeat === 0 ? 'Said again and again until Stop. Click: once' : `Said ${repeat} time${repeat === 1 ? '' : 's'}. Click: ${repeat === 3 ? 'for ever (∞)' : `${repeat + 1} times`}`;
+      repeatBtn.setAttribute('aria-label', `Repeat: ${repeat === 0 ? 'for ever' : `${repeat} time${repeat === 1 ? '' : 's'}`}`);
+      repeatBtn.setAttribute('aria-pressed', String(repeat !== 1));
+    };
+    repeatBtn.addEventListener('click', () => { repeat = repeat === 0 ? 1 : repeat === 3 ? 0 : repeat + 1; store.set('breakdown.repeat', repeat); showRepeat(); });
+    showRepeat();
     // Offline (Settings → Translation): what is not saved yet is not asked of the internet. Shown
     // when something is missing, with the way back online (this sentence asked again so).
     const offlineNote = el('p', { class: 'hint bd-offline', hidden: true },
@@ -320,17 +350,20 @@ export class Breakdown {
     const body = el('div', { class: 'bd' },
       el('div', { class: 'bd-line bd-sentence' }, hear('Hear the sentence', () => {
         mark(null);
-        sayEnglish(english, followSentence).then(() => mark(null)); // (stopped by another voice: it does not end)
+        loop(() => sayEnglish(english, followSentence)).then(() => mark(null)); // (stopped by another voice: it does not end)
       }), sentenceLine),
       el('div', { class: 'bd-line bd-translation', dir, lang: lang || undefined }, lang ? hear('Hear the translation', () => {
         mark(null);
-        sayMeaning(sentenceTr, followTranslation).then(() => mark(null));
+        loop(() => sayMeaning(sentenceTr, followTranslation)).then(() => mark(null));
       }) : null, translationText),
       pinyinNote, offlineNote,
       lang ? null : el('p', { class: 'hint' }, 'Choose the language of the meanings: ',
         el('button', { class: 'btn small', type: 'button', onclick: () => this.app.openSettings?.('translation') }, 'Settings → Translation')),
-      el('div', { class: 'bd-tools' }, count, el('label', { class: 'bd-speed' }, el('span', {}, 'Speed '), speed, speedOut), all),
+      el('div', { class: 'bd-tools' }, count, sizeBtn('A−', 'Smaller letters', -0.15), sizeBtn('A+', 'Bigger letters', 0.15), repeatBtn,
+        el('label', { class: 'bd-speed' }, el('span', {}, 'Speed '), speed, speedOut), all),
       el('div', { class: 'bd-scroll' }, table));
+    const applyScale = () => { body.style.setProperty('--bd-scale', String(scale)); };
+    applyScale();
     table.addEventListener('pointerleave', () => mark(null));
     sentenceLine.addEventListener('pointerleave', () => mark(null));
     openDialog('Break down the sentence', body, () => this.stop());

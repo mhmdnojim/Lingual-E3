@@ -640,6 +640,28 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
       if (node?.isConnected) renderAll();
     }
   };
+  /** Boxes round what the page shows and its text has not (a table the scan's text layer missed): to be read with OCR and checked. */
+  let findingMissing = false;
+  const findMissing = async () => {
+    const n = at, data = loaded.get(n);
+    if (!data?.words || !data.width || !data.height) { status.textContent = 'This page is not loaded yet. Try again in a moment.'; return; }
+    findingMissing = true; status.textContent = 'Looking for parts of the page with no text…'; renderToolPanel();
+    try {
+      const { missingTextOnPicture } = await import('./missing-text.js');
+      const found = await missingTextOnPicture(data.picture || picture(n), data.words, data.width, data.height);
+      if (at !== n) return;
+      const fresh = found.filter((f) => !rereadBoxes.some((r) => r.x < f.x + f.w && f.x < r.x + r.w && r.y < f.y + f.h && f.y < r.y + r.h));
+      rereadBoxes.push(...fresh.map((f) => ({ x: f.x, y: f.y, w: f.w, h: f.h })));
+      status.textContent = fresh.length
+        ? `Found ${fresh.length} part${fresh.length === 1 ? '' : 's'} of the page with no text (lettered on the page). Remove what is only a picture (Take back the last box), then press Read ${fresh.length === 1 ? 'box' : 'boxes'} (OCR).`
+        : 'Every dark part of this page is read already.';
+    } catch (error) {
+      if (at === n) status.textContent = error.message;
+    } finally {
+      findingMissing = false;
+      if (node?.isConnected) renderAll();
+    }
+  };
   const readDrawnBoxes = async () => {
     if (!rereadBoxes.length) return;
     const areas = mine().areas;
@@ -1181,6 +1203,9 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
       items.push(action(rereadDraw ? `Stop drawing boxes (${rereadBoxes.length})` : 'Draw boxes to read', () => setRereadDraw(!rereadDraw), 'select-area', {
         pressed: rereadDraw, disabled: rereadingArea || !onReadArea,
         title: 'Drag boxes around text on the page (missing, badly read or new), then read them all with OCR and check what was found' }));
+      items.push(action(findingMissing ? 'Looking…' : 'Find text the page is missing', findMissing, 'select-area', {
+        disabled: findingMissing || rereadingArea || !onReadArea,
+        title: 'Finds parts of the page with writing but no text (a box of words the scan missed) and draws a box round each, to read them with OCR' }));
       if (rereadBoxes.length) {
         items.push(action(`Read ${rereadBoxes.length} box${rereadBoxes.length === 1 ? '' : 'es'} (OCR)`, readDrawnBoxes, 'transcribe', { primary: true, disabled: rereadingArea,
           title: 'Read the text inside the boxes you drew, then check the sentences found' }));
@@ -1199,6 +1224,11 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
         title: 'Ask AI to suggest page areas, with what you told it. Review the suggestion before applying it.' }));
       if (onAnalyze && analyzed.has(at) && !aiAll) items.push(action('Analyze again', () => analyze(true), 'repeat', {
         disabled: aiBusy !== null || !aiInfo?.ready || !aiInfo?.can, title: 'Run a new AI layout analysis for this page' }));
+      if (onAnalyze && (!aiInfo?.ready || !aiInfo?.can)) {
+        items.push(el('p', { class: 'layout-ai-off', role: 'note' }, !aiInfo?.ready
+          ? 'AI analysis is switched off: the website has no OpenAI key yet. The owner adds it under Admin → API (the Admin tab of the library), then reopens this window.'
+          : 'AI analysis is not on for your account: you have no AI pages left, or the admin has not allowed it.'));
+      }
       if (onAnalyze) items.push(aiAskBox);
       toolNote.textContent = `${aiInfo?.ready
         ? 'AI layout suggestions use the OpenAI key configured in Admin → API.'

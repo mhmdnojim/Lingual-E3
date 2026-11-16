@@ -5,6 +5,7 @@
  * account is said by the server (may), which checks it again on every change.
  */
 import { el, toast } from './util.js';
+import { giveBooksPanel, giveBooksLoad } from './give-books.js';
 
 const api = async (method, url, body) => {
   const r = await fetch(url, body === undefined ? { method } : { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -164,6 +165,12 @@ export function usersAdmin(o) {
       el('td', {}, day(b.updated)),
       el('td', { class: 'admin-acts' },
         el('button', { class: 'btn small', type: 'button', onclick: () => { o.closeDialog(); location.hash = `#/${b.id}/1`; } }, 'Open'),
+        el('button', { class: 'btn small', type: 'button', title: 'Give a copy of this book to other accounts, or make it public', onclick: async () => {
+          const data = await giveBooksLoad();
+          const own = list.map((x) => ({ id: x.id, title: x.title, owner: d.name, visibility: x.visibility, status: x.status }));
+          const books = [...own, ...data.books.filter((x) => !own.some((y) => y.id === x.id))];
+          o.openDialog(`Give “${b.title}”`, giveBooksPanel({ books, users: data.users, preselect: [b.id] }));
+        } }, 'Give…'),
         b.visibility === 'public' ? el('button', { class: 'btn small', type: 'button', onclick: () => doBook(b, b.hidden ? 'show' : 'hide', b.hidden ? 'The book is shown again.' : 'The book is hidden from the others.') }, b.hidden ? 'Show' : 'Hide') : null,
         el('button', { class: 'btn small danger-btn', type: 'button', onclick: () => {
           if (window.confirm(`Delete “${b.title}” of ${d.name}? It cannot be brought back.`)) doBook(b, 'delete', 'The book was deleted.');

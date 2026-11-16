@@ -7,6 +7,7 @@ import { TextEditor } from './editor.js';
 import { Recordings } from './recordings.js';
 import { Translator } from './translation.js';
 import { Library } from './library.js';
+import { startHelp } from './help.js';
 import { Follower, followSettings, setFollow } from './follow.js';
 import { Words } from './words.js';
 import { Contents } from './contents.js';
@@ -415,6 +416,7 @@ class App {
     this.breakdown = new Breakdown(this); // a sentence broken down: each word and its meaning
     this.assistant = new Assistant(this);
     this.library = new Library(this);
+    startHelp();
     this.follower = new Follower(this);
     initDialog();
 

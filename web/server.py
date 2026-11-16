@@ -1064,6 +1064,17 @@ class Handler(SimpleHTTPRequestHandler):
                 if body is None:
                     return None
                 return self.send_json(library.summary(library.create(u, body if isinstance(body, dict) else {}), u))
+            if path == '/api/admin/book-gifts' and method == 'POST':  # copy books to accounts, or make them public
+                if not (u and u['admin']):
+                    return self.denied()
+                body = self.read_body()
+                if body is None:
+                    return None
+                body = body if isinstance(body, dict) else {}
+                try:
+                    return self.send_json(library.give(u, body.get('books') or [], body.get('users') or [], bool(body.get('public'))))
+                except (TypeError, ValueError):
+                    return self.send_json({'error': 'bad request'}, 400)
             m = API_ADMIN_BOOK.match(path)
             if m and method == 'POST':
                 if not (u and u['admin']):
@@ -1651,7 +1662,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self.change_branches('POST', path)
         if API_LINK.match(path):
             return self.change_links('POST', path)
-        if path in ('/api/translate', '/api/translate-word'):
+        if path in ('/api/translate', '/api/translate-word', '/api/translator'):
             return self.post_translate(path)
         if path == '/api/picture-ai':
             return self.picture_ai('POST')
@@ -2111,6 +2122,8 @@ class Handler(SimpleHTTPRequestHandler):
             src = str(req.get('from') or 'en')  # the book's language: what is translated from
             if MODE == 'public' and not req.get('cachedOnly'):
                 stats.count(self.user(), 'translations')
+            if path == '/api/translator':  # the Translator page: a free text, not tied to a book
+                return self.send_json({'text': translate.translate_text(req.get('text'), str(req.get('lang', '')), src)})
             if path == '/api/translate':
                 book = str(req.get('book', ''))
                 if not (self.book_access(book) or book == translate.FILES and self.may_transcribe()):

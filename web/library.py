@@ -342,6 +342,86 @@ def delete(b):
     db.run('DELETE FROM reports WHERE book = ?', (b['id'],))
 
 
+def copy_book(b, owner, visibility='private'):
+    """A whole copy of a ready book (its pages, text corrections, layouts, pictures, audio) as a book of
+    the account `owner`: a new id, no reports, not hidden. Everything in it that names the old id is renamed."""
+    if b['status'] != 'ready':
+        raise LibraryError(f"“{b['title']}” is not ready yet.")
+    bid = 'L' + secrets.token_hex(5)
+    while db.one('SELECT 1 FROM books WHERE id = ?', (bid,)):
+        bid = 'L' + secrets.token_hex(5)
+    src = folder(b['id'])
+    if not os.path.isdir(src):
+        raise LibraryError(f"“{b['title']}” has no files to copy.")
+    dst = folder(bid)
+    try:
+        shutil.copytree(src, dst)
+        for root, _dirs, files in os.walk(dst):
+            for name in files:
+                if not name.endswith('.json'):
+                    continue
+                path = os.path.join(root, name)
+                with open(path, encoding='utf-8') as f:
+                    text = f.read()
+                if b['id'] in text:
+                    with open(path, 'w', encoding='utf-8') as f:
+                        f.write(text.replace(b['id'], bid))
+        now = int(time.time())
+        db.run('INSERT INTO books (id, owner, title, author, about, branch, lang, import_options, kind, visibility, license, source, '
+               'hidden, status, error, pages, bytes, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)',
+               (bid, owner, b['title'], b['author'], b['about'], b['branch'] if visibility == 'public' else None, b['lang'],
+                b['import_options'], b['kind'], visibility, b['license'], b['source'], 'ready', '', b['pages'], b['bytes'], now, now))
+    except Exception:
+        shutil.rmtree(dst, ignore_errors=True)
+        raise
+    return get(bid)
+
+
+def give(actor, book_ids, user_ids, public=False):
+    """Admin: copy books to accounts (each gets its own private copy), and/or make them public.
+    A book of the admin's own is made public as it is; another account's book is shared as a public copy of the admin.
+    Returns {'copies': n, 'public': n, 'problems': [text]}."""
+    out = {'copies': 0, 'public': 0, 'problems': []}
+    users = []
+    for uid in dict.fromkeys(int(x) for x in user_ids):
+        u = db.one('SELECT id, name FROM users WHERE id = ?', (uid,))
+        if u:
+            users.append(u)
+        else:
+            out['problems'].append(f'Account {uid} was not found.')
+    if not book_ids or not (users or public):
+        raise LibraryError('Choose at least one book and one account, or Public.')
+    for bid in dict.fromkeys(str(x) for x in book_ids):
+        b = get(bid)
+        if not b:
+            out['problems'].append(f'Book {bid} was not found.')
+            continue
+        for u in users:
+            if u['id'] == b['owner']:
+                out['problems'].append(f"“{b['title']}” is {u['name']}’s own book already.")
+                continue
+            try:
+                copy_book(b, u['id'])
+                out['copies'] += 1
+            except (LibraryError, OSError) as e:
+                out['problems'].append(str(e))
+        if public:
+            if b['visibility'] == 'public' and not b['hidden'] and b['owner'] == actor['id']:
+                out['problems'].append(f"“{b['title']}” is public already.")
+            elif b['status'] != 'ready':
+                out['problems'].append(f"“{b['title']}” is not ready yet.")
+            elif b['owner'] == actor['id']:
+                db.run("UPDATE books SET visibility = 'public', hidden = 0, updated = ? WHERE id = ?", (int(time.time()), b['id']))
+                out['public'] += 1
+            else:
+                try:
+                    copy_book(b, actor['id'], 'public')
+                    out['public'] += 1
+                except (LibraryError, OSError) as e:
+                    out['problems'].append(str(e))
+    return out
+
+
 def _used_bytes(owner):
     return db.one('SELECT COALESCE(SUM(bytes), 0) AS n FROM books WHERE owner = ?', (owner,))['n']
 

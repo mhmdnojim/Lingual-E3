@@ -535,3 +535,23 @@ def translate_word(lang, word, context='', context_offset=None, cached_only=Fals
         'word': word, 'context': context, 'contextOffset': context_offset,
     }], cached_only, book_language=book_language)
     return result[0]
+
+
+MAX_TEXT = 2000  # characters of one free text (the Translator page)
+
+
+def translate_text(text, lang, src):
+    """A free text (typed or spoken) from the language src into lang, line by line. Not saved anywhere."""
+    text = str(text or '').strip()
+    if not text:
+        raise ValueError('Write or say something to translate.')
+    if len(text) > MAX_TEXT:
+        raise ValueError(f'At most {MAX_TEXT} characters at a time.')
+    if lang not in CODES or src not in CODES:
+        raise ValueError('That language is not offered.')
+    lines = [re.sub(r'\s+', ' ', x).strip() for x in text.split('\n')]
+    if lang == src:
+        return '\n'.join(lines)
+    found = {}
+    _translate_paragraphs(lang, [[x] for x in lines if x], found, src)
+    return '\n'.join(found.get(x, '') if x else '' for x in lines)
