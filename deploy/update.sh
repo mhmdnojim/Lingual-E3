@@ -18,6 +18,19 @@ if ! command -v soffice >/dev/null; then
   apt install -y -q libreoffice-writer-nogui fonts-noto-cjk fonts-crosextra-carlito fonts-crosextra-caladea \
     || apt install -y -q libreoffice-writer fonts-noto-cjk
 fi
+# (servers set up before these page languages could be chosen: Tesseract reads each with its own pack)
+if command -v tesseract >/dev/null; then
+  have="$(tesseract --list-langs 2>/dev/null || true)"
+  need=""
+  for code in rus bul fas urd ind tur fra; do
+    echo "$have" | grep -qx "$code" || need="$need tesseract-ocr-$code"
+  done
+  if [ -n "$need" ]; then
+    echo "Installing the OCR languages:$need (once)…"
+    apt-get -o DPkg::Lock::Timeout=1800 update -q
+    apt-get -o DPkg::Lock::Timeout=1800 install -y -q $need || echo "Some OCR languages could not be installed: scans in them cannot be read yet."
+  fi
+fi
 # (servers set up before it was in setup-server.sh: started again 3 s after a stop, not at once —
 # else five quick failures in a row and systemd gives up)
 if ! systemctl cat lingua-books | grep -q '^RestartSec='; then

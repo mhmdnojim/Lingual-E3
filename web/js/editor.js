@@ -1593,12 +1593,15 @@ export class TextEditor {
    * languages, as said when it was added).
    */
   areaLanguages(book) {
-    const name = { 'zh-Hans': 'Chinese', 'zh-Hant': 'Chinese (Traditional)', es: 'Spanish', fr: 'French', de: 'German', ja: 'Japanese', ko: 'Korean', ar: 'Arabic' };
+    const name = { en: 'English', 'zh-Hans': 'Chinese', 'zh-Hant': 'Chinese (Traditional)', es: 'Spanish', fr: 'French', de: 'German', ja: 'Japanese', ko: 'Korean', ar: 'Arabic',
+      ru: 'Russian', bg: 'Bulgarian', fa: 'Persian', ur: 'Urdu', id: 'Indonesian', tk: 'Turkmen' };
     const lang = book.disc ? 'en' : book.importOptions?.language || book.language || 'en';
     if (lang === 'en') return { lang, reads: [['all', 'English']], first: 'all' };
     const n = name[lang] || lang;
-    return { lang, reads: [['all', `${n} and English`], ['main', `${n} only`], ['en', 'English only']],
-      first: book.importOptions?.english === false ? 'main' : 'all' };
+    // (the book's second language, as said when it was added; English when it has none)
+    const second = book.importOptions?.second ?? (book.importOptions?.english === false ? '' : 'en');
+    return { lang, reads: [['all', `${n} and ${name[second || 'en'] || second}`], ['main', `${n} only`], ['en', 'English only']],
+      first: second ? 'all' : 'main' };
   }
 
   /** Read an area of a page again with OCR (read: which languages), and show what was found to review (readAreas). */

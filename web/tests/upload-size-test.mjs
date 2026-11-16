@@ -53,8 +53,8 @@ async function add(title, file, kind = 'pdf') {
   await page.click('#lib-add');
   await page.waitForSelector('.add-kind', { timeout: 10000 });
   await page.click(`.add-kind [data-kind="${kind}"]`);
-  await page.$eval('.lib-form input[type=text]', (i) => { i.value = ''; });
-  await page.type('.lib-form input[type=text]', title);
+  await page.$eval('.lib-form input[name=title]', (i) => { i.value = ''; });
+  await page.type('.lib-form input[name=title]', title);
   await (await page.$(`.lib-form input[type=file][accept*="${kind === 'word' ? 'docx' : 'pdf'}"]`)).uploadFile(file);
   await page.click('.lib-form button[type=submit]');
   for (let i = 0; i < 300; i++) {
@@ -62,7 +62,7 @@ async function add(title, file, kind = 'pdf') {
       msg: document.querySelector('#md-body .form-msg')?.textContent || '',
       title: document.querySelector('#md-title')?.textContent || '',
     }));
-    if (now.msg || /^Sample|^Check the sample/.test(now.title)) return now;
+    if (now.msg || /^Sample|^Check the sample|^Page layouts/.test(now.title)) return now;
     await sleep(200);
   }
   return {};
@@ -79,7 +79,7 @@ try {
   // A whole textbook of 70 MB: taken (it was "cut off" before: the limit was 60 MB for everyone).
   const big = await add('Big textbook', files.big);
   assert.equal(big.msg, '', JSON.stringify(big));
-  assert.match(big.title, /Sample|Check the sample/);
+  assert.match(big.title, /Sample|Check the sample|Page layouts/);
   await page.keyboard.press('Escape');
 
   // The limits as the server says them when the book is added (not as when the page was opened:
@@ -119,7 +119,7 @@ try {
   const fromWord = await add('From Word', files.word, 'word');
   if (wordFiles) {
     assert.equal(fromWord.msg, '', JSON.stringify(fromWord));
-    assert.match(fromWord.title, /Sample|Check the sample/);
+    assert.match(fromWord.title, /Sample|Check the sample|Page layouts/);
     const book = await page.evaluate(() => fetch('/api/books?scope=mine').then((r) => r.json()).then((b) => b.find((x) => x.title === 'From Word')));
     assert.equal(book.kind, 'pdf', 'a PDF book');
     let pdf;
@@ -128,7 +128,9 @@ try {
       pdf = await page.evaluate((id) => fetch(`/api/books/${id}/preview`).then((r) => r.json()), book.id);
     }
     assert.equal(pdf.state, 'ready', JSON.stringify(pdf));
-    assert.match(JSON.stringify(pdf), /Lesson|study/, 'its words read from the PDF made of it');
+    // (the page-layout window opens on it, and reads its first page from the PDF made of the Word file)
+    const words = await page.waitForFunction(() => /Lesson|study/.test(document.querySelector('#media-dialog').innerText), { timeout: 60000 }).then(() => true, () => false);
+    assert.ok(words, 'its words read from the PDF made of it');
   } else {
     assert.match(fromWord.msg, /Save As → PDF/);
   }

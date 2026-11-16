@@ -74,10 +74,10 @@ LICENSES = {
     'other-free': 'Another licence that allows sharing',
 }
 LIMITS = {
-    'pdf_mb': 60, 'image_mb': 15, 'images': 200, 'pages': 300, 'text_chars': 80000,
+    'pdf_mb': 500, 'image_mb': 15, 'images': 200, 'pages': 300, 'text_chars': 80000,
     'books_per_user': 100, 'user_mb': 600,
 }
-ADMIN_PDF_MB = 500  # an admin's PDF (on this computer you are the admin): a whole textbook, often 80-220 MB
+ADMIN_PDF_MB = 500  # a PDF (also an admin's): a whole textbook, often 80-220 MB
 _pdfium_lock = threading.RLock()  # PDFium handles are process-global on some Windows builds
 
 
@@ -164,7 +164,8 @@ def _clean_options(raw):
     """What the owner told the app about the pages of a PDF or photos (when adding the book, and
     after checking the sample): how its pages are made.
         language    the main language of the pages (OCR reads it)
-        english     the pages also have English (not their main language): OCR for English reads it too
+        second      the pages also have this language ('' = none): OCR made for it reads it too
+        english     … and it is English (the first version asked only this; still told, for what reads it)
         pinyin      Chinese: 'none', 'some' (words or lines here and there), 'lines' (over every line)
         dropPinyin  Chinese: leave lines of pinyin out of the text
         pages       PDF: the pages to use ('3-120, 125'; '' = all)
@@ -186,7 +187,11 @@ def _clean_options(raw):
     _parse_fixes(fixes)
     # A Chinese book may also contain English, which should remain. Always remove only
     # lines recognized as pinyin; the Chinese characters and English text are retained.
-    return {'language': language, 'english': language != 'en' and bool(raw.get('english', language.startswith('zh-'))),
+    second = raw.get('second')
+    if second is None:  # (the first version: English or not)
+        second = 'en' if language != 'en' and raw.get('english', language.startswith('zh-')) else ''
+    second = ocr.second_of(language, second=str(second))
+    return {'language': language, 'second': second, 'english': second == 'en',
             'pinyin': pinyin, 'dropPinyin': language.startswith('zh-'),
             'pages': pages, 'ocrAll': bool(raw.get('ocrAll')), 'margins': bool(raw.get('margins')),
             'enhance': bool(raw.get('enhance')), 'fixes': fixes}
@@ -764,7 +769,13 @@ def review_layout(b, n, fresh=False):
         doc, img = text_doc(b['id'], k), _page_picture(b['id'], k)
         if saved and doc and img:
             design = next((item for item in saved['designs'] if n in item['pages']), None)
-            areas = saved.get('pageAreas', {}).get(str(n), (design or {}).get('areas') or [])
+            areas = saved.get('pageAreas', {}).get(str(n))
+            if areas is None and doc.get('edited') and doc.get('blocks') and doc.get('words'):
+                # The owner corrected this page's text in the reader and saved no boxes of their own for it:
+                # start from the paragraphs of the corrected text, so the boxes match what the reader shows.
+                areas = designs.paragraph_areas(doc, img.width, img.height)
+            if areas is None:
+                areas = (design or {}).get('areas') or []
             if not areas and doc.get('words'):
                 # No boxes were ever saved for this page: show the paragraphs of its text as boxes
                 # (found from the book's own text, no new OCR), ready to be changed.
@@ -880,12 +891,14 @@ def review_layout_area(b, n, area):
 _layout_ai_lock = threading.Lock()
 
 
-def analyze_layout(b, n, key, model, refresh=False, progress=None):
-    """Return a suggestion only. Saving it is the page editor's separate action."""
+def analyze_layout(b, n, key, model, refresh=False, progress=None, instruction=''):
+    """Return a suggestion only. Saving it is the page editor's separate action. instruction: what
+    the owner asks for this page (how to group, order, leave out): another instruction, another answer."""
     tell = progress or (lambda *_: None)
     tell(0, 'Preparing the page image and OCR words locally…')
     page = review_layout(b, n)
-    identity = hashlib.sha256(json.dumps([page['fingerprint'], model, layout_ai.VERSION]).encode()).hexdigest()[:24]
+    instruction = layout_ai.clean_instruction(instruction)
+    identity = hashlib.sha256(json.dumps([page['fingerprint'], model, layout_ai.VERSION, *([instruction] if instruction else [])]).encode()).hexdigest()[:24]
     path = folder(b['id'], 'layout-review', f'ai-{n}-{identity}.json')
     # Two tabs asking for the same suggestion should not create two paid requests.
     with _layout_ai_lock:
@@ -894,13 +907,18 @@ def analyze_layout(b, n, key, model, refresh=False, progress=None):
             tell(2, 'Loading the saved AI suggestion (no new API request)…')
             return {**page, 'areas': cached['areas'], 'ai': {**cached['ai'], 'cached': True}}
         tell(1, 'Asking OpenAI to identify paragraphs and their reading order…')
-        result, usage = layout_ai.request_layout(folder(b['id'], 'designs', f'{n}-big.webp'), page, key, model)
+        result, usage = layout_ai.request_layout(folder(b['id'], 'designs', f'{n}-big.webp'), page, key, model,
+                                                 **({'instruction': instruction} if instruction else {}))
         tell(2, 'Checking word coverage, boundaries and reading order…')
         areas, notes = layout_ai.validate_layout(result, page)
         output = {'areas': areas, 'ai': {'model': model, 'notes': notes, 'usage': usage, 'cached': False}}
-        with open(path + '.tmp', 'w', encoding='utf-8') as f:
-            json.dump(output, f, ensure_ascii=False)
-        os.replace(path + '.tmp', path)
+        try:  # (kept for the next time; an answer already paid for is given even if it cannot be kept)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path + '.tmp', 'w', encoding='utf-8') as f:
+                json.dump(output, f, ensure_ascii=False)
+            os.replace(path + '.tmp', path)
+        except OSError:
+            pass
         return {**page, **output}
 
 
@@ -1016,6 +1034,16 @@ def _make_pages(bid, wanted):
         for j, (i, (img, doc, _)) in enumerate(zip(indices, read), 1):
             k = chosen.index(i) + 1  # (its number in the book)
             _set_job(bid, stage=f'Saving page {i + 1} ({j} of {len(indices)})', done=j, total=len(indices))
+            # The owner's corrections of this page (the reader's text editor): kept in the page made again.
+            corrected = None
+            try:
+                before, mine = text_doc(bid, k, original=True), text_doc(bid, k)
+                if before and mine and mine.get('edited'):
+                    was = meta[k - 1] if k - 1 < len(meta) else {}
+                    corrected = keep_edits(before, mine, doc, plan.get(i + 1), (img.width, img.height),
+                                           (was.get('w') or img.width, was.get('h') or img.height))
+            except (OSError, ValueError, KeyError, IndexError, TypeError):
+                corrected = None  # (corrections that cannot be read: the page as made)
             tmp = os.path.join(build, 'page.webp')
             img.save(tmp, 'WEBP', quality=80, method=4)
             os.replace(tmp, folder(bid, 'pages', f'{k}.webp'))
@@ -1028,8 +1056,10 @@ def _make_pages(bid, wanted):
                 json.dump(doc, f, ensure_ascii=False, separators=(',', ':'))
             os.replace(tmp, folder(bid, 'text', f'{k}.json'))
             for old in (folder(bid, 'edits', f'{k}.json'), folder(bid, 'layout-review', f'{i + 1}.json')):
-                if os.path.isfile(old):  # (the corrections belonged to the old text of this page)
+                if os.path.isfile(old):
                     os.remove(old)
+            if corrected:
+                save_edit(bid, k, corrected)
             meta[k - 1] = {'n': str(k), 'w': img.width, 'h': img.height, 'words': len(doc['words'])}
     finally:
         shutil.rmtree(build, ignore_errors=True)
@@ -1375,10 +1405,10 @@ def area_passes(language, read='all'):
     return ocr.passes(language, language != 'en' and read in ('all', 'en'))
 
 
-def read_png(png, language, read='all', progress=None):
+def read_png(png, language, read='all', progress=None, second=''):
     """The words of one picture (an area of a page read again), of the languages asked: read
-    'all' (the main language and English), 'main' (only the main language) or 'en' (only English).
-    progress(k): pass k of area_passes() starts."""
+    'all' (the main language and English — or the book's second language, second), 'main' (only
+    the main language) or 'en' (only English). progress(k): pass k of area_passes() starts."""
     if read not in AREA_READS:
         raise LibraryError('Choose what to read.')
     if language == 'en':
@@ -1388,8 +1418,8 @@ def read_png(png, language, read='all', progress=None):
         raw['lines'] = [{'words': [w for w in ln['words'] if not ocr.OTHER_SCRIPT.search(w['t']) and re.search(r'[\x21-\x7e]', w['t'])]}
                         for ln in raw['lines']]
     else:
-        raw = ocr.read_pages([png], language, read == 'all', progress)[0]
-        if read == 'main' and language in ('zh-Hans', 'zh-Hant', 'ja', 'ko', 'ar'):  # its writing only: no Latin letters
+        raw = ocr.read_pages([png], language, read == 'all', progress, second=(second or 'en') if read == 'all' else '')[0]
+        if read == 'main' and language in ('zh-Hans', 'zh-Hant', 'ja', 'ko', 'ar', 'fa', 'ur'):  # its writing only: no Latin letters
             raw['lines'] = [{'words': [w for w in ln['words'] if not re.search('[A-Za-z]', w['t'])]} for ln in raw['lines']]
     raw['lines'] = [ln for ln in raw['lines'] if ln['words']]
     return raw
@@ -1406,7 +1436,7 @@ def _ocr(imgs, build, options, progress):
         pngs.append(os.path.join(tmp, f'{i:04d}.png'))
         pic.save(pngs[-1])
         scales.append(scale)
-    raws = ocr.read_pages(pngs, options['language'], options['english'])
+    raws = ocr.read_pages(pngs, options['language'], options.get('english', False), second=options.get('second'))
     shutil.rmtree(tmp, ignore_errors=True)
     for raw, scale, img in zip(raws, scales, imgs):
         if scale != 1:  # back to the places on the page picture
@@ -1621,6 +1651,123 @@ def _without(doc, drop):
             blocks.append([kept[0], kept[-1] + 1])
     return {**doc, 'words': [w for k, w in enumerate(words) if k not in drop], 'sent': sents, 'blocks': blocks,
             'clause': [[before[a], before[b]] for a, b in doc.get('clause', []) if before[b] > before[a]]}, True
+
+
+def keep_edits(old, edit, new, areas, size, old_size=None):
+    """A page made again from its areas (new), that its owner had corrected in the reader (edit, of
+    the text as it was made before: old): the corrections kept. Each sentence belongs to the area
+    most of its words are in; the areas are read in their order, the sentences of one in the order
+    they had. An area whose text is read as before keeps the owner's sentences (the ones deleted
+    stay deleted); one read differently now (other words typed for it, another "Read as") takes
+    the new reading; words an area did not have before (a box drawn or made bigger) come after its
+    sentences. Returns the corrected page, or None when nothing of the corrections is left."""
+    W, H = size
+    ow, oh = old_size or size
+    sx, sy = (W / ow, H / oh) if ow and oh else (1, 1)
+    areas = list(areas or []) or [{'x': 0, 'y': 0, 'w': 1, 'h': 1, 'kind': 'text'}]
+    strict = any(a.get('strict') for a in areas)
+    rects = [(a['x'] * W, a['y'] * H, (a['x'] + a['w']) * W, (a['y'] + a['h']) * H) for a in areas]
+
+    def area_of(w, fx=1, fy=1):
+        if w[2] <= 0 or w[3] <= 0:
+            return None
+        cx, cy = (w[0] + w[2] / 2) * fx, (w[1] + w[3] / 2) * fy
+        inside = [k for k, r in enumerate(rects) if r[0] <= cx <= r[2] and r[1] <= cy <= r[3]]
+        if inside:
+            return min(inside, key=lambda k: (rects[k][2] - rects[k][0]) * (rects[k][3] - rects[k][1]))
+        if strict:
+            return -1
+        return min(range(len(rects)), key=lambda k: max(rects[k][0] - cx, 0, cx - rects[k][2]) ** 2
+                   + max(rects[k][1] - cy, 0, cy - rects[k][3]) ** 2)
+
+    def sentences(doc, fx=1, fy=1):
+        block_of = {}
+        for n, (sa, sb) in enumerate(doc.get('blocks', [])):
+            for s in range(sa, sb):
+                block_of[s] = n
+        out, last = [], None
+        for s, (a, b) in enumerate(doc['sent']):
+            ws = doc['words'][a:b]
+            if not ws:
+                continue
+            votes = {}
+            for w in ws:
+                k = area_of(w, fx, fy)
+                if k is not None:
+                    votes[k] = votes.get(k, 0) + 1
+            inside = {k: v for k, v in votes.items() if k >= 0}
+            if inside:
+                k = max(inside, key=lambda k: (inside[k], -k))
+            elif votes:
+                k = -1  # (all of it outside the areas of a reviewed page: left out)
+            else:
+                k = last  # (typed, not marked on the page: it stays after the sentence before it)
+            last = k
+            out.append({'words': ws, 'area': k, 'block': block_of.get(s, -1 - s),
+                        'clause': [[c[0] - a, c[1] - a] for c in doc.get('clause', []) if a <= c[0] and c[1] <= b]})
+        first = next((x['area'] for x in out if x['area'] is not None), 0)
+        for x in out:
+            if x['area'] is None:
+                x['area'] = first
+        return out
+
+    def placed(doc, fx=1, fy=1):
+        by = {}
+        for w in doc['words']:
+            k = area_of(w, fx, fy)
+            if k is not None and k >= 0:
+                by.setdefault(k, []).append(w)
+        return by
+
+    olds, news = placed(old, sx, sy), placed(new)
+    mine, fresh = sentences(edit, sx, sy), sentences(new)
+    chosen, used = [], False
+    for k, a in enumerate(areas):
+        if a.get('kind') == 'skip':
+            continue
+        kept = [(x, 'e') for x in mine if x['area'] == k]
+        made = [(x, 'n') for x in fresh if x['area'] == k]
+        was, now = olds.get(k, []), news.get(k, [])
+        if a.get('text'):  # (its words typed in the layout: as before, or typed now)
+            picked = kept if [w[4] for w in was] == [w[4] for w in now] else made
+        else:
+            left = list(was)
+            extra = set()
+            for w in now:
+                cx, cy = w[0] + w[2] / 2, w[1] + w[3] / 2
+                hit = next((o for o in left if o[4] == w[4] and o[0] * sx - 2 <= cx <= (o[0] + o[2]) * sx + 2
+                            and o[1] * sy - 2 <= cy <= (o[1] + o[3]) * sy + 2), None)
+                if hit is None:
+                    extra.add(id(w))
+                else:
+                    left.remove(hit)
+            if left:  # (words it had are read differently or not at all now: another "Read as")
+                picked = made
+            elif extra:  # (a box drawn or made bigger: what it has more comes after)
+                picked = kept + [(x, 'n') for x, _ in made
+                                 if sum(id(w) in extra for w in x['words']) * 2 > len(x['words'])]
+            else:
+                picked = kept
+        used = used or any(src == 'e' for _, src in picked)
+        chosen.append(picked)
+    if not used:
+        return None
+    words, sent, clause, blocks = [], [], [], []
+    for picked in chosen:
+        key = None
+        for x, src in picked:
+            a = len(words)
+            words.extend(x['words'])
+            clause.extend([a + c[0], a + c[1]] for c in x['clause'])
+            if (src, x['block']) != key:
+                blocks.append([len(sent), len(sent) + 1])
+                key = (src, x['block'])
+            else:
+                blocks[-1][1] = len(sent) + 1
+            sent.append([a, len(words)])
+    out = {k: v for k, v in new.items() if k != 'edited'}
+    out.update(words=words, sent=sent, clause=clause, blocks=blocks)
+    return out
 
 
 def _speakers(lines):

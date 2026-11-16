@@ -374,7 +374,7 @@ async function websiteChecks(browser, problems) {
     await page.click('#lib-add');
     await sleep(300);
     await page.click('.add-kind [data-kind="images"]');
-    await page.type('.lib-form input[type=text]', 'Photo lesson');
+    await page.type('.lib-form input[name=title]', 'Photo lesson');
     await (await page.$('.lib-form input[type=file][multiple]')).uploadFile(photo);
     await page.click('.lib-form button[type=submit]');
     await page.waitForSelector('.sample-review .btn.primary', { timeout: 120000 }).catch(() => {});
@@ -447,7 +447,7 @@ async function libraryChecks(page) {
   await page.click('#lib-add');
   await sleep(300);
   await page.click('.add-kind [data-kind="text"]');
-  await page.type('.lib-form input[type=text]', 'My first lesson');
+  await page.type('.lib-form input[name=title]', 'My first lesson');
   await page.type('.lib-form textarea', 'Hello world. This is my first lesson in Lingua Books.\n\nThe second paragraph is here. It is short.');
   await page.click('.lib-form button[type=submit]');
   await page.waitForFunction(() => location.hash.startsWith('#/L'), { timeout: 30000 }).catch(() => {});
@@ -505,14 +505,17 @@ async function sampleChecks(page) {
     await page.click('#lib-add');
     await page.waitForSelector('.add-kind', { timeout: 10000 });
     await page.click('.add-kind [data-kind="images"]');
-    await page.type('.lib-form input[type=text]', 'Chinese lesson');
+    await page.type('.lib-form input[name=title]', 'Chinese lesson');
     await (await page.$('.lib-form input[type=file][multiple]')).uploadFile(...photos);
     const pinyinAsked = await page.evaluate(() => {
-      const [language, pinyin] = document.querySelectorAll('.page-questions select');
+      const [language, second, pinyin] = document.querySelectorAll('.page-questions select');
       const before = pinyin.closest('div').hidden;
+      // (the second language of the pages: none at first, any other language of the list; Chinese: and English)
+      const codes = [...second.options].map((o) => o.value);
+      const others = second.value === '' && ['bg', 'fr', 'tk', 'ur', 'fa', 'ru', 'id'].every((c) => codes.includes(c)) && !codes.includes(language.value);
       language.value = 'zh-Hans';
       language.dispatchEvent(new Event('change'));
-      return before && !pinyin.closest('div').hidden;
+      return before && others && second.value === 'en' && !pinyin.closest('div').hidden;
     });
     await page.click('.lib-form button[type=submit]');
     await page.waitForSelector('.sample-review', { timeout: 120000 }).catch(() => {});

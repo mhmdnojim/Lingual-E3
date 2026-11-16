@@ -101,11 +101,60 @@ try {
   assert.equal(marked.length, 1);
   assert.notEqual(marked[0][2], 'rgba(0, 0, 0, 0)', 'the open tab is filled');
   assert.ok(looks.filter(([, selected]) => selected !== 'true').every(([, , bg]) => bg === 'rgba(0, 0, 0, 0)'), 'the other tabs are not');
+  // ---- Ctrl + wheel: the page zooms around the pointer (the point under it stays under it).
+  {
+    // (a small stage, so the zoomed page is bigger than it and can scroll both ways)
+    await page.$eval('.design-stage', (st) => { st.style.width = '110px'; st.style.maxWidth = '110px'; st.style.maxHeight = '110px'; st.style.flex = 'none'; });
+    await sleep(150);
+    const at = await page.evaluate(() => { // (a point of the page that is in view)
+      const st = document.querySelector('.design-stage').getBoundingClientRect(), r = document.querySelector('.design-stage').firstElementChild.getBoundingClientRect();
+      const x0 = Math.max(st.left, r.left), x1 = Math.min(st.right, r.right), y0 = Math.max(st.top, r.top), y1 = Math.min(st.bottom, r.bottom);
+      return { x: x0 + (x1 - x0) * 0.4, y: y0 + (y1 - y0) * 0.4 };
+    });
+    // Where the point of the page that was under the pointer is now, from the middle of the stage (px), and the page's width.
+    const anchor = await page.evaluate((p) => { const r = document.querySelector('.design-stage').firstElementChild.getBoundingClientRect(); return { fx: (p.x - r.left) / r.width, fy: (p.y - r.top) / r.height, w: r.width }; }, at);
+    await page.mouse.move(at.x, at.y);
+    await page.keyboard.down('Control');
+    for (let k = 0; k < 12; k++) { await page.mouse.wheel({ deltaY: -100 }); await sleep(60); }
+    await page.keyboard.up('Control');
+    const now = await page.evaluate((f) => {
+      const st = document.querySelector('.design-stage'), v = st.getBoundingClientRect(), r = st.firstElementChild.getBoundingClientRect();
+      return { dx: r.left + f.fx * r.width - (v.left + st.clientWidth / 2), dy: r.top + f.fy * r.height - (v.top + st.clientHeight / 2), w: r.width };
+    }, anchor);
+    assert.ok(now.w > anchor.w * 1.5, 'Ctrl + wheel zooms the page in');
+    assert.ok(Math.abs(now.dx) < 3 && Math.abs(now.dy) < 3, `the point that was under the pointer is in the middle of the view (${JSON.stringify(now)})`);
+    await page.keyboard.down('Control');
+    for (let k = 0; k < 12; k++) { await page.mouse.wheel({ deltaY: 100 }); await sleep(60); }
+    await page.keyboard.up('Control');
+    await page.$eval('.design-stage', (st) => { st.style.width = ''; st.style.maxWidth = ''; st.style.maxHeight = ''; st.style.flex = ''; });
+    await sleep(150);
+  }
   await ui.tab('order');
   assert.equal(await page.$eval('#layout-tab-order', (t) => t.getAttribute('aria-selected')), 'true');
   assert.notEqual(await page.$eval('#layout-tab-order', (t) => getComputedStyle(t).backgroundColor), 'rgba(0, 0, 0, 0)');
 
-  // ---- Draw areas in reading order: the first box drawn is number 1 (not the last one of the page).
+  // ---- A real double-click (two mouse clicks) on a row's text in the list opens it for editing, in place.
+  for (const row of [2, 2]) { // (a row not selected yet, then the same row, selected)
+    const spot = await page.$eval(`.design-area:nth-child(${row}) .design-area-content`, (e) => { e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(); return { x: r.left + 20, y: r.top + r.height / 2 }; });
+    await page.mouse.click(spot.x, spot.y, { clickCount: 2, delay: 40 });
+    await sleep(200);
+    assert.ok(await page.$(`.design-area:nth-child(${row}) textarea.design-area-inline-editor`), 'a double-click on the text makes it editable in the list');
+    assert.equal(await page.evaluate(() => document.activeElement?.className.includes('design-area-inline-editor')), true, 'and the typing goes into it');
+    await page.keyboard.press('Escape');
+    await sleep(150);
+    assert.equal(await page.$('textarea.design-area-inline-editor'), null, 'Esc closes it');
+  }
+
+  // ---- Sentences: every sentence of the page is shown with its number, as in the reader.
+  await page.$eval('button[title^="Show every sentence"]', (b) => b.click());
+  await sleep(300);
+  assert.ok(await page.$$eval('.layout-sentence-line', (r) => r.length) > 0, 'Sentences shows the sentence boxes');
+  assert.ok(await page.$$eval('.layout-sentence-number', (r) => r.length) > 0, 'and their numbers');
+  await page.$eval('button[title^="Show every sentence"]', (b) => b.click());
+  await sleep(150);
+  assert.equal(await page.$$eval('.layout-sentence-line', (r) => r.length), 0, 'and hides them again');
+
+  // ---- Draw areas in reading order: the boxes are numbered from the top of the page down, whatever the drawing order.
   const before = first.length;
   await ui.action('Draw areas in reading order');
   await ui.drag(0.05, 0.6, 0.9, 0.66);   // "Fourth paragraph at the bottom…" first
@@ -113,13 +162,13 @@ try {
   assert.equal(rows.length, before + 1);
   assert.equal(rows[0].n, '1', 'the box drawn first is number 1');
   assert.ok(rows.slice(1).every((r) => r.faded), 'the boxes not numbered yet are faded');
-  assert.match(await ui.status(), /Box 1 numbered/);
+  assert.match(await ui.status(), /Box numbered 1/);
   await shot('shot-1-order');
   await ui.drag(0.05, 0.05, 0.9, 0.12);   // then the heading
   rows = await ui.areas();
   assert.equal(rows.length, before + 2);
   assert.deepEqual(rows.slice(0, 2).map((r) => r.n), ['1', '2']);
-  assert.match(await page.$eval('.design-area:nth-child(1) .design-area-content', (e) => e.textContent), /Fourth paragraph|last sentence/i, 'number 1 is the box drawn first (the bottom paragraph)');
+  assert.match(await page.$eval('.design-area:nth-child(1) .design-area-content', (e) => e.textContent), /^(?!.*Fourth paragraph)/is, 'number 1 is the highest box on the page (the heading drawn second), not the first drawn');
   // A click on a box that has no number yet gives it the next number.
   const clicked = await page.$eval('.frames .frame:nth-of-type(5) > rect:first-child', (r) => { const b = r.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; });
   await page.mouse.click(clicked.x, clicked.y);
@@ -131,7 +180,7 @@ try {
   rows = await ui.areas();
   assert.equal(rows.length, 3, 'only the 3 boxes numbered are left');
   await ui.action('Finish ordering');
-  await page.click('[aria-label="Undo the last layout edit"]'); // (the deletion)
+  await page.keyboard.down('Control'); await page.keyboard.press('z'); await page.keyboard.up('Control'); // (Ctrl+Z undoes the deletion)
   await sleep(150);
   assert.equal((await ui.areas()).length, before + 2, 'Undo brings the deleted boxes back');
   await page.click('[aria-label="Undo the last layout edit"]'); await page.click('[aria-label="Undo the last layout edit"]'); await page.click('[aria-label="Undo the last layout edit"]');
@@ -353,6 +402,33 @@ try {
   assert.match(await page.$eval('.design-area-text-editor', (t) => t.value), /Dictated words go here\./);
   await ui.action('Stop dictation');
   assert.equal(await page.evaluate(() => window.__rec.started), false, 'the microphone is off');
+
+  // ---- The sentences of the selected box (Text tab): cut in two, joined, the change taken back; saved at once.
+  {
+    const rowsOf = () => page.$$eval('.layout-sentences-row', (r) => r.length);
+    const press = (label, nth = 0) => page.evaluate((l, k) => { const b = [...document.querySelectorAll('.layout-sentences button')].filter((x) => x.textContent.trim() === l && !x.disabled)[k]; b?.click(); return !!b; }, label, nth);
+    const settle = (count) => page.waitForFunction((c) => document.querySelectorAll('.layout-sentences-row').length === c && ![...document.querySelectorAll('.layout-sentences-tools button')].every((b) => b.disabled), { timeout: 15000 }, count).catch(async (e) => { assert.fail(`sentences: wanted ${count}, have ${await rowsOf()}; status: ${await ui.status()}; errors ${JSON.stringify(errors)}`); });
+    let had = 0;
+    for (let k = 1; k <= 6 && !had; k++) { // (a box that has a sentence of two words at least)
+      await page.$eval(`.design-area:nth-child(${k}) .n`, (e) => e.click());
+      await sleep(250);
+      if (await page.evaluate(() => [...document.querySelectorAll('.layout-sentences button')].some((b) => b.textContent.trim() === 'Split' && !b.disabled))) had = await rowsOf();
+    }
+    assert.ok(had > 0, `a box shows its sentences with their tools (${await page.$eval('.layout-panel-host', (e) => e.textContent.slice(0, 300))})`);
+    const textBefore = await page.evaluate(async () => (await (await fetch(location.hash.replace(/^#\/([^/]+)\/.*/, '/api/text/$1/p1'))).json()).sent?.length).catch(() => null);
+    assert.ok(await press('Split'), 'Split');
+    await page.waitForSelector('.layout-word:not(:disabled)');
+    await page.$eval('.layout-word:not(:disabled)', (b) => b.click());
+    await settle(had + 1);
+    assert.match(await ui.status(), /cut in two.*Saved in the book at once/i);
+    assert.ok(await press('Join next'), 'Join next');
+    await settle(had);
+    assert.ok(await press('Undo sentence change'), 'Undo');
+    await settle(had + 1);
+    assert.ok(await press('Undo sentence change'), 'Undo again');
+    await settle(had);
+    void textBefore;
+  }
 
   assert.deepEqual(errors, []);
   console.log('PASS: open tab marked, reading order from 1, numbered merge picks, sentence merge, boxes read again, apply progress, play aloud, dictation');

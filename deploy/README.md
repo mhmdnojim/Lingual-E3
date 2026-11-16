@@ -217,8 +217,8 @@ reader; it does not automatically rewrite an arbitrary application's code or Fla
 - **Backups**: `/opt/lingua-books/deploy/backup.sh` makes one file with everything; copy it to
   your computer now and then (`scp root@SERVER-IP:/root/lingua-books-*.tar.gz .`).
 - **Limits** for each account (in `web/library.py`, `LIMITS`): 100 books, 600 MB, PDFs up to
-  60 MB and 300 pages, 200 photos per book, 30 new books and 40 MP3s a day. Admins have no limits
-  of books and space, and their PDFs can be up to 500 MB (`ADMIN_PDF_MB`: a whole textbook).
+  500 MB (a whole textbook) and 300 pages, 200 photos per book, 30 new books and 40 MP3s a day.
+  Admins have no limits of books and space.
 - **Reports**: a book reported by three different people is hidden at once until an admin looks
   at it (Admin tab). Answer copyright complaints quickly: hide or delete the book.
 - Word files of books are made into PDFs with **LibreOffice** on the server (setup-server.sh installs

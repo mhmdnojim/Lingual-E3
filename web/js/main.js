@@ -749,7 +749,7 @@ class App {
     $('#btn-layout').addEventListener('click', () => {
       const page = this.book?.pages?.[this.idx];
       if (!page || !this.book?.canEdit) return;
-      this.library.editLayouts(this.book, this.book.importOptions, page.n, { returnToReader: true });
+      this.library.editLayouts(this.book, this.book.importOptions, undefined, { returnToReader: true, readerPage: page.n });
     });
 
     $('#stage').addEventListener('wheel', (e) => {

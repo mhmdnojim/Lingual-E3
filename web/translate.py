@@ -78,7 +78,7 @@ LANGUAGES = [
 CODES = {c for c, *_ in LANGUAGES}
 # The languages books are in (the languages of their pages: ocr.LANGUAGES) as the translator knows them.
 SOURCES = {'en': 'en', 'zh-Hans': 'zh-CN', 'zh-Hant': 'zh-TW', 'es': 'es', 'fr': 'fr', 'de': 'de',
-           'ja': 'ja', 'ko': 'ko', 'ar': 'ar'}
+           'ja': 'ja', 'ko': 'ko', 'ar': 'ar', 'bg': 'bg', 'tk': 'tk'}
 # … and of a file transcribed (transcription.spoken_language): its lines translated from it.
 SOURCES.update({c: c for c in ('it', 'pt', 'ru', 'tr', 'fa', 'ur', 'hi', 'nl', 'pl', 'id', 'vi', 'th')})
 FILES = 'files'  # the "book" of the files transcribed (Transcribe a file): their scripts' translations

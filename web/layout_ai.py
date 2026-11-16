@@ -68,6 +68,23 @@ Each area must correspond to a rectangle around its word group. Split irregular
 shapes into smaller areas; do not enclose another unrelated paragraph inside one.
 Use notes to identify uncertain layout decisions. Only return the required JSON.
 """
+# What the book's owner asks for this page (typed in the page-layout window): how to group, order
+# and leave out. It can change the layout rules, never the words.
+OWNER_RULES = """
+The book's owner may add LAYOUT PREFERENCES (marked as such in the request). Follow them
+for which areas to make, their kinds, their reading order (the order of the areas you return:
+for example row by row across a table, or only some of its columns) and which words to leave
+out. They take priority over the default grouping and ordering rules above. They never allow
+rewriting, translating or inventing words. Every supplied word ID must still occur exactly
+once: put the words the owner wants left out into 'skip' areas (one per table cell or line, so
+that no 'skip' rectangle covers words that are kept). Say in notes what you could not follow.
+"""
+MAX_INSTRUCTION = 1000
+
+
+def clean_instruction(text):
+    """The owner's instruction as sent to the model: plain text, one line of spaces, at most MAX_INSTRUCTION."""
+    return ' '.join(str(text or '').split())[:MAX_INSTRUCTION] if isinstance(text, str) else ''
 
 
 def _image(path):
@@ -79,7 +96,7 @@ def _image(path):
     return 'data:image/jpeg;base64,' + base64.b64encode(out.getvalue()).decode('ascii')
 
 
-def request_layout(path, page, key, model):
+def request_layout(path, page, key, model, instruction=''):
     if not key:
         raise LayoutError('Add an OpenAI API key under Admin → API first.')
     if not re.fullmatch(r'[A-Za-z0-9_.:\-]{1,100}', model):
@@ -93,9 +110,11 @@ def request_layout(path, page, key, model):
     tokens = [[i, round(w['x'] / width * 1000), round(w['y'] / height * 1000),
                round((w['x'] + w['w']) / width * 1000), round((w['y'] + w['h']) / height * 1000), w['t']]
               for i, w in enumerate(words)]
+    instruction = clean_instruction(instruction)
     body = {'model': model, 'store': False, 'max_output_tokens': 14000,
-            'instructions': INSTRUCTIONS,
+            'instructions': INSTRUCTIONS + (OWNER_RULES if instruction else ''),
             'input': [{'role': 'user', 'content': [
+                *([{'type': 'input_text', 'text': 'LAYOUT PREFERENCES of the book\'s owner for this page:\n' + instruction}] if instruction else []),
                 {'type': 'input_text', 'text': 'Word rows are [id,left,top,right,bottom,text], coordinates 0..1000. '
                  'Group ONLY these IDs using the accompanying page image.\n' + json.dumps(tokens, ensure_ascii=False)},
                 {'type': 'input_image', 'image_url': _image(path), 'detail': 'high'}]}],

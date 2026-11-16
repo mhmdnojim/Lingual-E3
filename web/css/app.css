@@ -1285,6 +1285,9 @@ svg.framed .handle[data-h="10"], svg.framed .handle[data-h="01"] { cursor: nesw-
 .design-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin: 6px 0 10px; }
 .design-nav .select { width: auto; max-width: 240px; }
 .layout-ai-panel:empty { display: none; }
+.layout-ai-ask-box { flex: 1 0 100%; margin: 2px 0 0; }
+.layout-ai-ask-box > span { font-size: 12px; }
+.layout-ai-ask { width: 100%; min-height: 58px; font-size: 13px; line-height: 1.4; resize: vertical; }
 .layout-ai-panel { margin: 8px 0; padding: 10px; border: 1px solid var(--focus); border-radius: 6px; }
 .layout-scope { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 0 auto; padding: 0; border: 0; background: transparent; }
 .layout-scope h3 { display: flex; align-items: center; gap: 5px; margin: 0; font-size: 13px; white-space: nowrap; }
@@ -1341,6 +1344,19 @@ svg.framed .handle[data-h="10"], svg.framed .handle[data-h="01"] { cursor: nesw-
 .layout-play-marker.moving circle { fill: #f59e0b; stroke: #111; }
 .layout-panel-host > .media-box { margin-top: 0; }
 .layout-tool-apply[hidden] { display: none; }
+.layout-sentences { padding: 10px 12px; border: 1px solid var(--line); border-left: 4px solid #0d9488; border-radius: 10px; background: rgba(13, 148, 136, 0.07); }
+.layout-sentences h4 { margin: 0 0 4px; font-size: 14px; }
+.layout-sentences-list { display: grid; gap: 6px; max-height: min(42vh, 420px); overflow: auto; margin: 6px 0; padding: 0; list-style: none; }
+.layout-sentences-row { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: start; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel, transparent); cursor: pointer; }
+.layout-sentences-row.on { border-color: #0d9488; box-shadow: inset 0 0 0 1px #0d9488; }
+.layout-sentences-text { line-height: 1.4; }
+.layout-sentences-tools { grid-column: 2; display: flex; flex-wrap: wrap; gap: 4px; }
+.layout-sentences-tools .btn.small { padding: 2px 8px; font-size: 12px; }
+.layout-sentences-words { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.layout-sentences-words .hint { flex: 1 1 100%; margin: 0; }
+.layout-word { padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.layout-word:not(:disabled):hover { border-color: #0d9488; background: rgba(13, 148, 136, 0.18); }
+.layout-word:disabled { opacity: 0.6; cursor: default; }
 .layout-audio-steps { display: grid; gap: 12px; }
 .layout-audio-step { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
 .layout-audio-step h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-size: 14px; }
@@ -1430,6 +1446,23 @@ svg.framed .handle[data-h="10"], svg.framed .handle[data-h="01"] { cursor: nesw-
 .file-drop { margin: 8px 0; padding: 12px; border: 2px dashed var(--line); border-radius: 10px; background: var(--surface-2); transition: border-color .15s, background .15s; }
 .file-drop.drag-over { border-color: var(--focus); background: var(--accent-soft); }
 .file-drop .field { margin: 0; }
+/* Adding a book: the file first — a big button in the middle of the box it can be dropped on. */
+.add-form .file-drop { display: grid; justify-items: center; gap: 8px; margin: 0 0 12px; padding: 22px 16px 16px; text-align: center; cursor: pointer; }
+.file-drop-title { margin: 0; font-size: 15px; font-weight: 600; }
+.file-choose { position: relative; display: inline-flex; cursor: pointer; }
+.file-choose > span { display: inline-flex; align-items: center; gap: 8px; padding: 12px 26px; border-radius: 10px; background: #0f766e; color: #fff; font-size: 16px; font-weight: 600; box-shadow: var(--shadow-sm); }
+.file-choose:hover > span { background: #0d5f59; }
+.file-choose > span .i { width: 20px; height: 20px; }
+.file-choose-input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.file-choose:focus-within > span { outline: 2px solid var(--focus); outline-offset: 2px; }
+.add-form .file-drop .hint { margin: 0; }
+/* … its tabs and Cancel / Add the book stay at the top while the form scrolls. */
+.add-form { padding-top: 0; }
+.add-bar { position: sticky; top: 0; z-index: 3; margin: 0 -20px 12px; padding: 12px 20px 10px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.add-bar-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.add-bar .add-kind { margin: 0; }
+.add-bar .form-buttons { margin: 0; }
+.add-bar .form-msg { margin: 8px 0 0; }
 .file-drop .hint { margin: 6px 0 0; }
 .file-drop-name { min-height: 0; margin: 5px 0 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
 .file-drop-name:empty { display: none; }
@@ -1902,3 +1935,4 @@ body { height: 100dvh; padding-left: env(safe-area-inset-left); padding-right: e
 .media-scripts .btn.primary:disabled { opacity: 0.45; }
 .media-script-buttons .btn:not(.primary):not(.danger-btn) { border-color: #f59e0b; }
 .layout-audio-step .media-add-folder { color: #3b82f6; }
+.layout-sentence-line { fill: rgba(37, 99, 235, 0.08); stroke: #2563eb; stroke-width: 1; }

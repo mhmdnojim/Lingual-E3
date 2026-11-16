@@ -24,7 +24,7 @@ try {
   await page.click('#lib-add');
   await sleep(300);
   await page.click('.add-kind [data-kind="text"]');
-  await page.type('.lib-form input[type=text]', 'The Seaplane Race');
+  await page.type('.lib-form input[name=title]', 'The Seaplane Race');
   await page.type('.lib-form textarea', 'Once the boat passed through the bay, he entered open water. It was a lovely day.\n\nThe seaplane was faster.');
   await shot('add-book');
   await page.keyboard.press('Escape');

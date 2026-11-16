@@ -119,7 +119,7 @@ export function framed(src, areas, label = '') {
  */
 export function designEditor({ info, picture, fallbackPicture = null, pageKey = null, first, onSave, onCancel, onPage,
   aiInfo = null, built = () => false, mediaPanel = null, onNewAudio = null, onAnalyze, onReadArea = null, onReplacePicture = null, onLoadButtons = null, onChangeButton = null, onBeforeSave = null,
-  dictationLanguage = 'en-US' }) {
+  dictationLanguage = 'en-US', onSentences = null }) {
   const designs = structuredClone(info.designs);
   const other = [...info.other];
   const numbers = [...new Set(info.pages || [...designs.flatMap((d) => d.pages), ...other])].sort((a, b) => a - b);
@@ -134,7 +134,7 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
     : numbers.includes(rememberedPage) ? rememberedPage : defaultPage;
   let sel = -1; // (the area selected)
   let tall = 1414; // (the page's height, the width being 1000)
-  let zoom = 100, showBoxes = true, areaDrawing = false, areaOrderMode = false,
+  let zoom = 100, showBoxes = true, showSentences = false, areaDrawing = false, areaOrderMode = false,
     mergeAreaMode = false, mergePicked = [], mergeMode = false, pictureMode = false, pictureRect = null,
     pictureFile = null, pictureFit = 'cover', editAreaText = false, newTextArea = false,
     audioButtons = [], audioTracks = [], buttonSize = null, buttonState = 'idle',
@@ -144,7 +144,7 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
   // Audio tab: playMode: a click on a sentence reads from it; audioPick: sentences chosen for a new audio ({ ids, anchor, host }).
   let playMode = false, audioPick = null;
   const audioClick = () => activeToolTab === 'audio' && (playMode || audioPick) && !audioPick?.host && !areaReview && !mergeMode && !mergeAreaMode;
-  let areaOrderCursor = null, focusSelectionPending = false;
+  let areaOrderCursor = null, focusSelectionPending = false, focusFromList = false; // (focusFromList: the row was clicked in the list: it stays under the pointer)
   let drag = null;
   // "Draw areas in reading order": the boxes drawn (or clicked) in this run are numbered 1, 2, 3 …
   // and go to the front of the page's areas; those not numbered follow them, faded.
@@ -208,6 +208,13 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
   const reviewBox = el('div', { class: 'layout-review-host' }); // (what OCR read again, to check: under the status, not inside the tools)
   const panelBox = el('div', { class: 'layout-panel-host' });   // (the sentences to merge, the AI suggestion: they scroll; only the buttons stay pinned)
   const aiPanel = el('div', { class: 'layout-ai-panel', 'aria-live': 'polite' });
+  // What the owner tells the AI about these pages (how to group, order, leave out): kept for the book.
+  const aiAsk = el('textarea', { class: 'input layout-ai-ask', rows: 3, maxlength: 1000,
+    placeholder: 'Optional. For example: Read the table row by row. In each row read the Chinese word, then its English meaning. Leave out the row numbers and the 2nd and 3rd columns.' });
+  aiAsk.value = pageKey ? String(store.get(`layout-ai-ask-${pageKey}`, '') || '') : '';
+  aiAsk.addEventListener('input', () => { if (pageKey) store.set(`layout-ai-ask-${pageKey}`, aiAsk.value); });
+  const aiAskBox = el('label', { class: 'field layout-ai-ask-box' }, el('span', {}, 'Tell the AI what to do on the page (in your own words)'), aiAsk);
+  let aiAll = null; // the pages of the scope being analyzed one after the other ({cancel})
   let node = null;
   const scopeSelect = el('select', { class: 'select', 'aria-label': 'Apply page layout changes to' },
     el('option', { value: 'page' }, 'This page only'),
@@ -283,21 +290,25 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
   const zoomLabel = el('span', { class: 'hint', 'aria-live': 'polite' }, '100%');
   const zoomBy = (amount) => { zoom = Math.max(50, Math.min(200, zoom + amount)); renderZoom(); };
   const renderZoom = () => { pic.style.width = `${zoom}%`; zoomLabel.textContent = `${zoom}%`; };
+  let zoomAnchor = null; // (the point of the page being zoomed on: { fx, fy } of the page, and where and when the wheel last turned)
   const zoomAtPointer = (event) => {
     if (!event.ctrlKey || !pic.contains(event.target)) return;
-    const pageRect = pic.getBoundingClientRect(), stageRect = stage.getBoundingClientRect();
+    const pageRect = pic.getBoundingClientRect();
     if (event.clientX < pageRect.left || event.clientX > pageRect.right || event.clientY < pageRect.top || event.clientY > pageRect.bottom) return;
     event.preventDefault();
-    const pointerX = stage.scrollLeft + event.clientX - stageRect.left;
-    const pointerY = stage.scrollTop + event.clientY - stageRect.top;
-    const pageContentX = stage.scrollLeft + pageRect.left - stageRect.left;
-    const pageContentY = stage.scrollTop + pageRect.top - stageRect.top;
-    const localX = event.clientX - pageRect.left, localY = event.clientY - pageRect.top;
+    // The point of the page under the pointer comes to the middle of the view, and the page grows or shrinks
+    // around it. While the wheel goes on turning with the pointer still, it is the same point (else the
+    // page would slide on at every step).
+    const now = Date.now();
+    if (!zoomAnchor || now - zoomAnchor.at > 800 || Math.hypot(event.clientX - zoomAnchor.x, event.clientY - zoomAnchor.y) > 4) {
+      zoomAnchor = { fx: (event.clientX - pageRect.left) / pageRect.width, fy: (event.clientY - pageRect.top) / pageRect.height };
+    }
+    Object.assign(zoomAnchor, { at: now, x: event.clientX, y: event.clientY });
     zoom = Math.max(50, Math.min(200, zoom + (event.deltaY < 0 ? 10 : -10)));
     renderZoom();
-    const next = pic.getBoundingClientRect();
-    stage.scrollLeft = pointerX - (pageContentX + localX * (next.width / pageRect.width));
-    stage.scrollTop = pointerY - (pageContentY + localY * (next.height / pageRect.height));
+    const next = pic.getBoundingClientRect(), view = stage.getBoundingClientRect();
+    stage.scrollTo({ left: stage.scrollLeft + next.left + zoomAnchor.fx * next.width - (view.left + stage.clientWidth / 2),
+      top: stage.scrollTop + next.top + zoomAnchor.fy * next.height - (view.top + stage.clientHeight / 2), behavior: 'instant' }); // (at once: the stage scrolls smoothly otherwise)
   };
   stage.addEventListener('wheel', zoomAtPointer, { passive: false });
   const setAreaDrawing = (on) => {
@@ -319,8 +330,8 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
     setAreaDrawing(on);
     const left = mine().areas.length;
     status.textContent = on
-      ? (left ? `Draw a box, or click one of the ${left} boxes already here: it becomes number 1. Then number 2, 3 … in the order they are read. Boxes you do not number follow after yours.`
-        : 'Draw the box that is read first: it becomes number 1. Then draw number 2, 3 … in the order they are read.')
+      ? (left ? `Draw a box, or click one of the ${left} boxes already here. The boxes are numbered from the top of the page down: the higher a box, the lower its number. Boxes you do not number follow after yours.`
+        : 'Draw boxes around the areas, in any order. They are numbered from the top of the page down: the highest box is number 1.')
       : 'Reading order kept in the draft. Press Apply changes to use it in the book.';
     renderAll();
   };
@@ -330,10 +341,13 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
     const from = d.areas.indexOf(area);
     if (from < 0) return;
     d.areas.splice(from, 1);
-    d.areas.splice(orderCount, 0, area);
-    sel = orderCount; orderCount += 1; sentenceMergeOrder = []; focusSelectionPending = true;
+    // The numbered boxes stay in page order: the higher on the page, the lower the number (then left to right).
+    let to = 0;
+    while (to < orderCount && (d.areas[to].y < area.y || (d.areas[to].y === area.y && d.areas[to].x <= area.x))) to += 1;
+    d.areas.splice(to, 0, area);
+    sel = to; orderCount += 1; sentenceMergeOrder = []; focusSelectionPending = true;
     const left = d.areas.length - orderCount;
-    status.textContent = `Box ${orderCount} numbered.${left ? ` ${left} not numbered yet: they will follow after number ${orderCount}.` : ''} Draw or click the next box, or press Finish ordering.`;
+    status.textContent = `Box numbered ${to + 1}: the boxes are numbered from the top of the page down.${left ? ` ${left} not numbered yet: they will follow after number ${orderCount}.` : ''} Draw or click the next box, or press Finish ordering.`;
   }
   function pickExisting(k) {
     const d = mine();
@@ -389,7 +403,7 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
     }));
   }
   /** Where a sentence is in the page's text (its words a to b): new audio is made from them. */
-  const placeOf = (sentence) => (Number.isInteger(sentence.a) ? { a: sentence.a, b: sentence.b, speak: sentence.speak || [] } : {});
+  const placeOf = (sentence) => (Number.isInteger(sentence.a) ? { a: sentence.a, b: sentence.b, speak: sentence.speak || [], docN: sentence.n } : {});
   function pageSentenceRecords(data = loaded.get(at), areas = mine()?.areas || []) {
     const result = [];
     for (let areaIndex = 0; areaIndex < areas.length; areaIndex++) {
@@ -457,8 +471,15 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
       if (!corrected.length) continue;
       const text = corrected.join('\n');
       const target = item.mode === 'replace' && item.target && d.areas.includes(item.target) ? item.target : null;
+      const covered = item.mode === 'cover' ? (item.covers || []).filter((a) => d.areas.includes(a)) : [];
       if (target) { target.text = text; lastIndex = d.areas.indexOf(target); }
-      else {
+      else if (covered.length) {
+        // The box takes the place of the areas it covers: one area, with the smallest of their numbers.
+        const index = Math.min(...covered.map((a) => d.areas.indexOf(a)));
+        d.areas = d.areas.filter((a) => !covered.includes(a));
+        d.areas.splice(index, 0, { x: item.bounds.x, y: item.bounds.y, w: item.bounds.w, h: item.bounds.h, kind: 'text', text });
+        lastIndex = index;
+      } else {
         const below = d.areas.findIndex((a) => a.y > item.bounds.y + item.bounds.h / 2); // (new areas go where they are on the page)
         const index = below < 0 ? d.areas.length : below;
         d.areas.splice(index, 0, { x: item.bounds.x, y: item.bounds.y, w: item.bounds.w, h: item.bounds.h, kind: 'text', text });
@@ -484,6 +505,8 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
       const letter = String.fromCharCode(65 + (item.key % 26));
       const mode = el('select', { class: 'select', 'aria-label': `What to do with box ${letter}` },
         ...(item.target ? [el('option', { value: 'replace' }, `Replace the text of area ${d.areas.indexOf(item.target) + 1}`)] : []),
+        ...((item.covers || []).length > 1 ? [el('option', { value: 'cover' },
+          `Replace areas ${item.covers.map((a) => d.areas.indexOf(a) + 1).sort((x, y) => x - y).join(', ')} with this one (number ${Math.min(...item.covers.map((a) => d.areas.indexOf(a) + 1))})`)] : []),
         el('option', { value: 'add' }, 'Add as a new area'));
       mode.value = item.mode;
       const warn = el('p', { class: 'hint' }, '');
@@ -514,7 +537,7 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
     });
     const section = el('section', { class: 'layout-ocr-review', 'aria-label': 'Check the sentences read' },
       el('h4', {}, 'Check what was read'),
-      el('p', { class: 'hint' }, 'Each sentence is numbered here and on the page. Untick a wrong sentence, or correct its text. A box that matches an area replaces that area’s text; any other box becomes a new area.'),
+      el('p', { class: 'hint' }, 'Each sentence is numbered here and on the page. Untick a wrong sentence, or correct its text. A box that matches an area replaces that area’s text; a box around several areas takes their place, with the smallest of their numbers; any other box becomes a new area.'),
       ...blocks,
       el('div', { class: 'form-buttons' }, useButton,
         el('button', { class: 'btn small', type: 'button', onclick: () => { areaReview = null; status.textContent = 'Reading cancelled. Nothing was changed.'; renderAll(); } }, 'Cancel')));
@@ -538,7 +561,7 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
           const sentences = reviewSentences(await onReadArea(n, jobs[i].bounds));
           if (at !== n) return;
           if (sentences.length) items.push({ key: i, bounds: jobs[i].bounds, target: jobs[i].target, covers: jobs[i].covers || (jobs[i].target ? [jobs[i].target] : []),
-            mode: jobs[i].target ? 'replace' : 'add', sentences });
+            mode: jobs[i].target ? 'replace' : (jobs[i].covers || []).length > 1 ? 'cover' : 'add', sentences });
         } catch (error) { failed = error.message; }
       }
       if (!items.length) throw new Error(failed || 'No text was recognized in the box. Nothing was changed.');
@@ -568,8 +591,16 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
       if (!sentences.length) throw new Error('No text was recognized in this area. Nothing was changed.');
       remember();
       area.text = sentences.join('\n');
-      sel = mine().areas.indexOf(area); sentenceMergeOrder = [];
-      status.textContent = `Area ${number} read again: ${sentences.length} sentence${sentences.length === 1 ? '' : 's'}, shown below (Undo takes it back). Press Apply to save it${built() ? `: page ${n} is then renumbered in reading order` : ''}.`;
+      // The boxes inside it (most of each one) go: it is one area now, with the smallest of their numbers.
+      const d = mine();
+      const inside = coveredAreas(d.areas, area).filter((x) => x !== area);
+      if (inside.length) {
+        const index = Math.min(d.areas.indexOf(area), ...inside.map((x) => d.areas.indexOf(x)));
+        d.areas = d.areas.filter((x) => x !== area && !inside.includes(x));
+        d.areas.splice(index, 0, area);
+      }
+      sel = d.areas.indexOf(area); sentenceMergeOrder = []; focusSelectionPending = true;
+      status.textContent = `Area ${inside.length ? `${sel + 1} read again (the ${inside.length} box${inside.length === 1 ? '' : 'es'} inside it ${inside.length === 1 ? 'is' : 'are'} replaced by it)` : `${number} read again`}: ${sentences.length} sentence${sentences.length === 1 ? '' : 's'}, shown below (Undo takes it back). Press Apply to save it${built() ? `: page ${n} is then renumbered in reading order` : ''}.`;
     } catch (error) {
       if (at === n) status.textContent = error.message;
     } finally {
@@ -978,6 +1009,127 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
               : 'Build the book first (Apply): new audio is made from its finished pages' }) : null),
         el('p', { class: 'hint' }, 'Play mode: click a sentence to hear it. New audio: make an MP3 of sentences with a natural voice.')));
   }
+  // ---- The sentences of the selected box (Text tab): heard, corrected, cut in two, joined, deleted, as in the
+  // reader's text editor. They are the page's own sentences (the book's text): each change is saved at once
+  // (no Apply), and Apply keeps them (library.keep_edits).
+  let sentenceBusy = false, sentenceEdit = null, sentenceSplit = null; // (the sentence being typed in, or cut: its number in the page)
+  const sentenceUndo = []; // the page's text before each change: [{ k, doc }]
+  const sentenceToolsReady = () => !!onSentences && built() && Number.isInteger(loaded.get(at)?.k);
+  async function sentenceChange(change, said) {
+    const data = loaded.get(at);
+    if (sentenceBusy || !sentenceToolsReady()) return;
+    sentenceBusy = true; stopSpeech();
+    const n = at, k = data.k;
+    try {
+      const doc = await onSentences.load(k);
+      const { toModel, toDoc, OPS } = await import('./editor.js');
+      const before = { words: doc.words, sent: doc.sent, clause: doc.clause, blocks: doc.blocks };
+      const next = await change({ doc, toModel, toDoc, OPS });
+      if (!next || JSON.stringify(next) === JSON.stringify(before)) { status.textContent = 'Nothing changed.'; return; }
+      await onSentences.save(k, next);
+      sentenceUndo.push({ k, n, doc: before });
+      if (sentenceUndo.length > 30) sentenceUndo.shift();
+      const fresh = await onPage(n, false); // (the page as the book has it now; the boxes of the draft stay)
+      loaded.set(n, fresh);
+      sentenceEdit = null; sentenceSplit = null; sentenceMergeOrder = [];
+      if (at === n) status.textContent = `${said} Saved in the book at once (no Apply needed).`;
+    } catch (error) {
+      if (at === n) status.textContent = error.message || 'The sentence could not be changed.';
+    } finally {
+      sentenceBusy = false;
+      if (node?.isConnected) renderAll();
+    }
+  }
+  /** One of the reader's corrections (editor.js OPS) on sentence number docN of the page. */
+  const sentenceOp = (op, record, arg, said) => sentenceChange(({ doc, toModel, toDoc, OPS }) => {
+    const s = record.docN - 1;
+    const range = doc.sent[s];
+    if (!range || range[0] !== record.a || range[1] !== record.b) throw new Error('The page’s text changed meanwhile. Try again.');
+    let bi = -1, si = -1, kept = 0;
+    for (const [sa, sb] of doc.blocks) {
+      if (sb <= sa) continue;
+      if (s >= sa && s < sb) { bi = kept; si = s - sa; break; }
+      kept += 1;
+    }
+    if (bi < 0) throw new Error('This sentence was not found in the page’s text.');
+    const model = toModel(doc);
+    OPS[op](model, bi, si, arg);
+    return toDoc(model);
+  }, said);
+  const undoSentence = async () => {
+    const last = sentenceUndo[sentenceUndo.length - 1];
+    if (!last || sentenceBusy) return;
+    sentenceBusy = true;
+    try {
+      await onSentences.save(last.k, last.doc);
+      sentenceUndo.pop();
+      loaded.set(last.n, await onPage(last.n, false));
+      sentenceEdit = null; sentenceSplit = null;
+      status.textContent = 'The last sentence change is taken back.';
+    } catch (error) { status.textContent = error.message; } finally { sentenceBusy = false; if (node?.isConnected) renderAll(); }
+  };
+  function sentencePanel() {
+    const d = mine();
+    const area = d?.areas?.[sel];
+    const head = el('h4', {}, area ? `Sentences of box ${sel + 1}` : 'Sentences');
+    const wrap = (...body) => el('section', { class: 'layout-sentences', 'aria-label': 'Sentences of the selected box' }, head, ...body);
+    if (!onSentences) return null;
+    if (!sentenceToolsReady()) return wrap(el('p', { class: 'hint' }, built()
+      ? 'Press Apply once for this page: the sentences can then be changed here.'
+      : 'Make the book first (Apply): its sentences can then be heard and changed here.'));
+    if (!area) return wrap(el('p', { class: 'hint' }, 'Click a box on the page (or in the list below): its sentences are shown here, to hear, correct, cut in two, join or delete.'));
+    const records = sentenceRecordsForArea(loaded.get(at), area, sel);
+    if (typeof area.text === 'string' && records.some((r) => !Number.isInteger(r.docN))) {
+      return wrap(el('p', { class: 'hint' }, 'The text of this box was typed and is not in the book yet. Press Apply first: its sentences can then be changed here.'));
+    }
+    if (!records.length) return wrap(el('p', { class: 'hint' }, 'No sentence of the book is in this box.'));
+    const rows = records.map((r, i) => {
+      const key = r.docN;
+      const li = el('li', { class: `layout-sentences-row${r.id === activeSentenceId ? ' on' : ''}`, dataset: { layoutSentence: r.id }, onclick: (e) => {
+        if (e.target.closest('button, textarea')) return;
+        activeSentenceId = r.id; drawFrames();
+        panelBox.querySelectorAll('.layout-sentences-row.on').forEach((x) => x.classList.remove('on'));
+        li.classList.add('on');
+      } });
+      const tools = el('div', { class: 'layout-sentences-tools' });
+      const tool = (label, symbol, fn, title, extra = {}) => el('button', { class: `btn small${extra.danger ? ' danger-btn' : ''}`, type: 'button', title, disabled: sentenceBusy || extra.disabled, html: icon(symbol), onclick: fn }, label);
+      if (sentenceEdit === key) {
+        const ta = el('textarea', { class: 'input', rows: 2, 'aria-label': `Text of sentence ${i + 1}` }, r.text);
+        const keep = () => { const value = ta.value.trim(); if (value && value !== r.text.trim()) sentenceOp('text', r, value, 'Sentence corrected.'); else { sentenceEdit = null; renderToolPanel(); } };
+        ta.addEventListener('keydown', (ev) => {
+          ev.stopPropagation();
+          if (ev.key === 'Escape') { ev.preventDefault(); sentenceEdit = null; renderToolPanel(); }
+          else if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); keep(); }
+        });
+        li.append(el('span', { class: 'layout-merge-order' }, String(i + 1)), ta, tools);
+        tools.append(tool('Keep', 'check', keep, 'Keep the corrected text (Enter)'), tool('Cancel', 'x', () => { sentenceEdit = null; renderToolPanel(); }, 'Leave it as it was (Esc)'));
+        setTimeout(() => { if (ta.isConnected) { ta.focus({ preventScroll: true }); ta.select(); } }, 0);
+      } else if (sentenceSplit === key) {
+        const words = r.speak || [];
+        li.append(el('span', { class: 'layout-merge-order' }, String(i + 1)),
+          el('div', { class: 'layout-sentences-words' },
+            el('p', { class: 'hint' }, 'Click the word that starts the new sentence:'),
+            ...words.map((w, k) => el('button', { class: 'layout-word', type: 'button', disabled: k === 0 || sentenceBusy,
+              title: k ? `Cut before “${w}”` : 'The first word', onclick: () => sentenceOp('split', r, k, 'Sentence cut in two.') }, w))), tools);
+        tools.append(tool('Cancel', 'x', () => { sentenceSplit = null; renderToolPanel(); }, 'Do not cut it'));
+      } else {
+        li.append(el('span', { class: 'layout-merge-order' }, String(i + 1)), el('span', { class: 'layout-sentences-text', title: 'Double-click to correct the text',
+          ondblclick: () => { sentenceEdit = key; sentenceSplit = null; renderToolPanel(); } }, r.text), tools);
+        tools.append(
+          tool('Play', 'play', () => { stopSpeech(); activeSentenceId = r.id; drawFrames(); speech.speak(r.text, { onEnd: () => {}, onError: () => {} }); }, 'Hear this sentence'),
+          tool('Edit', 'pencil', () => { sentenceEdit = key; sentenceSplit = null; renderToolPanel(); }, 'Correct the words of this sentence'),
+          tool('Split', 'scissors', () => { sentenceSplit = key; sentenceEdit = null; renderToolPanel(); }, 'Cut this sentence in two', { disabled: (r.speak || []).length < 2 }),
+          tool('Join next', 'merge-down', () => sentenceOp('mergeNext', r, undefined, 'Joined with the sentence after it.'), 'Join it with the sentence after it (in the page’s reading order)'),
+          tool('Delete', 'trash', () => sentenceOp('delete', r, undefined, 'Sentence deleted.'), 'Take this sentence out of the book’s text', { danger: true }));
+      }
+      return li;
+    });
+    return wrap(
+      el('p', { class: 'hint' }, 'These are the sentences the reader shows and reads. A change here is saved in the book at once: you do not need Apply for it.'),
+      el('ol', { class: 'layout-sentences-list' }, ...rows),
+      el('div', { class: 'form-buttons' },
+        el('button', { class: 'btn small', type: 'button', disabled: !sentenceUndo.length || sentenceBusy, onclick: undoSentence, html: icon('back') }, 'Undo sentence change')));
+  }
   function renderToolPanel() {
     toolActions.setAttribute('aria-labelledby', `layout-tab-${activeToolTab}`);
     toolTabs.querySelectorAll('[role="tab"]').forEach((tab) => {
@@ -1004,18 +1156,25 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
       }
       items.push(action(speaking ? 'Stop reading' : 'Play this page aloud', readAloud, speaking ? 'stop' : 'play', { pressed: speaking,
         title: 'Read every sentence in the current area order with the selected app voice and highlight it' }));
-      if (onAnalyze) items.push(action('Analyze this page with AI', () => analyze(false), 'sliders', {
+      const aiPages = scopeSelect.value === 'page' ? null : scopeTargets(false);
+      if (onAnalyze && aiAll) items.push(action('Stop the AI analysis', () => { aiAll.cancel = true; renderToolPanel(); }, 'stop', { pressed: true,
+        title: 'Stop after the page being analyzed now' }));
+      else if (onAnalyze && aiPages && aiPages.length > 1) items.push(action(`Analyze ${aiPages.length} pages with AI`, analyzeScope, 'sliders', {
+        disabled: aiBusy !== null || !aiInfo?.ready || !aiInfo?.can,
+        title: 'Ask AI to make the areas of every page in the scope, with what you told it. Each page is a draft: check it, then Apply.' }));
+      else if (onAnalyze) items.push(action('Analyze this page with AI', () => analyze(false), 'sliders', {
         disabled: aiBusy !== null || loading.has(at) || !aiInfo?.ready || !aiInfo?.can,
-        title: 'Ask AI to suggest page areas. Review the suggestion before applying it.' }));
-      if (onAnalyze && analyzed.has(at)) items.push(action('Analyze again', () => analyze(true), 'repeat', {
+        title: 'Ask AI to suggest page areas, with what you told it. Review the suggestion before applying it.' }));
+      if (onAnalyze && analyzed.has(at) && !aiAll) items.push(action('Analyze again', () => analyze(true), 'repeat', {
         disabled: aiBusy !== null || !aiInfo?.ready || !aiInfo?.can, title: 'Run a new AI layout analysis for this page' }));
+      if (onAnalyze) items.push(aiAskBox);
       toolNote.textContent = `${aiInfo?.ready
         ? 'AI layout suggestions use the OpenAI key configured in Admin → API.'
         : 'To enable AI suggestions, configure OpenAI under Admin → API.'} “Read this page again” reads the page from the PDF text, or with OCR, and finds its areas again. “Read the selected area again” replaces that area’s text. Apply then saves it.`;
     } else if (activeToolTab === 'order') {
       items.push(action(ordering() ? `Finish ordering (${orderCount} numbered)` : 'Draw areas in reading order', () => setOrderRun(!ordering()),
         ordering() ? 'check' : 'select-area', { pressed: ordering(), primary: ordering(),
-          title: 'Draw boxes (or click the ones already here) in the order they are read: the first is number 1, the next 2 …' }));
+          title: 'Draw boxes (or click the ones already here), in any order: they are numbered from the top of the page down' }));
       if (ordering() && mine().areas.length > orderCount) {
         items.push(action(`Delete the ${mine().areas.length - orderCount} boxes I did not number`, dropUnnumbered, 'trash', { danger: true,
           title: 'Keep only the boxes you numbered in this run' }));
@@ -1037,7 +1196,7 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
         if (!d.areas.length || !confirm(`Clear all ${d.areas.length} areas on page ${at}? Undo restores them.`)) return;
         remember(); d.areas = []; sel = -1; areaOrderCursor = null; setAreaDrawing(false);
       }, 'trash', { danger: true, title: 'Remove all paragraph boxes from the current page' }));
-      toolNote.textContent = 'These boxes are the page’s reading areas. Their order here is the order used when the book is rebuilt.';
+      toolNote.textContent = 'These boxes are the page’s reading areas (paragraphs), not the single sentences of the reader. Press “Sentences” above the page to see the sentences with their numbers. Apply makes the page again from these areas and keeps the sentence corrections you made in the reader’s Text editor, in every box whose text is read as before.';
     } else if (activeToolTab === 'merge') {
       if (mergeMode) {
         items.push(action(`Finish merge: join ${mergePicked.length} area${mergePicked.length === 1 ? '' : 's'}`, () => mergeAreas(mergePicked), 'check', {
@@ -1105,10 +1264,13 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
         title: 'Choose a reference area, then click areas to place after it' }));
       toolNote.textContent = 'Edit the selected area’s text here. Use one line per paragraph; after saving, the book is rebuilt from these corrected words.';
     }
+    const typing = document.activeElement === aiAsk; // (moved with the buttons: it keeps the cursor)
     toolActions.replaceChildren(...items);
+    if (typing && aiAsk.isConnected) aiAsk.focus({ preventScroll: true });
     reviewBox.replaceChildren(...(areaReview ? [areaReviewPanel()] : []));
     panelBox.replaceChildren(...(activeToolTab === 'merge' ? [sentenceMergePanel()] : activeToolTab === 'read' ? [aiPanel]
-      : activeToolTab === 'audio' ? [audioPick ? audioPickPanel() : null, audioPick?.host ? null : audioPanel()].filter(Boolean) : []));
+      : activeToolTab === 'audio' ? [audioPick ? audioPickPanel() : null, audioPick?.host ? null : audioPanel()].filter(Boolean)
+        : activeToolTab === 'text' ? [sentencePanel()].filter(Boolean) : []));
     applyRow.hidden = activeToolTab === 'audio' && !dirty.size && !applying; // (audio is saved at once: no Apply here)
   }
   node = el('div', { class: 'design-editor', tabindex: '-1' },
@@ -1122,6 +1284,11 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
           el('button', { class: 'btn small', type: 'button', title: 'Show or hide boxes', 'aria-pressed': 'true', onclick: (e) => {
             showBoxes = !showBoxes; e.currentTarget.setAttribute('aria-pressed', String(showBoxes)); drawFrames();
           } }, 'Boxes'),
+          el('button', { class: 'btn small', type: 'button', title: 'Show every sentence of the page with its number, as in the reader', 'aria-pressed': 'false', onclick: (e) => {
+            showSentences = !showSentences; e.currentTarget.setAttribute('aria-pressed', String(showSentences));
+            const n = at; if (showSentences && !loaded.has(n) && !loading.has(n) && onPage) readPage(n, false);
+            drawFrames();
+          } }, 'Sentences'),
           el('button', { class: 'btn small', type: 'button', title: 'Maximize editor', 'aria-pressed': 'false', onclick: (e) => {
             const expanded = node.classList.toggle('expanded'); e.currentTarget.setAttribute('aria-pressed', String(expanded));
             e.currentTarget.title = expanded ? 'Restore editor' : 'Maximize editor';
@@ -1315,16 +1482,65 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
     renderNavigation(); renderAI(); renderToolPanel();
     aiTimer = setInterval(() => { if (node.isConnected) renderAI(); }, 1000);
     try {
-      const result = await onAnalyze(n, refresh, (phase, message) => { aiPhase = phase; aiMessage = message; if (node.isConnected) renderAI(); });
+      const result = await onAnalyze(n, refresh, (phase, message) => { aiPhase = phase; aiMessage = message; if (node.isConnected) renderAI(); }, aiAsk.value);
       if (!Array.isArray(result?.areas)) throw new Error('The server returned no usable AI outlines.');
       suggestions.set(n, result); loaded.set(n, result); analyzed.add(n); aiErrors.delete(n);
       if (at === n) status.textContent = 'AI analysis finished. Your current outlines stay until you preview the suggestion.';
     } catch (error) {
-      aiErrors.set(n, `${error.message} Your current outlines are kept.`);
-      if (at === n) status.textContent = `${error.message} Your current outlines are kept.`;
+      aiErrors.set(n, keptNote(error.message));
+      if (at === n) status.textContent = keptNote(error.message);
     } finally {
       clearInterval(aiTimer); aiTimer = null; aiBusy = null;
       if (node.isConnected) renderAll();
+    }
+  }
+  const keptNote = (message) => (/outlines are kept|layout is kept/.test(message) ? message : `${message} Your current outlines are kept.`);
+
+  /**
+   * The pages of the scope analyzed by AI one after the other, with what the owner told it. Each
+   * answer becomes that page's draft (Undo takes it back; nothing is saved before Apply).
+   */
+  async function analyzeScope() {
+    if (!onAnalyze || aiBusy !== null || aiAll || !aiInfo?.ready || !aiInfo?.can) return;
+    const todo = scopeTargets();
+    if (!todo?.length) return;
+    if (!window.confirm(`Analyze ${todo.length} pages with AI? Each page is one AI request (pages analyzed before with the same words are not asked again). `
+      + 'Their boxes are replaced by a draft you can check; nothing is saved before you press Apply.')) return;
+    const task = { cancel: false };
+    aiAll = task;
+    const ask = aiAsk.value;
+    let done = 0;
+    const failed = [];
+    aiTimer = setInterval(() => { if (node.isConnected) renderAI(); }, 1000);
+    try {
+      for (let i = 0; i < todo.length && !task.cancel && node.isConnected; i++) {
+        const n = todo[i];
+        aiBusy = n; aiPhase = 0; aiMessage = `Page ${i + 1} of ${todo.length}…`; aiStarted = Date.now();
+        status.textContent = `AI is analyzing page ${n} (${i + 1} of ${todo.length})…`;
+        renderNavigation(); renderAI(); renderToolPanel();
+        try {
+          const result = await onAnalyze(n, false, (phase, message) => { aiPhase = phase; aiMessage = message; if (node.isConnected) renderAI(); }, ask);
+          if (!Array.isArray(result?.areas)) throw new Error('The server returned no usable AI outlines.');
+          rememberPage(n);
+          Object.assign(records.get(n), { areas: structuredClone(result.areas), custom: true, edited: true });
+          loaded.set(n, result); analyzed.add(n); aiErrors.delete(n); suggestions.delete(n);
+          if (n === at) { sel = -1; areaOrderCursor = null; }
+          done += 1;
+        } catch (error) {
+          aiErrors.set(n, keptNote(error.message));
+          failed.push(n);
+          if (/limit|API key|not allowed|unavailable|billing/i.test(error.message)) { task.cancel = true; task.why = error.message; } // (the next pages would fail too)
+        }
+        aiBusy = null;
+        if (node.isConnected) renderAll();
+      }
+    } finally {
+      clearInterval(aiTimer); aiTimer = null; aiBusy = null; aiAll = null;
+      if (node.isConnected) {
+        status.textContent = `AI made the boxes of ${done} of ${todo.length} pages as drafts${failed.length ? `; not page ${failed.slice(0, 12).join(', ')}${failed.length > 12 ? ' …' : ''}` : ''}`
+          + `${task.why ? ` (stopped: ${task.why})` : task.cancel ? ' (stopped)' : ''}. Check the pages listed under the red button, then press Apply.`;
+        renderAll();
+      }
     }
   }
 
@@ -1414,9 +1630,19 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
       container.scrollTo({ top: Math.max(0, top), left: Math.max(0, left), behavior: 'smooth' });
     };
     keepVisible(stage, pic.querySelector(`.frame[data-k="${sel}"]`));
-    keepVisible(side.querySelector('.design-areas'), side.querySelector(`.design-area[data-area-index="${sel}"]`));
+    const fromList = focusFromList;
+    focusFromList = false;
+    if (fromList) return; // (clicked in the list: the list does not move, so a double-click still lands on the same text)
+    // Picked on the page: its row comes to the middle of the list at once, and into view in the panel.
+    const areasList = side.querySelector('.design-areas'), row = side.querySelector(`.design-area[data-area-index="${sel}"]`);
+    if (areasList && row) {
+      const c = areasList.getBoundingClientRect(), t = row.getBoundingClientRect();
+      if (t.top < c.top + 8 || t.bottom > c.bottom - 8) areasList.scrollTop += (t.top + t.bottom - c.top - c.bottom) / 2;
+      row.scrollIntoView?.({ block: 'nearest' });
+    }
   }
 
+  const pickableSentenceMode = () => activeToolTab === 'merge' || audioClick();
   function drawFrames() {
     const d = mine();
     pic.classList.toggle('off', !d); // (a page of no design: its areas cannot be drawn)
@@ -1431,6 +1657,9 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
       }
     } else if (activeToolTab === 'merge' || audioClick()) sentenceRecords = pageSentenceRecords(data, d?.areas || []); // every sentence on the page
     else if (sel >= 0) sentenceRecords = pageSentenceRecords(data, d?.areas || []).filter((sentence) => sentence.areaIndex === sel);
+    // "Sentences": every sentence of the page as the reader has it (your corrections there too), with its number.
+    const allSentences = showSentences && !areaReview && !pickableSentenceMode();
+    if (allSentences) sentenceRecords = (data?.sentences || []).map((s) => ({ id: `page:${s.n}`, n: s.n, bounds: s.bounds || [] }));
     const pickable = (activeToolTab === 'merge' && !areaReview && !mergeMode && !mergeAreaMode) || audioClick();
     const pickedIds = audioClick() && audioPick ? audioPick.ids : sentenceMergeOrder;
     if (showBoxes && data?.width && data?.height) {
@@ -1447,6 +1676,10 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
           for (const b of bounds) overlays.push(svg('rect', { class: 'layout-active-sentence', x: b.x / data.width * WIDE,
             y: b.y / data.height * tall, width: b.w / data.width * WIDE, height: b.h / data.height * tall,
             rx: 3, 'pointer-events': 'none' }));
+        }
+        if (allSentences) {
+          for (const b of bounds) overlays.push(svg('rect', { class: 'layout-sentence-line', x: b.x / data.width * WIDE, y: b.y / data.height * tall,
+            width: b.w / data.width * WIDE, height: b.h / data.height * tall, rx: 3, 'pointer-events': 'none' }));
         }
         const label = String(pickAt >= 0 ? pickAt + 1 : sentence.n || sentence.localIndex + 1);
         const x = first.x / data.width * WIDE, y = first.y / data.height * tall;
@@ -1521,15 +1754,18 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
         if (mergeMode && rowHit) { toggleMergeArea(i); return; }
         if (areaOrderMode && rowHit) { orderArea(i); return; }
         if (rowHit) {
+          if (sel === i && !areaReview) return; // (selected already: the list is not made again, so a double-click finds its text)
           if (sel !== i) areaReview = null;
-          sel = i; focusSelectionPending = true; drawFrames(); renderAll();
+          sel = i; focusSelectionPending = true; focusFromList = true; drawFrames(); renderAll();
         }
       }, ondblclick: (e) => { // (double-click the text: edit it)
         if (e.target.closest('select, button') || !e.target.closest('.design-area-content')) return;
         if (ordering() || mergeMode || areaOrderMode) return;
         window.getSelection?.()?.removeAllRanges();
-        const box = e.target.closest('.design-area-content');
-        if (box.querySelector('textarea')) return;
+        // (the first click may have made the list again: the row now in the list, not the one that was clicked)
+        const hit = e.target.closest('.design-area-content');
+        const box = hit.isConnected ? hit : side.querySelector(`.design-area[data-area-index="${i}"] .design-area-content`);
+        if (!box || box.querySelector('textarea')) return;
         sel = i; areaReview = null; drawFrames();
         const editor = el('textarea', { class: 'input design-area-inline-editor', rows: Math.min(8, Math.max(2, text.split('\n').length)), 'aria-label': `Text of area ${read ? n : i + 1}` }, text);
         let finished = false;
@@ -1554,7 +1790,7 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
         box.replaceChildren(editor);
         box.classList.remove('empty');
         status.textContent = `Editing area ${read ? n : i + 1}: type, then click outside or press Ctrl+Enter to keep it. Esc cancels.`;
-        editor.focus();
+        editor.focus({ preventScroll: true }); // (it is under the pointer: nothing scrolls)
       } },
         el('span', { class: 'n' }, read ? String(n) : '×'),
         el('div', { class: 'design-area-details' },
@@ -1571,6 +1807,7 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
     }).length : 0;
     const fullText = data ? [...new Map(data.words.map((w) => [w.line ?? 0, null])).keys()]
       .map((line) => data.words.filter((w) => (w.line ?? 0) === line).map((w) => w.t).join(' ')).join('\n') : '';
+    const keepListAt = side.querySelector('.design-areas')?.scrollTop ?? 0; // (the list stays where it is: no jump back to its top)
     side.replaceChildren(
       el('h4', {}, `Page ${at}`),
       el('p', { class: 'hint' }, data
@@ -1595,6 +1832,7 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
           el('li', {}, 'New words: read each word with its meaning.'),
           el('li', {}, 'Don’t read: exclude this box from speech.'))) : '', list,
       el('p', { class: 'hint' }, 'Draw areas in order, or choose Reference order and click a starting area followed by the areas to move after it. Drag an area to move it, drag its corners to resize it, or select it to edit its bounds and text preview.'), selectedControls(d));
+    list.scrollTop = keepListAt;
   }
 
   function orderArea(i) {
@@ -1827,6 +2065,12 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
   pic.addEventListener('pointerup', done);
   pic.addEventListener('pointercancel', done);
   node.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'z' && !e.target.closest('input, textarea, select, [contenteditable]')) {
+      e.preventDefault(); // (Ctrl+Z: the Undo button, unless a text box is being typed in: it has its own undo)
+      const undoButton = node.querySelector('button[aria-label="Undo the last layout edit"]');
+      if (undoButton && !undoButton.disabled) undoButton.click();
+      return;
+    }
     if ((e.key === 'Delete' || e.key === 'Backspace') && sel >= 0 && !e.target.closest('select, input, textarea')) {
       e.preventDefault();
       remove(sel);

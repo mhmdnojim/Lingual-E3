@@ -30,6 +30,7 @@ try {
   const { page } = opened;
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  page.on('dialog', (d) => d.accept()); // ("Page 1 will be made again… Continue?")
   const api = (method, url, body) => page.evaluate(async (m, u, b) => {
     const r = await fetch(u, { method: m, headers: b ? { 'Content-Type': 'application/json' } : {}, body: b ? JSON.stringify(b) : undefined });
     const data = await r.json(); if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`); return data;
@@ -98,6 +99,37 @@ try {
   const saved = await api('GET', `/api/books/${book.id}/designs`);
   assert.equal(saved.pageAreas['1'].length, count - 1, 'Apply saves the merged boxes before rebuilding the book');
   assert.ok(await page.$('.design-editor'), 'Applying the merge keeps the editor open');
+  // ---- Apply keeps the corrections made in the reader: a word corrected and two sentences joined there
+  // are still so after a box is moved in the reading order and the page is made again.
+  const before = await api('GET', `/api/text/${book.id}/p1`);
+  assert.ok(before.sent.length >= 2, 'the fixture page has two sentences at least');
+  const mine = structuredClone(before);
+  mine.words[0][4] = 'CORRECTED';
+  mine.sent = [[mine.sent[0][0], mine.sent[1][1]], ...mine.sent.slice(2)];
+  mine.blocks = mine.sent.map((_, i) => [i, i + 1]);
+  await api('PUT', `/api/text/${book.id}/p1`, { words: mine.words, sent: mine.sent, clause: mine.clause, blocks: mine.blocks });
+  await tap('#layout-tab-order');
+  await page.$eval('.design-area:last-child [aria-label="Read it earlier"]', (b) => b.click());
+  await sleep(200);
+  await tap('.layout-tool-apply .btn.primary');
+  await page.waitForFunction(() => /Page 1 made again/.test(document.querySelector('.design-controls > .hint[aria-live="polite"]')?.textContent || ''), { timeout: 60000 });
+  const after = await api('GET', `/api/text/${book.id}/p1`);
+  assert.ok(after.words.some((w) => w[4] === 'CORRECTED'), 'the word corrected in the reader is kept by Apply');
+  assert.equal(after.sent.length, mine.sent.length, 'and the two sentences joined there stay joined');
+
+  // ---- From the reader: the window opens on the page open there; closed, the reader goes to the window's page.
+  await page.click('#md-close');
+  await page.evaluate((id) => window.aef.go(id, '2'), book.id);
+  await page.waitForFunction(() => location.hash.endsWith('/2') && !document.body.classList.contains('lib-open'));
+  await sleep(800);
+  await page.$eval('#btn-layout', (b) => b.click());
+  await page.waitForSelector('.design-editor');
+  assert.equal(await page.$eval('.design-side h4', (e) => e.textContent), 'Page 2', 'the layout window opens on the reader’s page');
+  await page.$$eval('.design-editor button', (bs) => bs.find((b) => /^Next/.test(b.textContent)).click());
+  await page.waitForFunction(() => document.querySelector('.design-side h4')?.textContent === 'Page 3');
+  await page.click('#md-close');
+  await page.waitForFunction(() => location.hash.endsWith('/3'), { timeout: 10000 });
+
   assert.deepEqual(errors, []);
   console.log('PASS: merge with next, merge with previous, undo, apply/rebuild, and stay in layout editor');
 } finally {

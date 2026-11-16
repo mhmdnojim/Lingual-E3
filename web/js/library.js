@@ -18,9 +18,11 @@ const KIND = { text: 'Text', pdf: 'PDF', images: 'Photos', disc: 'From the disc'
 // Adding a PDF or photos: the languages of the pages (ocr.LANGUAGES in web/ocr.py: the server says
 // which ones OCR reads here), is there pinyin on Chinese pages, how the words of a sample page were found.
 const LANGUAGES = [['en', 'English'], ['zh-Hans', 'Chinese (Simplified)'], ['zh-Hant', 'Chinese (Traditional)'], ['es', 'Spanish'],
-  ['fr', 'French'], ['de', 'German'], ['ja', 'Japanese'], ['ko', 'Korean'], ['ar', 'Arabic']];
+  ['fr', 'French'], ['de', 'German'], ['ja', 'Japanese'], ['ko', 'Korean'], ['ar', 'Arabic'], ['ru', 'Russian'], ['bg', 'Bulgarian'],
+  ['fa', 'Persian'], ['ur', 'Urdu'], ['id', 'Indonesian'], ['tk', 'Turkmen']];
 /** The language of dictation (the browser's speech recognition) for a book's language. */
-const DICTATION = { en: 'en-US', 'zh-Hans': 'zh-CN', 'zh-Hant': 'zh-TW', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP', ko: 'ko-KR', ar: 'ar-SA' };
+const DICTATION = { en: 'en-US', 'zh-Hans': 'zh-CN', 'zh-Hant': 'zh-TW', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP', ko: 'ko-KR', ar: 'ar-SA',
+  ru: 'ru-RU', bg: 'bg-BG', fa: 'fa-IR', ur: 'ur-PK', id: 'id-ID', tk: 'tk-TM' };
 const PINYIN = [['none', 'No pinyin'], ['some', 'Some words or lines in pinyin'], ['lines', 'Pinyin over (or under) every line of characters']];
 const HOW = { pdf: 'words from the PDF', hidden: 'a scan: the PDF’s hidden text (made by OCR)', scan: 'a scan: read with OCR', broken: 'the PDF’s text was broken: read with OCR',
   ocr: 'read with OCR', photo: 'read with OCR' };
@@ -966,9 +968,17 @@ export class Library {
   pageQuestions(kind, options, more) {
     const o = { language: 'en', pinyin: 'none', dropPinyin: false, pages: '', ocrAll: false, margins: false, enhance: false, fixes: '', ...options };
     o.english ??= o.language.startsWith('zh-');
+    o.second ??= o.english && o.language !== 'en' ? 'en' : ''; // (the first version asked only: English or not)
     const check = (on, text) => el('label', { class: 'check' }, el('input', { type: 'checkbox', checked: on }), ` ${text}`);
-    // The pages also have English (besides their main language): OCR made for English reads it too.
-    const english = check(o.english, 'The pages also have English');
+    // The pages also have a second language (besides their main one): OCR made for it reads it too.
+    const second = el('select', { class: 'select' });
+    const secondRow = el('label', { class: 'field' }, el('span', {}, 'Second language on the pages'), second);
+    const secondNote = el('p', { class: 'hint warn' });
+    const fillSecond = (chosen) => {
+      second.replaceChildren(el('option', { value: '' }, 'None: the pages have one language'),
+        ...LANGUAGES.filter(([code]) => code !== language.value).map(([code, name]) => el('option', { value: code, selected: code === chosen }, name)));
+      second.value = chosen && chosen !== language.value ? chosen : '';
+    };
     let info = this.ocrInfo; // (no warnings until the server has said which languages OCR reads)
     const language = el('select', { class: 'select' },
       ...LANGUAGES.map(([code, name]) => el('option', { value: code, selected: code === o.language }, name)));
@@ -993,29 +1003,35 @@ export class Library {
       langNote.textContent = info?.engine === 'tesseract'
         ? `The server cannot read ${lang?.name} from scans or photos yet. PDFs with their own text work.`
         : `This computer cannot read ${lang?.name} from scans or photos yet. PDFs with their own text work. For the others, add ${lang?.name} in the Windows Settings (Time & language → Language & region), with “Optical character recognition”.`;
-      english.hidden = language.value === 'en';
+      const other = info?.languages.find((l) => l.code === second.value);
+      secondNote.hidden = !other || other.ocr || kind === 'text';
+      secondNote.textContent = `${other?.name} cannot be read from scans or photos here yet. PDFs with their own text work.`;
       chinese.hidden = !language.value.startsWith('zh-');
       dropPinyin.hidden = pinyinNote.hidden = !language.value.startsWith('zh-');
       dropPinyinInput.checked = language.value.startsWith('zh-');
       dropPinyinInput.disabled = language.value.startsWith('zh-');
       pagesRow.hidden = ocrAll.hidden = kind !== 'pdf' && kind !== 'word';
     };
-    [language, pinyin].forEach((s) => s.addEventListener('change', sync));
-    language.addEventListener('change', () => { $('input', english).checked = language.value.startsWith('zh-'); }); // (Chinese textbooks: and English)
+    // (Chinese textbooks: and English; another main language keeps the second one chosen)
+    language.addEventListener('change', () => fillSecond(language.value.startsWith('zh-') ? 'en' : second.value));
+    [language, pinyin, second].forEach((s) => s.addEventListener('change', sync));
+    fillSecond(o.second);
     const node = el('div', { class: 'page-questions' },
-      el('label', { class: 'field' }, el('span', {}, 'Language of the pages'), language), english, langNote, chinese, pagesRow,
+      el('label', { class: 'field' }, el('span', {}, 'Main language of the pages'), language), langNote, secondRow, secondNote, chinese, pagesRow,
       ...(more ? [ocrAll, margins, enhance, fixesRow] : []));
     sync();
     if (!info) this.pageLanguages().then((i) => { info = i; sync(); });
     return {
       node,
-      value: () => ({ ...o, language: language.value, english: language.value !== 'en' && box(english).checked,
+      value: () => ({ ...o, language: language.value, second: second.value, english: second.value === 'en',
         pinyin: pinyin.value, dropPinyin: language.value.startsWith('zh-'), pages: pages.value,
         ocrAll: box(ocrAll).checked, margins: box(margins).checked, enhance: box(enhance).checked, fixes: fixes.value }),
       set: (changes) => {
-        if ('language' in changes) language.value = changes.language;
+        if ('language' in changes) { language.value = changes.language; fillSecond(second.value); }
+        if ('second' in changes) fillSecond(changes.second);
+        else if ('english' in changes) fillSecond(changes.english ? 'en' : second.value === 'en' ? '' : second.value);
         if ('pinyin' in changes) pinyin.value = changes.pinyin;
-        for (const [k, label] of Object.entries({ english, dropPinyin, ocrAll, margins, enhance })) if (k in changes) box(label).checked = changes[k];
+        for (const [k, label] of Object.entries({ dropPinyin, ocrAll, margins, enhance })) if (k in changes) box(label).checked = changes[k];
         sync();
       },
       setKind: (k) => { kind = k; sync(); },
@@ -1024,13 +1040,13 @@ export class Library {
 
   addDialog() {
     if (!this.user) { this.accountDialog('signup', 'Create a free account (or log in) to add your books.'); return; }
-    let kind = store.get('addKind', 'text');
-    const title = el('input', { type: 'text', class: 'input', maxlength: 120, required: true, placeholder: 'For example: My first story' });
+    let kind = 'pdf'; // (a book is mostly a PDF: its tab is the one open)
+    const title = el('input', { type: 'text', name: 'title', class: 'input', maxlength: 120, required: true, placeholder: 'For example: My first story' });
     const author = el('input', { type: 'text', class: 'input', maxlength: 120, placeholder: 'Optional' });
     const text = el('textarea', { class: 'input', rows: 10, placeholder: 'Paste or type the text.\n\nAn empty line starts a new paragraph. A line starting with # is a heading.' });
     const picture = el('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp' });
-    const pdf = el('input', { type: 'file', accept: 'application/pdf,.pdf' });
-    const word = el('input', { type: 'file', accept: '.docx,.doc,.rtf,.odt,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword' });
+    const pdf = el('input', { type: 'file', class: 'file-choose-input', accept: 'application/pdf,.pdf' });
+    const word = el('input', { type: 'file', class: 'file-choose-input', accept: '.docx,.doc,.rtf,.odt,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword' });
     const photos = el('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp', multiple: true });
     const photoNote = el('p', { class: 'hint' }, 'Choose one photo per page. The pages are put in the order of the file names.');
     photos.addEventListener('change', () => {
@@ -1043,15 +1059,18 @@ export class Library {
       text: el('div', {}, el('label', { class: 'field' }, el('span', {}, 'Text'), text),
         el('label', { class: 'field' }, el('span', {}, 'A picture at the top (optional)'), picture)),
       pdf: el('div', { class: 'file-drop', tabindex: '0', role: 'button', 'aria-label': 'Choose or drop a PDF book' },
-        el('label', { class: 'field' }, el('span', {}, `Drop a PDF here or choose one (at most ${this.me.limits?.pdf_mb || 60} MB; ${this.me.limits?.pages || 300} pages are used)`), pdf),
-        el('p', { class: 'hint' }, 'Pages with text are read directly; scanned pages use OCR. The file name fills in the book title.'),
-        el('p', { class: 'file-drop-name', 'aria-live': 'polite' })),
+        el('p', { class: 'file-drop-title' }, 'Drop a PDF here'),
+        el('label', { class: 'file-choose' }, pdf, el('span', { html: `${icon('file')}Choose a PDF file` })),
+        el('p', { class: 'file-drop-name', 'aria-live': 'polite' }),
+        el('p', { class: 'hint' }, `A PDF of at most ${this.me.limits?.pdf_mb || 500} MB; ${this.me.limits?.pages || 300} pages are used. Pages with text are read directly; scanned pages use OCR. The file name fills in the book title.`)),
       word: el('div', { class: 'file-drop', tabindex: '0', role: 'button', 'aria-label': 'Choose or drop a Word book' },
-        el('label', { class: 'field' }, el('span', {}, `Drop a Word document here or choose one (.docx or .doc; at most ${this.me.limits?.pdf_mb || 60} MB; ${this.me.limits?.pages || 300} pages are used)`), word),
+        el('p', { class: 'file-drop-title' }, 'Drop a Word document here'),
+        el('label', { class: 'file-choose' }, word, el('span', { html: `${icon('file')}Choose a Word file` })),
+        el('p', { class: 'file-drop-name', 'aria-live': 'polite' }),
+        el('p', { class: 'hint' }, `.docx or .doc, at most ${this.me.limits?.pdf_mb || 500} MB; ${this.me.limits?.pages || 300} pages are used.`),
         el('p', { class: this.me.wordFiles === false ? 'hint warn' : 'hint' }, this.me.wordFiles === false
           ? 'Word files cannot be added here yet. In Word, save the file as a PDF (File → Save As → PDF) and add the PDF.'
-          : 'The app makes it into a PDF first, with its pictures and tables, and then reads it like a PDF.'),
-        el('p', { class: 'file-drop-name', 'aria-live': 'polite' })),
+          : 'The app makes it into a PDF first, with its pictures and tables, and then reads it like a PDF.')),
       images: el('div', {}, el('label', { class: 'field' }, el('span', {}, 'Photos or scans of the pages'), photos), photoNote,
         el('p', { class: 'hint' }, 'Tip: photograph each page straight from above, in good light.')),
     };
@@ -1104,7 +1123,6 @@ export class Library {
         el('button', { type: 'button', role: 'radio', dataset: { kind: k }, onclick: () => setKind(k) }, label)));
     const setKind = (k) => {
       kind = k;
-      store.set('addKind', k);
       $$('button', seg).forEach((b) => b.setAttribute('aria-checked', String(b.dataset.kind === k)));
       Object.entries(parts).forEach(([key, node]) => { node.hidden = key !== k; });
       questions.node.hidden = k === 'text';
@@ -1112,16 +1130,19 @@ export class Library {
     };
     const msg = el('p', { class: 'form-msg', role: 'alert' });
     const go = el('button', { class: 'btn primary', type: 'submit' }, 'Add the book');
-    const form = el('form', { class: 'lib-form' },
-      seg,
+    // The tabs and the two buttons stay at the top while the rest scrolls; then the file, the
+    // languages of its pages, and its title and author (filled in from the file's name).
+    const form = el('form', { class: 'lib-form add-form' },
+      el('div', { class: 'add-bar' },
+        el('div', { class: 'add-bar-row' }, seg,
+          el('div', { class: 'form-buttons' }, el('button', { class: 'btn', type: 'button', onclick: closeDialog }, 'Cancel'), go)),
+        msg),
+      ...Object.values(parts),
+      questions.node,
       el('label', { class: 'field' }, el('span', {}, 'Title'), title),
       el('label', { class: 'field' }, el('span', {}, 'Author'), author),
       place.node,
-      ...Object.values(parts),
-      questions.node,
-      el('p', { class: 'hint' }, 'Your book stays private (only you can see it) until you share it. Only share what you have the right to share.'),
-      msg,
-      el('div', { class: 'form-buttons' }, el('button', { class: 'btn', type: 'button', onclick: closeDialog }, 'Cancel'), go));
+      el('p', { class: 'hint' }, 'Your book stays private (only you can see it) until you share it. Only share what you have the right to share.'));
     setKind(kind);
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -1139,7 +1160,7 @@ export class Library {
       const big = tooBig(kind, files, limits);
       if (big) { msg.textContent = big; return; }
       const options = kind === 'text' ? undefined : questions.value();
-      if (options) store.set('addOptions', { language: options.language, english: options.english, pinyin: options.pinyin }); // (the next book is likely the same)
+      if (options) store.set('addOptions', { language: options.language, second: options.second, english: options.english, pinyin: options.pinyin }); // (the next book is likely the same)
       go.disabled = true;
       try {
         await this.add({ kind, title: title.value, author: author.value, place: place.value(), text: text.value, picture: picture.files[0], files, options }, form);
@@ -1149,7 +1170,7 @@ export class Library {
       }
     });
     openDialog('Add a book', form);
-    title.focus();
+    (parts[kind].matches('.file-drop') ? parts[kind] : title).focus({ preventScroll: true });
   }
 
   async add(d, form) {
@@ -1273,7 +1294,9 @@ export class Library {
    * See and change the designs of the pages of a book (js/designs.js), from the check of its sample
    * s (q: its questions, whose answers the sample made after saving keeps), showing page n first.
    */
-  async editLayouts(book, options = book.importOptions || {}, n, { returnToReader = false } = {}) {
+  /** readerPage: the page open in the reader (its number in the book): the window opens on it, and when it is
+   *  closed the reader goes to the page the window was on. */
+  async editLayouts(book, options = book.importOptions || {}, n, { returnToReader = false, readerPage = null } = {}) {
     const bar = el('div', { class: 'rec-progress offline-progress busy' }, el('div'));
     const loading = el('div', { class: 'lib-form' }, el('h3', { class: 'lib-progress-title' }, book.title), bar,
       el('p', { class: 'hint' }, 'Preparing the page images and paragraph editor…'));
@@ -1284,12 +1307,23 @@ export class Library {
       if (loading.isConnected) loading.replaceChildren(el('p', { class: 'form-msg', role: 'alert' }, err.message),
         el('div', { class: 'form-buttons' },
           el('button', { class: 'btn', type: 'button', onclick: () => { closeDialog(); if (!returnToReader) this.setScope('mine'); } }, 'Close'),
-          el('button', { class: 'btn primary', type: 'button', onclick: () => this.editLayouts(book, options, n, { returnToReader }) }, 'Try again')));
+          el('button', { class: 'btn primary', type: 'button', onclick: () => this.editLayouts(book, options, n, { returnToReader, readerPage }) }, 'Try again')));
       else toast(err.message);
       return;
     }
     const aiInfo = await api('GET', '/api/layout-ai').catch(() => null);
-    let layoutNode = null;
+    // The pages of the source (PDF) that are in the book, in order: the book's page k is the k-th of them.
+    const sourcePages = [...new Set(info.pages || [...(info.designs || []).flatMap((d) => d.pages), ...(info.other || [])])].sort((a, b) => a - b);
+    if (readerPage != null && sourcePages[Number(readerPage) - 1] != null) n = sourcePages[Number(readerPage) - 1];
+    if (returnToReader) {
+      $('#md-body').closest('dialog').addEventListener('close', () => {
+        const k = sourcePages.indexOf(Number(store.get(`layout-page-${book.id}`, NaN))) + 1;
+        const open = this.app.book?.id === book.id ? this.app.book.pages?.[this.app.idx]?.n : null;
+        if (k > 0 && open != null && String(open) !== String(k) && this.app.book.pages.some((p) => String(p.n) === String(k))) this.app.go(book.id, String(k));
+        else if (sentencesChanged && this.app.book?.id === book.id) this.app.reloadBook(); // (the page open in the reader: its sentences as they are now)
+      }, { once: true });
+    }
+    let layoutNode = null, sentencesChanged = false;
     layoutNode = designEditor({
       info, first: n, pageKey: book.id, aiInfo, dictationLanguage: DICTATION[options?.language] || 'en-US',
       picture: (k) => book.status === 'ready' ? `/lib/${book.id}/pages/${k}.webp?v=${book.updated}` : `/lib/${book.id}/designs/${k}.webp?v=${info.token}`,
@@ -1297,6 +1331,11 @@ export class Library {
       onCancel: () => { closeDialog(); if (!returnToReader) this.setScope('mine'); },
       onPage: (n, fresh = false) => api('POST', `/api/books/${book.id}/layout/${n}`, fresh ? { fresh: true } : undefined),
       built: () => book.status === 'ready',
+      // The page's own sentences (the reader's text), changed in the layout window: read and saved as the reader does.
+      onSentences: {
+        load: (k) => api('GET', `/api/text/${book.id}/p${k}`),
+        save: async (k, doc) => { await api('PUT', `/api/text/${book.id}/p${k}`, doc); sentencesChanged = true; },
+      },
       onReadArea: (n, area) => api('POST', `/api/books/${book.id}/layout/${n}`, { area }),
       onReplacePicture: async (pageN, rect, file, fit) => {
         const q = new URLSearchParams({ x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.w), h: Math.round(rect.h), fit });
@@ -1320,13 +1359,13 @@ export class Library {
         else d = await api('PUT', url, { src: button.src, from: [button.x, button.y], x: position.x, y: position.y });
         return d.buttons || [];
       },
-      onAnalyze: (n, refresh, progress) => requestAILayout(book.id, n, refresh, progress),
+      onAnalyze: (n, refresh, progress, instruction) => requestAILayout(book.id, n, refresh, progress, instruction),
       // The book's audio and video (as in its Settings): added here too; changed: its buttons are placed again.
       mediaPanel: (changed) => this.mediaBox(book, changed),
       // New audio with a natural voice (My audio): its sentences are chosen on the page; its form is shown in the window.
       onNewAudio: ({ page, sentences, host }) => this.app.recordings.createFromLayout({ book, page, sentences, host }),
       onBeforeSave: (pages) => book.status !== 'ready' || confirm(pages
-        ? `Page ${pages.join(', ')} will be made again with this layout. The sentence corrections made on ${pages.length === 1 ? 'this page' : 'these pages'} in “Correct the text” are replaced; the other pages stay as they are. Continue?`
+        ? `Page ${pages.join(', ')} will be made again with this layout. The sentence corrections made on ${pages.length === 1 ? 'this page' : 'these pages'} in “Correct the text” are kept, in every box whose text is read as before; the other pages stay as they are. Continue?`
         : 'Reprocessing replaces the extracted page text and clears manual sentence corrections. Continue?'),
       // pages: only these pages are made again (a finished book); null: the whole book.
       onSave: async (designs, pageAreas, reportProgress, pages = null) => {

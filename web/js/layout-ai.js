@@ -1,7 +1,7 @@
 // Optional paid layout analysis. API keys and models are managed in Admin → API.
-export async function requestAILayout(book, page, refresh, progress) {
+export async function requestAILayout(book, page, refresh, progress, instruction = '') {
   const response = await fetch(`/api/books/${book}/layout-ai/${page}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ progress: true, refresh }),
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ progress: true, refresh, ...(instruction.trim() ? { instruction: instruction.trim() } : {}) }),
   }).catch(() => null);
   if (!response) throw new Error('The app server could not be reached. Your current outlines are kept.');
   if (!response.ok) {

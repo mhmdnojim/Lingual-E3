@@ -47,6 +47,24 @@ class LayoutAITest(unittest.TestCase):
         self.assertNotIn('test-secret-key', json.dumps(body))
         self.assertEqual((result, usage['total_tokens']), (GOOD, 120))
 
+    def test_the_owners_words_go_with_the_request_and_change_only_the_layout_rules(self):
+        ask = 'Read the table row by row.   Leave out\nthe second column.'
+        with patch.object(layout_ai, '_image', return_value='data:image/jpeg;base64,TEST'), \
+                patch.object(layout_ai.urllib.request, 'urlopen', side_effect=lambda *a, **k: io.BytesIO(json.dumps(envelope()).encode())) as call:
+            layout_ai.request_layout('unused', page(), 'test-secret-key', 'gpt-4.1', instruction=ask)
+            body = json.loads(call.call_args.args[0].data)
+            layout_ai.request_layout('unused', page(), 'test-secret-key', 'gpt-4.1')
+            plain = json.loads(call.call_args.args[0].data)
+        content = body['input'][0]['content']
+        self.assertEqual([c['type'] for c in content], ['input_text', 'input_text', 'input_image'])
+        self.assertIn('Read the table row by row. Leave out the second column.', content[0]['text'])
+        self.assertIn('LAYOUT PREFERENCES', body['instructions'])
+        self.assertIn('never allow', body['instructions'].replace('\n', ' '))
+        self.assertEqual(plain['instructions'], layout_ai.INSTRUCTIONS, 'nothing typed: the request as before')
+        self.assertEqual(len(plain['input'][0]['content']), 2)
+        self.assertEqual(len(layout_ai.clean_instruction('x' * 5000)), layout_ai.MAX_INSTRUCTION)
+        self.assertEqual(layout_ai.clean_instruction(None), '')
+
     def test_provider_errors_cannot_echo_a_key_to_the_browser(self):
         error = HTTPError('unused', 401, 'Denied', {}, io.BytesIO(b'{"error":{"message":"test-secret-key"}}'))
         with patch.object(layout_ai, '_image', return_value='unused'), \
@@ -144,6 +162,15 @@ class LayoutCacheTest(unittest.TestCase):
                     library.analyze_layout({'id': 'fixture'}, 1, 'test', 'gpt-4.1', refresh=True)
                 self.assertTrue(library.analyze_layout({'id': 'fixture'}, 1, 'test', 'gpt-4.1')['ai']['cached'])
                 self.assertFalse(Path(folder, 'designs.json').exists(), 'Suggestions never save a user layout automatically')
+                # Other words of the owner: another answer (asked once), kept beside the first.
+                request.side_effect = None
+                count = request.call_count
+                told = library.analyze_layout({'id': 'fixture'}, 1, 'test', 'gpt-4.1', instruction='Row by row.')
+                self.assertFalse(told['ai']['cached'])
+                self.assertEqual(request.call_args.kwargs, {'instruction': 'Row by row.'})
+                self.assertTrue(library.analyze_layout({'id': 'fixture'}, 1, 'test', 'gpt-4.1', instruction=' Row  by row. ')['ai']['cached'])
+                self.assertTrue(library.analyze_layout({'id': 'fixture'}, 1, 'test', 'gpt-4.1')['ai']['cached'])
+                self.assertEqual(request.call_count, count + 1)
 
 
 if __name__ == '__main__':

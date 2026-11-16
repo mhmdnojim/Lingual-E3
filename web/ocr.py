@@ -49,7 +49,31 @@ LANGUAGES = {
     'ja': ('Japanese', 'jpn', ('ja-JP', 'ja')),
     'ko': ('Korean', 'kor', ('ko-KR', 'ko')),
     'ar': ('Arabic', 'ara', ('ar-SA', 'ar')),
+    'ru': ('Russian', 'rus', ('ru-RU', 'ru')),
+    'bg': ('Bulgarian', 'bul', ('bg-BG', 'bg')),
+    'fa': ('Persian', 'fas', ('fa-IR', 'fa')),
+    'ur': ('Urdu', 'urd', ('ur-PK', 'ur')),
+    'id': ('Indonesian', 'ind', ('id-ID', 'id')),
+    # (no OCR is made for Turkmen: the one for Turkish reads nearly all its letters; ý, ž, ň and ä may be misread)
+    'tk': ('Turkmen', 'tur', ('tk-TM', 'tk', 'tr-TR', 'tr')),
 }
+# The writing of each language: two languages of the same writing are read together by the OCR
+# of the main one (Windows; Tesseract reads both at once).
+SCRIPTS = {'zh-Hans': 'han', 'zh-Hant': 'han', 'ja': 'han', 'ko': 'hangul', 'ar': 'arabic', 'fa': 'arabic', 'ur': 'arabic',
+           'ru': 'cyrillic', 'bg': 'cyrillic'}
+SCRIPT_LETTERS = {'han': re.compile('[\u2e80-\u9fff\uf900-\ufaff]'), 'hangul': re.compile('[\u1100-\u11ff\uac00-\ud7af]'),
+                  'arabic': re.compile('[\u0600-\u06ff\u0750-\u077f\ufb50-\ufdff\ufe70-\ufeff]'),
+                  'cyrillic': re.compile('[\u0400-\u052f]'), 'latin': re.compile('[A-Za-z\u00c0-\u024f]')}
+
+
+def script(language):
+    return SCRIPTS.get(language, 'latin')
+
+
+def second_of(language, english=False, second=None):
+    """The second language of the pages ('' = none): `second`, or English (the first version: a yes or no)."""
+    second = ('en' if english else '') if second is None else second
+    return second if second in LANGUAGES and second != language else ''
 _installed = None
 _windows_ocr_lock = threading.Lock()
 
@@ -82,18 +106,20 @@ def installed(again=False):
     return _installed
 
 
-def passes(language, english=False):
-    """The languages read_pages reads one after the other (Windows: English in a pass of its own)."""
-    if engine() == 'tesseract' or not english or language == 'en' or 'en' not in installed():
+def passes(language, english=False, second=None):
+    """The languages read_pages reads one after the other (Windows: the second language in a pass of its own)."""
+    second = second_of(language, english, second)
+    if engine() == 'tesseract' or not second or second not in installed() or script(second) == script(language) != 'latin':
         return [language]
-    return [language, 'en']
+    return [language, second]
 
 
-def read_pages(pngs, language='en', english=False, progress=None):
+def read_pages(pngs, language='en', english=False, progress=None, second=None):
     """Raw OCR of each image path (PNG), in order. One call for all pages (starting the
-    engine takes a moment). english: the pages also have English (read by OCR made for it too).
-    progress(k): pass k of passes() starts."""
+    engine takes a moment). second: the pages also have this language (read by OCR made for it
+    too; english: it is English). progress(k): pass k of passes() starts."""
     progress = progress or (lambda k: None)
+    second = second_of(language, english, second)
     which = engine()
     if language not in LANGUAGES:
         raise OcrError('Choose a supported page language before reading this file.')
@@ -107,7 +133,9 @@ def read_pages(pngs, language='en', english=False, progress=None):
         raise OcrError(f"The server cannot read {name} from pictures yet: install Tesseract's language {code} "
                        f"(apt install tesseract-ocr-{code.replace('_', '-')}).")
     if which == 'tesseract':
-        if (english or language in ('zh-Hans', 'zh-Hant', 'ja', 'ko')) and language != 'en' and 'en' in installed():
+        if second and second != 'en' and second in installed() and LANGUAGES[second][1] != code:
+            code += '+' + LANGUAGES[second][1]
+        if (second == 'en' or language in ('zh-Hans', 'zh-Hant', 'ja', 'ko')) and language != 'en' and 'en' in installed():
             code += '+eng'  # pinyin, romaji and English words in these books
         progress(0)
         return [_tesseract(p, code) for p in pngs]
@@ -115,10 +143,13 @@ def read_pages(pngs, language='en', english=False, progress=None):
     # English much worse than English OCR, so with English on the pages both read them.)
     progress(0)
     pages = _windows(pngs, installed()[language])
-    if len(passes(language, english)) == 1:
+    if len(passes(language, second=second)) == 1:
         return pages
     progress(1)
-    return [_merge_ocr_docs(main, en) for main, en in zip(pages, _windows(pngs, installed()['en']))]
+    others = _windows(pngs, installed()[second])
+    if second == 'en':
+        return [_merge_ocr_docs(main, en) for main, en in zip(pages, others)]
+    return [_merge_scripts(main, other, script(language), script(second)) for main, other in zip(pages, others)]
 
 
 def _tesseract(png, language='eng'):
@@ -184,6 +215,44 @@ def overlap(a, b):
     w = min(a['x'] + a['w'], b['x'] + b['w']) - max(a['x'], b['x'])
     h = min(a['y'] + a['h'], b['y'] + b['h']) - max(a['y'], b['y'])
     return 0 if w <= 0 or h <= 0 else w * h / max(1, min(a['w'] * a['h'], b['w'] * b['h']))
+
+
+def _merge_scripts(primary, secondary, own, other):
+    """The OCR of the main language (primary) with the OCR of the second one (secondary), each for
+    its own writing (own, other: names in SCRIPT_LETTERS): the second OCR's words in its writing
+    take the place of what the main OCR read there (unless that is the main language's writing).
+    Both in Latin letters (French and Indonesian): the main OCR's words stay, the second OCR adds
+    what the main one did not read."""
+    mine, theirs = SCRIPT_LETTERS[own], SCRIPT_LETTERS[other]
+    words1 = [w for ln in primary.get('lines', []) for w in ln.get('words', [])]
+    kept = [w for w in words1 if mine.search(w['t'])] if own != other else words1
+    added = [[w for w in ln.get('words', []) if theirs.search(w['t']) and not any(overlap(w, k) > 0.3 for k in kept)]
+             for ln in secondary.get('lines', [])]
+    new = [w for ln in added for w in ln]
+    lines = []
+    for ln in primary.get('lines', []):
+        words = [w for w in ln.get('words', []) if w in kept or not any(overlap(w, n) > 0.3 for n in new)]
+        if words:
+            lines.append({'words': words})
+
+    def box(words):
+        return (min(w['x'] for w in words), min(w['y'] for w in words),
+                max(w['x'] + w['w'] for w in words), max(w['y'] + w['h'] for w in words))
+
+    def next_to(a, b):  # on the same line, touching or a little apart
+        ax0, ay0, ax1, ay1 = box(a)
+        bx0, by0, bx1, by1 = box(b)
+        h = min(ay1 - ay0, by1 - by0)
+        return min(ay1, by1) - max(ay0, by0) >= 0.5 * h and max(ax0 - bx1, bx0 - ax1) <= 1.5 * h
+    for words in filter(None, added):
+        same = next((ln for ln in lines if next_to(words, ln['words'])), None)
+        if same:
+            same['words'] = sorted(same['words'] + words, key=lambda w: w['x'])
+        else:
+            lines.append({'words': words})
+    lines.sort(key=lambda line: box(line['words'])[1])
+    return {'w': primary.get('w', secondary.get('w', 0)), 'h': primary.get('h', secondary.get('h', 0)),
+            'angle': primary.get('angle', 0), 'lines': lines}
 
 
 def _merge_ocr_docs(primary, secondary):

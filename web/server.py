@@ -1904,7 +1904,8 @@ class Handler(SimpleHTTPRequestHandler):
                         tell(at=at, message=message)
                     except OSError:
                         pass  # complete and cache a paid response even if its browser closed
-            result = library.analyze_layout(book, n, key, model, body.get('refresh') is True, progress)
+            result = library.analyze_layout(book, n, key, model, body.get('refresh') is True, progress,
+                                            **({'instruction': body['instruction']} if isinstance(body.get('instruction'), str) and body['instruction'].strip() else {}))
             if counted and result.get('ai', {}).get('cached'):  # (a saved answer costs nothing)
                 access.give_back(user, 'layout', 1)
             return tell(result=result) if stream else self.send_json(result)
@@ -1912,11 +1913,15 @@ class Handler(SimpleHTTPRequestHandler):
             if counted:
                 access.give_back(user, 'layout', 1)
             return tell(error=str(error)) if stream else self.send_json({'error': str(error)}, 400)
-        except OSError:
+        except OSError as error:
+            if counted:
+                access.give_back(user, 'layout', 1)
+            # (what went wrong, to be told: a file of the page missing, no room, no right to write …)
+            why = f'{error.__class__.__name__}: {error.strerror or error}'[:200]
             if not stream:
-                return self.send_json({'error': 'The page or layout cache could not be read. Try local outlines.'}, 500)
+                return self.send_json({'error': f'The page could not be analyzed ({why}). Try “Read this page again” first.'}, 500)
             try:
-                return tell(error='The layout cache could not be saved. Your current outlines are kept.')
+                return tell(error=f'The page could not be analyzed ({why}). Try “Read this page again” first.')
             except OSError:
                 return None
 
@@ -2041,8 +2046,10 @@ class Handler(SimpleHTTPRequestHandler):
             if x1 - x < 12 or y1 - y < 8:
                 raise ValueError('Select a larger area around the missed text.')
             # What to read: the book's languages ('all'), only its main one ('main'), only English ('en').
-            read = str(req.get('read') or ('all' if options.get('english') else 'main'))
-            passes = library.area_passes(language, read) if read in library.AREA_READS else []
+            second = options.get('second') or ''
+            read = str(req.get('read') or ('all' if second else 'main'))
+            passes = (ocr.passes(language, second=second or 'en') if read == 'all' and language != 'en'
+                      else library.area_passes(language, read) if read in library.AREA_READS else [])
             tell(plan=['Preparing the page picture', *(f"Reading the {ocr.LANGUAGES[k][0].split(' (')[0]} text (OCR)" for k in passes),
                        'Making the sentences'])
             # A fixed, app-private file avoids Windows OCR retaining a handle to a temporary
@@ -2056,7 +2063,7 @@ class Handler(SimpleHTTPRequestHandler):
                 os.makedirs(tmp, exist_ok=True)
                 crop_path = os.path.join(tmp, 'selected-area.png')
                 image.crop((x, y, x1, y1)).save(crop_path)
-                raw = library.read_png(crop_path, language, read, lambda k: tell(at=1 + k))
+                raw = library.read_png(crop_path, language, read, lambda k: tell(at=1 + k), second)
             finally:
                 _ocr_region_lock.release()
             tell(at=1 + len(passes))
