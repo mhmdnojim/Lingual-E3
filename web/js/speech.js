@@ -190,26 +190,45 @@ export const speech = {
     }
     let index = 0, started = false, attempt = 0;
     const offlineVoice = (language) => languageVoices(language).find((v) => v.localService);
+    const tried = new Set(); // the voices that did not speak this piece
+    let changed = false;     // a voice other than the chosen one is reading (remembered when it speaks)
     const say = (piece, voice) => {
       const mine = ++attempt;
       const u = new SpeechSynthesisUtterance(piece.text);
-      if (voice) { u.voice = voice; u.lang = voice.lang; } else u.lang = piece.lang === 'zh' ? 'zh-CN' : 'en-US';
+      if (voice) { u.voice = voice; u.lang = voice.lang; tried.add(voice.voiceURI); } else u.lang = piece.lang === 'zh' ? 'zh-CN' : 'en-US';
       u.rate = cb.rate ?? settings.rate; // (a speed of its own: e.g. the words of a sentence broken down)
-      u.onstart = () => { if (gen === generation && !started) { started = true; cb.onStart?.(); } };
-      u.onboundary = (e) => {
-        if (gen === generation && (e.name === 'word' || e.name == null)) cb.onWord?.(piece.start + e.charIndex);
-      };
-      u.onend = () => { if (gen === generation && mine === attempt) next(); };
-      u.onerror = (e) => {
-        if (gen !== generation || mine !== attempt || e.error === 'interrupted' || e.error === 'canceled') return;
-        // An online voice without internet: retry once with an offline voice of the same language.
+      const began = Date.now();
+      let heard = false;
+      // A voice that did not speak (it is not installed, or cannot read this language): another one of
+      // the language is tried; when none speaks, reading stops (and does not race through the page).
+      const failed = (e) => {
         const offline = offlineVoice(piece.lang);
-        if (voice && !voice.localService && offline) {
+        if (voice && !voice.localService && offline && !tried.has(offline.voiceURI)) { // an online voice without internet
           cb.onFallback?.(offline);
           say(piece, offline);
           return;
         }
-        cb.onError?.(e);
+        const other = languageVoices(piece.lang).find((v) => !tried.has(v.voiceURI) && !(piece.lang === 'zh' && chineseKind(v) === 'cantonese'));
+        if (other && tried.size < 6) { changed = true; cb.onSwitched?.(other, piece.lang); say(piece, other); return; }
+        cb.onError?.({ error: e?.error || 'silent', language: piece.lang });
+      };
+      u.onstart = () => {
+        heard = true;
+        if (changed && voice) { if (piece.lang === 'zh') this.setChineseVoice(voice.voiceURI); else this.setVoice(voice.voiceURI); changed = false; } // (the one that speaks is kept)
+        if (gen === generation && !started) { started = true; cb.onStart?.(); }
+      };
+      u.onboundary = (e) => {
+        heard = true;
+        if (gen === generation && (e.name === 'word' || e.name == null)) cb.onWord?.(piece.start + e.charIndex);
+      };
+      u.onend = () => {
+        if (gen !== generation || mine !== attempt) return;
+        if (!heard && Date.now() - began < 400 && /[\p{L}\p{N}]/u.test(piece.text)) { failed({ error: 'silent' }); return; } // (ended without a sound)
+        next();
+      };
+      u.onerror = (e) => {
+        if (gen !== generation || mine !== attempt || e.error === 'interrupted' || e.error === 'canceled') return;
+        failed(e);
       };
       // Chrome sometimes leaves the engine paused after cancel(); resume to be safe.
       synth.resume();

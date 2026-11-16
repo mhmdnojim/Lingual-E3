@@ -21,6 +21,29 @@ export const KINDS = [['text', 'Text (automatic paragraphs)'], ['paragraph', 'On
   ['words', 'New words (each word, then its meaning)'], ['skip', 'Don’t read']];
 const WIDE = 1000; // (the areas are drawn on a page 1000 wide)
 const SMALLEST = 0.01; // (an area smaller than this, drawn by a slip, is not one)
+
+/**
+ * The boxes in reading order: split the page by the empty bands between boxes (across first: a
+ * heading above two columns comes first; then down: the left column before the right one), and
+ * inside a part with no band, the higher box first, then the one further left.
+ */
+export function readingOrder(areas) {
+  const cut = (items) => {
+    if (items.length < 2) return items;
+    for (const [p, size] of [['y', 'h'], ['x', 'w']]) {
+      const sorted = [...items].sort((a, b) => a[p] - b[p]);
+      const groups = [[sorted[0]]];
+      let end = sorted[0][p] + sorted[0][size];
+      for (const item of sorted.slice(1)) {
+        if (item[p] >= end) groups.push([item]); else groups[groups.length - 1].push(item);
+        end = Math.max(end, item[p] + item[size]);
+      }
+      if (groups.length > 1) return groups.flatMap(cut);
+    }
+    return [...items].sort((a, b) => a.y - b.y || a.x - b.x);
+  };
+  return cut(areas);
+}
 const clamp = (v) => Math.min(1, Math.max(0, v));
 const splitSentenceText = (text) => String(text || '').split(/\r?\n/).flatMap((line) =>
   (line.match(/[^.!?。！？]+[.!?。！？]*/gu) || []).map((part) => part.trim()).filter(Boolean));
@@ -150,6 +173,7 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
   // and go to the front of the page's areas; those not numbered follow them, faded.
   let orderRun = false, orderCount = 0;
   const ordering = () => orderRun && areaDrawing;
+  let autoOrder = store.get('layout-auto-order', true) !== false; // (a box drawn takes its place in the reading order by itself)
   // "Draw boxes to read": boxes drawn on the page to be read again with OCR (then checked and used).
   let rereadDraw = false, rereadBoxes = [];
   const dirty = new Set(); // the pages with changes not applied to the book yet
@@ -240,7 +264,7 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
     scopeFields.querySelectorAll('.field').forEach((field, i) => { field.hidden = scopeSelect.value === 'specific' ? i !== 2 : scopeSelect.value === 'range' ? i > 1 : true; });
     updateScopeControls();
   };
-  scopeSelect.addEventListener('change', () => { syncScopeFields(); renderToolPanel(); });
+  scopeSelect.addEventListener('change', () => { syncScopeFields(); renderToolPanel(); renderApply(); });
   [rangeStart, rangeEnd, specificPages].forEach((field) => field.addEventListener('input', updateScopeControls));
   copyBoxesToScope.addEventListener('change', updateScopeControls);
   syncScopeFields();
@@ -251,7 +275,15 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
     'Apply changes & rebuild book');
   const applyBar = el('div', { class: 'rec-progress', hidden: true, role: 'progressbar', 'aria-label': 'Rebuilding the book' }, el('div'));
   const applyInfo = el('div', { class: 'layout-apply-info', 'aria-live': 'polite' });
-  const applyRow = el('div', { class: 'layout-tool-apply' }, save, applyBar, applyInfo);
+  const finish = el('button', { class: 'btn layout-finish', type: 'button', title: 'Close this window and go to the books app', html: icon('check') }, 'Finished: go to the app');
+  finish.addEventListener('click', () => {
+    if (applying) return;
+    if (dirty.size && !window.confirm(`${dirty.size} page${dirty.size === 1 ? ' has' : 's have'} changes that are not applied yet. Go to the app without applying them?`)) return;
+    stopDictation(); stopSpeech(); stopPreview();
+    onCancel?.();
+  });
+  const applyButtons = el('div', { class: 'layout-apply-buttons' }, save, finish);
+  const applyRow = el('div', { class: 'layout-tool-apply' }, applyButtons, applyBar, applyInfo);
   const toolPanel = el('section', { class: 'layout-tool-panel' }, toolTabs, toolActions, applyRow);
   const toolNames = [['read', 'Read'], ['order', 'Order'], ['merge', 'Merge'], ['audio', 'Audio'], ['pictures', 'Pictures'], ['text', 'Text']];
   for (const [key, label] of toolNames) {
@@ -1181,16 +1213,21 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
       }
       items.push(action('Reference, then click areas', () => setAreaOrder(!areaOrderMode), 'grip', { pressed: areaOrderMode,
         title: 'Choose a starting area, then click each area to place it after the previous one' }));
-      items.push(action('Order boxes top to bottom', () => {
+      items.push(action('Order boxes automatically', () => {
         const d = mine();
         if (d.areas.length < 2) return;
         remember();
-        d.areas.sort((a, b) => a.y - b.y || a.x - b.x);
+        d.areas.splice(0, d.areas.length, ...readingOrder(d.areas));
         sentenceMergeOrder = [];
         sel = -1; areaOrderCursor = null;
-        status.textContent = 'Areas reordered from top to bottom, then left to right. Use Reference order for columns or a custom sequence.';
+        status.textContent = 'Boxes ordered the way a page is read: a heading or a band across first, then each column from top to bottom, left column first. Check the numbers: use Reference, then click areas to fix one.';
         renderAll();
-      }, 'arrow-down', { disabled: mine().areas.length < 2, title: 'Sort the existing reading areas by page position' }));
+      }, 'arrow-down', { disabled: mine().areas.length < 2, title: 'Number all the boxes by their place on the page, columns included' }));
+      items.push(action('Number a new box by itself', () => {
+        autoOrder = !autoOrder; store.set('layout-auto-order', autoOrder);
+        status.textContent = autoOrder ? 'A box you draw now takes its number by itself, by its place on the page (columns included).' : 'A box you draw goes last. Number it with Reference, then click areas.';
+        renderAll();
+      }, 'check', { pressed: autoOrder, title: 'When you draw a box, put it in the right place in the reading order' }));
       items.push(action('Clear this page’s areas', () => {
         const d = mine();
         if (!d.areas.length || !confirm(`Clear all ${d.areas.length} areas on page ${at}? Undo restores them.`)) return;
@@ -1545,12 +1582,19 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
   }
 
   /** The Apply button says how many pages have draft changes; the pages are listed to go to them (see the changes). */
+  function applyPages() {
+    const set = new Set(dirty);
+    if (scopeSelect.value !== 'page') (scopeTargets(false) || []).forEach((n) => set.add(n)); // (the Scope box: these pages too)
+    if (!set.size) set.add(at);
+    return [...set].sort((x, y) => x - y);
+  }
   function renderApply() {
     const pages = [...dirty].sort((x, y) => x - y);
+    const make = applyPages();
     save.innerHTML = icon('check');
     save.append(!built() ? `Apply changes & build the book${pages.length ? ` (${pages.length} page${pages.length === 1 ? '' : 's'} changed)` : ''}`
-      : pages.length > 1 ? `Apply changes to ${pages.length} pages`
-        : `Apply changes to page ${pages[0] ?? at}`);
+      : make.length > 1 ? (scopeSelect.value === 'all' && make.length === numbers.length ? 'Apply changes to all pages' : `Apply changes to ${make.length} pages`)
+        : `Apply changes to page ${make[0]}`);
     save.title = built() ? 'Save the layout and make again only the pages with changes; the other pages of the book stay as they are'
       : 'Save every draft change of this layout and build the book with it';
     save.classList.toggle('attention', pages.length > 0 && !applying);
@@ -1592,6 +1636,7 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
      } }, 'Undo'), scopePanel);
     choice.disabled = rereadingArea;
     save.disabled = loading.size > 0 || aiBusy !== null || rereadingArea || applying;
+    finish.disabled = applying;
   }
 
   function renderAll() {
@@ -2058,6 +2103,11 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
       if (finished.a && finished.a.w >= SMALLEST && finished.a.h >= SMALLEST) takeNext(finished.a);
       else if (!finished.a && finished.clickFrame >= 0) pickExisting(finished.clickFrame);
     }
+    else if (autoOrder && finished.mode === 'draw' && finished.a && finished.a.w >= SMALLEST && finished.a.h >= SMALLEST && !newTextArea && d.areas.includes(finished.a)) {
+      d.areas.splice(0, d.areas.length, ...readingOrder(d.areas)); // (the box drawn takes its place by itself)
+      sel = d.areas.indexOf(finished.a); sentenceMergeOrder = []; focusSelectionPending = true;
+      status.textContent = `Box ${sel + 1} of ${d.areas.length}: it took its place in the reading order by itself. If that is wrong, use Reference, then click areas.`;
+    }
     if (newTextArea && sel >= 0) { areaDrawing = false; newTextArea = false; editAreaText = true; }
     drawFrames();
     renderAll();
@@ -2093,7 +2143,7 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
     try {
       if (!applyBoxScope()) { finish(); return; }
       // A finished book: only the pages with changes are made again (this page when nothing changed).
-      const pages = built() ? (dirty.size ? [...dirty] : [at]).sort((x, y) => x - y) : null;
+      const pages = built() ? applyPages() : null;
       if (onBeforeSave && await onBeforeSave(pages) === false) { finish(); return; }
       showApplying('Saving the layout…');
       const saved = await onSave(designs.map((d) => ({ pages: d.pages, example: d.example, areas: d.areas })),

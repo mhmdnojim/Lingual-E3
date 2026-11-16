@@ -2091,6 +2091,79 @@ def search_index(b):
     return out
 
 
+# ---------------------------------------------------------------- The contents (lessons, chapters) of a book
+
+_HEADING = re.compile(
+    r'^\W{0,3}(?P<h>(?:unit|lesson|chapter|part|section|module|file|topic|week|day|'
+    r'lecci[oó]n|unidad|cap[ií]tulo|unit[eé]|le[cç]on|chapitre|урок|глава|раздел)\s+(?:\d{1,3}|[ivxl]{1,6}|[a-z])\b[^\n]{0,70}'
+    r'|第\s*[一二三四五六七八九十百零\d]{1,4}\s*[课課章节節单單元篇部分][^\n]{0,40}'
+    r'|\d{1,2}[A-D]\s+[A-Z][^\n]{0,60})', re.I)
+_NOT_A_HEADING = re.compile(r'^\W*(contents|table of contents|index|目录|目錄|содержание)', re.I)
+
+
+def detect_contents(b):
+    """The lessons or chapters of a book, found from the words at the top of its pages:
+    [{'title', 'page'}]. A heading that every page repeats (a running head) counts once."""
+    out, last = [], None
+    for p in _pages(b):
+        doc = text_doc(b['id'], p['n'])
+        if not doc:
+            continue
+        head = ' '.join(page_text(doc).split())[:120]
+        if _NOT_A_HEADING.match(head):
+            continue
+        m = _HEADING.match(head)
+        if not m:
+            continue
+        title = m.group('h').strip(' .:-–—')
+        if len(title) > 48:
+            title = title[:48].rsplit(' ', 1)[0]  # (the heading, not the text that follows it)
+        key = re.sub(r'\W+', ' ', title.lower()).split(' ')[:2]
+        if key == last:
+            continue
+        last = key
+        out.append({'title': title, 'page': p['n']})
+        if len(out) >= 300:
+            break
+    return out
+
+
+def contents_of(b):
+    """{'items': [{'title', 'page'}], 'saved': True if the owner's list, False if found by the app}."""
+    try:
+        with open(folder(b['id'], 'contents.json'), encoding='utf-8') as f:
+            items = json.load(f).get('items')
+        if isinstance(items, list):
+            return {'items': items, 'saved': True}
+    except (OSError, ValueError):
+        pass
+    return {'items': detect_contents(b), 'saved': False}
+
+
+def save_contents(b, raw):
+    """The owner's list ({'items': [{'title', 'page'}]}), checked and kept. {'detect': True}: forget it."""
+    path = folder(b['id'], 'contents.json')
+    if isinstance(raw, dict) and raw.get('detect') is True:
+        if os.path.isfile(path):
+            os.remove(path)
+        return contents_of(b)
+    numbers = {p['n'] for p in _pages(b)}
+    items = []
+    for it in (raw.get('items') if isinstance(raw, dict) else None) or []:
+        if not isinstance(it, dict) or not isinstance(it.get('page'), int) or isinstance(it.get('page'), bool) or it['page'] not in numbers:
+            raise LibraryError('Every line of the contents needs the number of a page of this book.')
+        title = ' '.join(str(it.get('title') or '').split())[:120]
+        if not title:
+            raise LibraryError('Every line of the contents needs a name.')
+        items.append({'title': title, 'page': it['page']})
+        if len(items) > 500:
+            raise LibraryError('At most 500 lines.')
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump({'items': items}, f, ensure_ascii=False)
+    return {'items': items, 'saved': True}
+
+
 def file_path(bid, kind, name):
     """A page image or small image of a book, or None."""
     if kind not in ('pages', 'thumbs') or not re.fullmatch(r'\d{1,4}\.webp', name):

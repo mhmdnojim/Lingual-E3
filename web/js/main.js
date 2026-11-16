@@ -9,6 +9,7 @@ import { Translator } from './translation.js';
 import { Library } from './library.js';
 import { Follower, followSettings, setFollow } from './follow.js';
 import { Words } from './words.js';
+import { Contents } from './contents.js';
 import { Breakdown } from './breakdown.js';
 import { offlineLock } from './offline-lock.js';
 import { Assistant } from './assistant.js';
@@ -233,7 +234,14 @@ class Reader {
         this.pos = lastK;
         this.finished();
       },
-      onError: (e) => { toast(`The voice stopped (${e.error || 'error'}). Try another voice.`); this.stop(); },
+      onError: (e) => {
+        toast(e.error === 'silent'
+          ? (e.language === 'zh' ? 'The Chinese voices of this device made no sound. In Microsoft Edge the natural Chinese voices work; or add Chinese in Windows Settings → Time & language → Speech.'
+            : 'The English voice made no sound. Choose another voice in the voice settings.')
+          : `The voice stopped (${e.error || 'error'}). Try another voice.`, 8000);
+        this.stop();
+      },
+      onSwitched: (v, language) => this.tellOnce(`switch-${language}`, `The voice did not speak. Trying ${v.name}…`),
       onFallback: (v) => { if (!this.saidOffline) toast(`No internet: reading with ${v.name}`); this.saidOffline = true; },
       onSkipped: (language) => this.tellOnce(`skip-${language}`, language === 'zh'
         ? 'The Chinese is not read: “EN” (English only) is chosen in the top bar. Choose 中+EN or 中 to hear it.'
@@ -403,6 +411,7 @@ class App {
     this.recordings = new Recordings(this);
     this.translator = new Translator(this);
     this.words = new Words(this); // new words: collecting them, flashcards
+    this.contents = new Contents(this, $('#contents')); // the lessons of the books of the level (the page list's Contents tab)
     this.breakdown = new Breakdown(this); // a sentence broken down: each word and its meaning
     this.assistant = new Assistant(this);
     this.library = new Library(this);
@@ -630,6 +639,7 @@ class App {
     document.body.classList.toggle('disc-book', !!book.disc);
     this.library.renderAbout(book);
     this.renderResources(book);
+    if ($('#drawer [data-dtab=contents][role=tab]')?.getAttribute('aria-selected') === 'true' && !$('#drawer').hidden) this.contents.show();
     $('#search-all').closest('label').hidden = !book.disc; // "all three books": the disc only
   }
 
@@ -755,7 +765,7 @@ class App {
     $('#stage').addEventListener('wheel', (e) => {
       if (!e.ctrlKey) return;
       e.preventDefault();
-      this.zoomBy(e.deltaY < 0 ? 1.1 : 1 / 1.1);
+      this.zoomBy(e.deltaY < 0 ? 1.1 : 1 / 1.1, { x: e.clientX, y: e.clientY }); // (Ctrl + wheel: the point under the pointer stays under it)
     }, { passive: false });
 
     $$('#mode-seg button').forEach((b) => b.addEventListener('click', () => this.setMode(b.dataset.mode)));
@@ -831,20 +841,24 @@ class App {
     return avail / Math.max(1, this.views.length);
   }
 
-  zoomBy(f) {
+  zoomBy(f, pointer = null) {
     const st = $('#stage');
-    const cx = (st.scrollLeft + st.clientWidth / 2) / st.scrollWidth;
-    const cy = (st.scrollTop + st.clientHeight / 2) / st.scrollHeight;
+    const box = st.getBoundingClientRect();
+    // With the pointer (Ctrl + wheel): the point of the pages under it; else the middle of the screen.
+    const px = pointer ? Math.max(0, Math.min(st.clientWidth, pointer.x - box.left)) : st.clientWidth / 2;
+    const py = pointer ? Math.max(0, Math.min(st.clientHeight, pointer.y - box.top)) : st.clientHeight / 2;
+    const cx = (st.scrollLeft + px) / st.scrollWidth;
+    const cy = (st.scrollTop + py) / st.scrollHeight;
     this.zoom = { mode: 'custom', w: Math.max(160, Math.min(5000, this.pageW * f)) };
     store.set('zoomMode', 'custom');
     store.set('zoomW', this.zoom.w);
     this.applyZoom();
     // The sentence you are on stays in the middle of the screen (without one, the middle stays the middle).
-    const s = this.activeSentence();
+    const s = pointer ? null : this.activeSentence();
     if (s && this.centerOn(s)) return;
     this.setSlack();
-    st.scrollLeft = cx * st.scrollWidth - st.clientWidth / 2;
-    st.scrollTop = cy * st.scrollHeight - st.clientHeight / 2;
+    st.scrollLeft = cx * st.scrollWidth - px;
+    st.scrollTop = cy * st.scrollHeight - py;
   }
 
   /**
@@ -1535,6 +1549,7 @@ class App {
     $$('#drawer [role=tab]').forEach((t) => t.addEventListener('click', () => {
       $$('#drawer [role=tab]').forEach((x) => x.setAttribute('aria-selected', String(x === t)));
       $$('#drawer .drawer-body').forEach((b) => { b.hidden = b.dataset.dtab !== t.dataset.dtab; });
+      if (t.dataset.dtab === 'contents') this.contents.show();
     }));
   }
 
@@ -1551,6 +1566,7 @@ class App {
     if (open) {
       this.renderThumbs();
       $('#thumbs .current')?.scrollIntoView({ block: 'center' });
+      if ($('#drawer [data-dtab=contents][role=tab]')?.getAttribute('aria-selected') === 'true') this.contents.show();
     }
     this.layoutChanged();
   }

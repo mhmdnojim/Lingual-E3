@@ -541,17 +541,33 @@ export const OPS = {
     }
     return fresh.length ? whereIs(model, fresh[0]) : null;
   },
-  /** Several areas read again, one after the other (replaceArea each: [{rect, blocks, keep}]): one step to undo. */
+  /**
+   * Several areas read again, one after the other (replaceArea each: [{rect, blocks, keep}]): one
+   * step to undo. The sentences read in the first box are numbered before those of the second box,
+   * and so on (in the order the boxes were drawn), whatever their place on the page: the new
+   * sentences take, in that order, the places the new sentences came to.
+   */
   replaceAreas(model, bi, si, { areas }) {
     const spare = new Set();
-    let firstNew = null;
+    const made = []; // the words each area brought: [Set]
     for (const area of areas) {
       const before = new Set(model.flat(2));
-      const at = OPS.replaceArea(model, bi, si, { ...area, spare });
-      model.flat(2).forEach((w) => { if (!before.has(w)) spare.add(w); });
-      if (at && !firstNew) firstNew = model[at.bi][at.si];
+      OPS.replaceArea(model, bi, si, { ...area, spare });
+      const mine = new Set();
+      model.flat(2).forEach((w) => { if (!before.has(w)) { spare.add(w); mine.add(w); } });
+      made.push(mine);
     }
-    return firstNew ? whereIs(model, firstNew) : null;
+    const owner = new Map();
+    made.forEach((words, k) => words.forEach((w) => owner.set(w, k)));
+    const slots = [], sents = [];
+    model.forEach((block, b) => block.forEach((s, i) => {
+      const k = s.length ? owner.get(s[0]) : undefined;
+      if (k !== undefined) { slots.push([b, i]); sents.push({ s, k, i: sents.length }); }
+    }));
+    if (!sents.length) return null;
+    const ordered = [...sents].sort((x, y) => x.k - y.k || x.i - y.i);
+    slots.forEach(([b, i], j) => { model[b][i] = ordered[j].s; });
+    return whereIs(model, ordered[0].s);
   },
   /**
    * The whole page read again (sentences: [{words, block: its paragraph as read, first: the
@@ -950,6 +966,13 @@ export class TextEditor {
       toast('That sentence is already the reference or the last one moved. Click another sentence.');
       return true;
     }
+    if (this.flatIndex(source) === this.flatIndex(cursor) + 1) { // (already the next one: it keeps its number and its paragraph; ordering goes on from it)
+      this.select(source.view, source.bi, source.si, true);
+      this.moveByClick = { ...source };
+      this.render();
+      toast(`Sentence ${this.flatIndex(source) + 1} is already next: it keeps its number. Click the one that should follow it.`);
+      return true;
+    }
     this.run('moveAfter', { bi: cursor.bi, si: cursor.si }, source);
     this.moveByClick = this.sel ? { ...this.sel } : null;
     if (this.sel) toast(`Moved it to position ${this.flatIndex(this.sel) + 1}. Click the next sentence to place it after this one.`);
@@ -1313,12 +1336,18 @@ export class TextEditor {
     if (op === 'split-at') { this.toggleSplit(Number(btn.dataset.k)); return; }
     if (op === 'split-apply') { this.applySplit(); return; }
     if (op === 'split-clear') { this.splitStarts?.clear(); this.render(); return; }
+    if (op === 'move-click' && this.moveByClick) { // (the icon is a switch: pressed again, ordering is off)
+      this.moveByClick = null;
+      this.render();
+      toast('Ordering by clicking is off. Ctrl+Z (or Undo) reverses the moves.');
+      return;
+    }
     this.commitText();
     if (!this.sel) return;
     if (op === 'move-click') {
       this.moveByClick = { ...this.sel };
       this.render();
-      toast('Now click sentences to move them here in order. Each one is placed after the previous one. Esc ends the sequence.');
+      toast(`Ordering is on, from sentence ${this.flatIndex(this.sel) + 1}. Click the sentences in the order they should follow it: each takes the next number. Press the icon again (or Esc) to turn it off.`);
       return;
     }
     if (op === 'edit') { this.splitting = false; this.adding = null; this.editingText = true; this.render(); return; }
@@ -2361,7 +2390,7 @@ export class TextEditor {
     this.run('replaceAreas', { areas: todo }, { view: pending.view, bi: 0, si: 0 });
     const n = todo.reduce((k, a) => k + a.n, 0), replaced = todo.filter((a) => !a.keep).length;
     toast(list.length > 1
-      ? `${n} sentence${s(n)} from ${todo.length} area${s(todo.length)}, each where it is on the page${replaced ? ` (the text replaced in ${replaced})` : ''}. Ctrl+Z (or Undo) takes it all back.`
+      ? `${n} sentence${s(n)} from ${todo.length} area${s(todo.length)}, numbered in the order of the boxes: the first box's sentences first${replaced ? ` (the text replaced in ${replaced})` : ''}. Ctrl+Z (or Undo) takes it all back.`
       : todo[0].keep ? `Added ${n} sentence${s(n)} where ${n === 1 ? 'it is' : 'they are'} on the page. Ctrl+Z (or Undo) takes it back.`
         : n ? `The text of the area was replaced (${n} sentence${s(n)}), in its place among the others. Ctrl+Z (or Undo) takes it back.`
           : 'The text in the area was removed. Ctrl+Z (or Undo) brings it back.');
@@ -2374,7 +2403,7 @@ export class TextEditor {
     const first = !s || (s.bi === 0 && s.si === 0);
     const last = !s || (s.bi === blocks.length - 1 && s.si === blocks[s.bi][1] - blocks[s.bi][0] - 1);
     const [a, b] = s ? s.view.doc.sent[this.flatIndex(s)] : [0, 0];
-    const off = { edit: !s, split: b - a < 2, mergePrev: first, mergeNext: last, up: first, down: last, paragraph: first, mark: !s, ocr: false, add: !s, delete: !s, 'move-click': !s };
+    const off = { edit: !s, split: b - a < 2, mergePrev: first, mergeNext: last, up: first, down: last, paragraph: first, mark: !s, ocr: false, add: !s, delete: !s, 'move-click': !s && !this.moveByClick };
     for (const btn of $$('#edit-tools [data-op]')) btn.disabled = !!off[btn.dataset.op];
     const press = { edit: this.editingText, split: this.splitting, mark: !!this.marking, add: !!this.adding && this.adding.bi >= 0, 'move-click': !!this.moveByClick };
     for (const [op, on] of Object.entries(press)) $(`#edit-tools [data-op="${op}"]`).setAttribute('aria-pressed', String(!!on));

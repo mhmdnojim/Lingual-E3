@@ -175,7 +175,7 @@ API_WORD = re.compile(r'^/api/words/(w[0-9a-f]{12})$')
 API_WORD_CATEGORY = re.compile(r'^/api/words/categories(?:/(def|common|c[0-9a-f]{8}))?$')
 API_JOB = re.compile(r'^/api/jobs/([0-9a-f]{12})$')
 API_BOOK = re.compile(r'^/api/books/(\w{1,20})$')
-API_BOOK_PART = re.compile(r'^/api/books/(L[0-9a-f]{10})/(source|make|job|report|preview|layouts|designs|layout|layout-ai|pictures|tracks|buttons)(?:/([\w-]{1,20}))?$')
+API_BOOK_PART = re.compile(r'^/api/books/(L[0-9a-f]{10})/(source|make|job|report|preview|layouts|designs|layout|layout-ai|pictures|tracks|buttons|contents)(?:/([\w-]{1,20}))?$')
 LIB_PDF = re.compile(r'^/lib/(L[0-9a-f]{10})/book\.pdf$')
 API_ADMIN_BOOK = re.compile(r'^/api/admin/books/(L[0-9a-f]{10})$')
 API_BRANCH = re.compile(r'^/api/branches(?:/(\d{1,9})(/copy)?)?$')
@@ -808,6 +808,10 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json({'error': 'This book does not exist, or is not shared.'}, 404)
             return self.send_json(library.full(b, u))
         m = API_BOOK_PART.match(path)
+        if m and m.group(2) == 'contents':  # (the lessons or chapters of a book: whoever may read it)
+            if not self.book_access(m.group(1)):
+                return self.send_json({'error': 'This book does not exist, or is not shared.'}, 404)
+            return self.send_json(library.contents_of(library.get(m.group(1))))
         if m and m.group(2) == 'job':
             b = library.get(m.group(1))
             if not library.can_edit(b, u):
@@ -1140,6 +1144,11 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.send_json({'error': 'You prepared many page layouts today. Try again tomorrow.'}, 429)
                 body = body if isinstance(body, dict) else {}
                 return self.send_json(library.start_layouts(b, body.get('options'), body.get('again') is True))
+            if part == 'contents' and method == 'PUT':
+                body = self.read_body()
+                if body is None:
+                    return None
+                return self.send_json(library.save_contents(b, body))
             if part == 'designs' and method == 'PUT':
                 body = self.read_body()
                 if body is None:

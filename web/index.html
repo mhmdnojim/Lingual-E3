@@ -266,10 +266,12 @@
   <aside class="drawer" id="drawer" aria-label="Pages and resources" hidden>
     <div class="tabs" role="tablist">
       <button role="tab" data-dtab="pages" aria-selected="true">Pages</button>
+      <button role="tab" data-dtab="contents" aria-selected="false" title="The books of this level and their lessons">Contents</button>
       <button role="tab" data-dtab="resources" aria-selected="false">Resources</button>
       <button class="icon-btn small push" id="drawer-close" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
     </div>
     <div class="drawer-body" data-dtab="pages"><div class="thumbs" id="thumbs"></div></div>
+    <div class="drawer-body" data-dtab="contents" hidden><div class="contents" id="contents"></div></div>
     <div class="drawer-body" data-dtab="resources" hidden><ul class="res-list" id="res-list"></ul><div class="about-box" id="about-box"></div></div>
   </aside>
 
