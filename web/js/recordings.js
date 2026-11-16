@@ -35,6 +35,8 @@ export class Recordings {
     this.resolved = new WeakMap(); // page text doc -> Map(id -> sentence ranges on that page)
     this.picking = false;
     this.picked = new Map();    // view -> Set(sentence index)
+    this.keptPicks = [];        // sentences chosen on pages no longer shown: one audio can come from many pages
+    this.rangeFrom = ''; this.rangeTo = '';
     this.filter = store.get('recFilter', 'page');
     this.playingId = null;
     this.selectedId = null; // selected saved audio, independent of playback / My audio mode
@@ -1313,6 +1315,7 @@ export class Recordings {
     // Keep the saved-audio list visible; sentence selection can be made directly on the page.
     this.section = 'audio';
     this.picked = new Map();
+    this.keptPicks = [];
     this.anchor = null;
     document.body.classList.add('picking');
     $('#rec-new').hidden = true;
@@ -1333,6 +1336,7 @@ export class Recordings {
     this.picking = false;
     this.section = 'audio';
     this.picked = new Map();
+    this.keptPicks = [];
     document.body.classList.remove('picking');
     $('#rec-new').hidden = false;
     $('#rec-pick-actions').hidden = true;
@@ -1348,7 +1352,7 @@ export class Recordings {
   /** The shown pages changed. */
   pageShown() {
     this.syncPageOfflineVoice();
-    if (this.picking) { this.picked = new Map(); this.update(); }
+    if (this.picking) { this.keepPicks(); this.update(); }
     if (this.picking || this.coverageVisible) { this.loadCoverage(); this.renderSpots(); }
     this.renderList();
     this.renderPageOfflineFiles();
@@ -1360,6 +1364,78 @@ export class Recordings {
   setOf(view) {
     if (!this.picked.has(view)) this.picked.set(view, new Set());
     return this.picked.get(view);
+  }
+
+  /** What a chosen sentence is, whatever page it is on: {view (its book and page), path, n, a, b, text, words}. */
+  pickRecord(view, text, a, b) {
+    const words = [];
+    for (let k = a; k < b; k++) words.push(speakable(text.words[k][4]));
+    return { view: { book: view.book, page: view.page }, path: view.page.path, n: view.page.n, a, b, text: text.text(a, b), words };
+  }
+
+  /**
+   * The sentences chosen on pages that are no longer shown are kept (one audio can come from the
+   * pages of a whole article: choose on one page, go on to the next, choose there too).
+   */
+  keepPicks() {
+    const slug = this.app.book?.slug;
+    this.keptPicks = this.keptPicks.filter((k) => k.view.book.slug === slug);
+    const shown = new Set(this.app.views);
+    for (const [view, set] of [...this.picked]) {
+      if (shown.has(view)) continue;
+      this.picked.delete(view);
+      if (!view.text || view.book?.slug !== slug) continue;
+      for (const s of [...set].sort((x, y) => x - y)) {
+        const [a, b] = view.text.sent[s] || [];
+        if (a == null || this.keptPicks.some((k) => k.path === view.page.path && k.a === a && k.b === b)) continue;
+        this.keptPicks.push(this.pickRecord(view, view.text, a, b));
+      }
+    }
+  }
+
+  /** A page is shown again: what was chosen on it is chosen on it again. */
+  restorePicks() {
+    if (!this.keptPicks.length) return;
+    for (const view of this.app.views) {
+      if (!view.text) continue;
+      for (const k of this.keptPicks.filter((x) => x.view.book.slug === view.book.slug && x.path === view.page.path)) {
+        const s = view.text.sent.findIndex(([a, b]) => a === k.a && b === k.b);
+        if (s >= 0) this.setOf(view).add(s);
+        this.keptPicks.splice(this.keptPicks.indexOf(k), 1);
+      }
+    }
+  }
+
+  /** Choose every sentence of the pages numbered from..to (the pages not shown are loaded for it). */
+  async pickPages(from, to) {
+    const book = this.app.book;
+    if (!book) return;
+    const pages = book.pages.filter((p) => { const n = Number(p.n); return Number.isFinite(n) && n >= from && n <= to && !p.blank; });
+    if (!pages.length) { toast('This book has no pages from that one to that one.'); return; }
+    if (pages.length > 80) { toast('Choose at most 80 pages at a time.'); return; }
+    const hint = this.pickBox.querySelector('.pick-pages-state');
+    let done = 0, empty = 0;
+    this.keepPicks();
+    for (const p of pages) {
+      if (!this.picking || this.app.book !== book) return;
+      if (hint) hint.textContent = `Loading page ${p.n} (${done + 1} of ${pages.length})…`;
+      const shown = this.app.views.find((v) => v.book.slug === book.slug && v.page.path === p.path);
+      let text = shown?.text;
+      if (!text) {
+        const r = await fetch(`/api/text/${book.slug}/${p.path}`, { cache: 'no-store' }).catch(() => null);
+        text = r?.ok ? new PageText(await r.json()) : null;
+      }
+      done += 1;
+      if (!text?.sent.length) { empty += 1; continue; }
+      if (shown) { text.sent.forEach((_, s) => this.setOf(shown).add(s)); continue; }
+      const stub = { book: { slug: book.slug, id: book.id, type: book.type || book.title }, page: { path: p.path, n: p.n } };
+      for (const [a, b] of text.sent) {
+        if (!this.keptPicks.some((k) => k.path === p.path && k.a === a && k.b === b)) this.keptPicks.push(this.pickRecord(stub, text, a, b));
+      }
+    }
+    this.anchor = null;
+    this.update();
+    toast(`Chosen: the sentences of ${pages.length - empty} page${pages.length - empty === 1 ? '' : 's'}${empty ? ` (${empty} without text)` : ''}.`);
   }
 
   /**
@@ -1507,10 +1583,16 @@ export class Recordings {
         out.push({ view, path: view.page.path, a, b, text: view.text.text(a, b), words });
       }
     }
-    return out;
+    // (with those chosen on other pages, in the order of the book)
+    const slug = this.app.book?.slug;
+    const kept = this.keptPicks.filter((k) => k.view.book.slug === slug);
+    if (!kept.length) return out;
+    const order = new Map((this.app.book.pages || []).map((p, i) => [p.path, i]));
+    return [...kept, ...out].sort((x, y) => (order.get(x.path) ?? 1e9) - (order.get(y.path) ?? 1e9) || x.a - y.a);
   }
 
   update() {
+    this.restorePicks();
     const n = this.pickedSentences().length;
     $('#rec-count').textContent = this.anchor ? 'Now click the last sentence' : `${n} sentence${n === 1 ? '' : 's'} chosen`;
     $('#rec-create').disabled = n === 0;
@@ -1532,8 +1614,9 @@ export class Recordings {
       'The box next to a paragraph chooses the whole paragraph. Ctrl+click picks or drops a single sentence. ' +
       'This works in the list and on the page. Click + beside a recording to add these sentences; in the editor, untick sentences to remove. The old audio stays unless you choose to replace it.'),
     el('div', { class: 'pick-tools' },
-      el('button', { class: 'link-btn', dataset: { pick: 'all' } }, 'Choose everything'), ' · ',
-      el('button', { class: 'link-btn', dataset: { pick: 'none' } }, 'Clear'))];
+      el('button', { class: 'link-btn', dataset: { pick: 'all' } }, 'Choose everything on this page'), ' · ',
+      el('button', { class: 'link-btn', dataset: { pick: 'none' } }, 'Clear')),
+    this.renderPickPages()];
     this.app.views.forEach((view, vi) => {
       out.push(el('h4', {}, `Page ${view.page.n}`));
       if (!view.text?.sent.length) { out.push(el('div', { class: 'empty' }, 'There is no text on this page.')); return; }
@@ -1556,6 +1639,26 @@ export class Recordings {
     this.pickBox.scrollTop = keep;
   }
 
+  /** More than one page: the sentences chosen on the other pages, and "choose the pages from … to …". */
+  renderPickPages() {
+    const slug = this.app.book?.slug;
+    const byPage = new Map();
+    for (const k of this.keptPicks.filter((x) => x.view.book.slug === slug)) byPage.set(k.n, (byPage.get(k.n) || 0) + 1);
+    const here = this.app.views[0]?.page.n ?? '';
+    const from = el('input', { type: 'number', class: 'input pick-range', min: 1, value: this.rangeFrom || here, 'aria-label': 'First page' });
+    const to = el('input', { type: 'number', class: 'input pick-range', min: 1, value: this.rangeTo || here, 'aria-label': 'Last page' });
+    from.addEventListener('input', () => { this.rangeFrom = from.value; });
+    to.addEventListener('input', () => { this.rangeTo = to.value; });
+    const go = el('button', { class: 'btn small', type: 'button' }, 'Choose these pages');
+    go.addEventListener('click', () => this.pickPages(Number(from.value), Number(to.value || from.value)));
+    return el('div', { class: 'pick-pages' },
+      el('p', { class: 'edit-hint' }, 'An article on several pages: choose sentences here, go to the next page (the arrows above) and choose there too: what you chose stays. Or choose whole pages at once:'),
+      el('div', { class: 'pick-pages-row' }, 'Pages ', from, ' to ', to, go),
+      el('p', { class: 'hint pick-pages-state' }, byPage.size
+        ? `Also chosen on page${byPage.size === 1 ? '' : 's'} ${[...byPage].sort((x, y) => x[0] - y[0]).map(([n, c]) => `${n} (${c})`).join(', ')}.`
+        : ''));
+  }
+
   onPickClick(e) {
     const extend = e.target.closest('[data-act="regenerate"]');
     if (extend) {
@@ -1572,6 +1675,7 @@ export class Recordings {
     const t = e.target.closest('[data-pick]');
     if (!t) return;
     if (t.dataset.pick === 'all' || t.dataset.pick === 'none') {
+      if (t.dataset.pick === 'none') this.keptPicks = [];
       for (const view of this.app.views) {
         const set = this.setOf(view);
         set.clear();

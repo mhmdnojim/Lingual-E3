@@ -1968,3 +1968,8 @@ body { height: 100dvh; padding-left: env(safe-area-inset-left); padding-right: e
 .ct-edit-fields input[type=text] { flex: 1; min-width: 0; }
 .ct-page-input { width: 5em; }
 .ct-doubt { color: #dc2626; }
+
+/* Choosing sentences from several pages (js/recordings.js) */
+.pick-pages { margin: 6px 0 10px; display: flex; flex-direction: column; gap: 6px; }
+.pick-pages-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pick-range { width: 5.5em; }
