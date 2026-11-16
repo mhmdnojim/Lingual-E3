@@ -113,7 +113,7 @@ def details(actor, uid, now=None):
     u = _target(uid)
     out = _row(u, _plans(now))
     out['grants'] = subscriptions.of_user(u['id'], now)
-    out['bookList'] = db.rows('SELECT id, title, status, visibility, bytes FROM books WHERE owner = ? ORDER BY updated DESC LIMIT 200',
+    out['bookList'] = db.rows('SELECT id, title, kind, status, visibility, hidden, bytes, updated FROM books WHERE owner = ? ORDER BY updated DESC LIMIT 500',
                               (u['id'],))
     out['devices'] = devices.of_user(u['id'], now)
     out['features'] = access.feature_rows(u['id'])

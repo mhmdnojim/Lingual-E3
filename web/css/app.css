@@ -1973,3 +1973,7 @@ body { height: 100dvh; padding-left: env(safe-area-inset-left); padding-right: e
 .pick-pages { margin: 6px 0 10px; display: flex; flex-direction: column; gap: 6px; }
 .pick-pages-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .pick-range { width: 5.5em; }
+
+/* Admin: one account's books, and going through the accounts (js/admin-users.js) */
+.user-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.user-books { margin: 12px 0; }

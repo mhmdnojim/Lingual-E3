@@ -130,6 +130,52 @@ export function usersAdmin(o) {
     o.openDialog(`User: ${d.name}`, page(d));
   }
 
+  /** The account before or after this one in the list shown (the search and filter count): to go through the users one by one. */
+  function neighbours(id) {
+    const list = shown();
+    const i = list.findIndex((u) => u.id === id);
+    return { i, n: list.length, prev: i > 0 ? list[i - 1] : null, next: i >= 0 && i + 1 < list.length ? list[i + 1] : null };
+  }
+
+  /** Go through the accounts: ← the one before, → the one after. */
+  function userNav(d) {
+    const { i, n, prev, next } = neighbours(d.id);
+    if (i < 0) return null;
+    return el('div', { class: 'user-nav' },
+      el('button', { class: 'btn small', type: 'button', disabled: !prev, onclick: () => open(prev.id) }, prev ? `← ${prev.name}` : '← Previous user'),
+      el('span', { class: 'hint' }, `User ${i + 1} of ${n}`),
+      el('button', { class: 'btn small', type: 'button', disabled: !next, onclick: () => open(next.id) }, next ? `${next.name} →` : 'Next user →'));
+  }
+
+  /** All the books of this account, private ones too: open one (to look at it, correct it), hide or show a shared one, delete it. */
+  function booksPart(d) {
+    const list = d.bookList || [];
+    const doBook = async (b, action, said) => {
+      try { await api('POST', `/api/admin/books/${b.id}`, { action }); } catch (err) { toast(err.message); return; }
+      toast(said);
+      await load();
+      open(d.id);
+    };
+    const rows = list.map((b) => el('tr', { dataset: { book: b.id } },
+      el('td', {}, el('button', { class: 'link-btn', type: 'button', title: 'Open this book', onclick: () => { o.closeDialog(); location.hash = `#/${b.id}/1`; } }, b.title || '(no title)')),
+      el('td', {}, b.kind),
+      el('td', {}, b.status === 'ready' ? (b.visibility === 'public' ? (b.hidden ? 'Shared, hidden' : 'Shared') : 'Private') : b.status),
+      el('td', {}, size(b.bytes || 0)),
+      el('td', {}, day(b.updated)),
+      el('td', { class: 'admin-acts' },
+        el('button', { class: 'btn small', type: 'button', onclick: () => { o.closeDialog(); location.hash = `#/${b.id}/1`; } }, 'Open'),
+        b.visibility === 'public' ? el('button', { class: 'btn small', type: 'button', onclick: () => doBook(b, b.hidden ? 'show' : 'hide', b.hidden ? 'The book is shown again.' : 'The book is hidden from the others.') }, b.hidden ? 'Show' : 'Hide') : null,
+        el('button', { class: 'btn small danger-btn', type: 'button', onclick: () => {
+          if (window.confirm(`Delete “${b.title}” of ${d.name}? It cannot be brought back.`)) doBook(b, 'delete', 'The book was deleted.');
+        } }, 'Delete'))));
+    return el('div', { class: 'user-books' },
+      el('h3', {}, `Books (${list.length})`),
+      list.length ? el('div', { class: 'table-scroll' }, el('table', { class: 'admin-table' },
+        el('thead', {}, el('tr', {}, ...['Book', 'Kind', 'Seen by', 'Size', 'Changed', ''].map((h) => el('th', {}, h)))), el('tbody', {}, ...rows)))
+        : el('p', { class: 'hint' }, 'This account has no books.'),
+      el('p', { class: 'hint' }, 'As an admin you can open every book, private ones too, and change it as its owner would.'));
+  }
+
   /** Do an action to the account; then its page again (or the list, when it is deleted). */
   async function act(d, body, done) {
     let next;
@@ -146,7 +192,7 @@ export function usersAdmin(o) {
       ...[['E-mail', d.email], ['Role', ROLE[d.role] + (d.you ? ' (you)' : '')], ['Status', d.blocked ? 'Blocked' : 'Can log in'],
         ['Joined', day(d.created)], ['Last seen', ago(d.lastSeen)], ['Books', `${d.books} (${size(d.bytes)})`]]
         .flatMap(([k, v]) => [el('dt', {}, k), el('dd', {}, v)]));
-    const parts = [facts];
+    const parts = [userNav(d), facts, booksPart(d)].filter(Boolean);
     if (o.plans) parts.push(planPart(d));
     if (d.devices) parts.push(devicePart(d));
     if (d.role === 'user' && d.may.feature) parts.push(featurePart(d), aiPart(d));

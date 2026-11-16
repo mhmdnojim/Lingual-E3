@@ -169,6 +169,27 @@ try {
   assert.equal((await boss('PUT', '/api/picture-ai', { key: '' })).status, 200);
   await ctx.close();
 
+  // The admin goes through the accounts and their books: Ann's private book is listed (the owner sees it),
+  // opened, and deleted; the arrows go to the account before and after.
+  text = await open(page, id.Ann);
+  assert.match(text, /Books \(1\)/);
+  assert.match(text, /Still allowed/, 'a book of the account (not shared), listed for the admin');
+  assert.match(text, /User \d of 3/);
+  const names = await page.$$eval('.user-nav button', (b) => b.map((x) => x.textContent));
+  assert.equal(names.length, 2, 'a button to the account before and one to the account after');
+  const nextName = names.find((n) => /→/.test(n) && !/Next user/.test(n)) || names.find((n) => /←/.test(n) && !/Previous user/.test(n));
+  await page.evaluate(() => [...document.querySelectorAll('.user-nav button')].find((b) => !b.disabled).click());
+  await page.waitForFunction((before) => document.querySelector('#md-title').textContent !== before, { timeout: 10000 }, `User: Ann`);
+  assert.ok(nextName, 'the neighbour is named');
+  await page.keyboard.press('Escape');
+  await open(page, id.Ann);
+  const annBook = (await boss('GET', `/api/admin/users/${id.Ann}`)).data.bookList[0];
+  assert.equal(annBook.title, 'Still allowed');
+  await page.click(`.user-books tr[data-book="${annBook.id}"] .danger-btn`);
+  await says(page, /Books \(0\)/);
+  assert.ok([403, 404].includes((await ann('GET', `/api/books/${annBook.id}`)).status), 'the book is deleted');
+  await page.keyboard.press('Escape');
+
   // Deleted: gone from the list and from the server.
   await open(page, id.Ann);
   assert.ok(await button(page, 'Delete the account'));
