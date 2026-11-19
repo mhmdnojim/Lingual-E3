@@ -22,8 +22,8 @@ fi
 if command -v tesseract >/dev/null; then
   have="$(tesseract --list-langs 2>/dev/null || true)"
   need=""
-  for code in rus bul fas urd ind tur fra; do
-    echo "$have" | grep -qx "$code" || need="$need tesseract-ocr-$code"
+  for code in rus bul fas urd ind tur fra chi_sim chi_tra spa deu jpn kor ara; do  # (Chinese, Spanish, German, Japanese, Korean, Arabic too)
+    echo "$have" | grep -qx "$code" || need="$need tesseract-ocr-$(echo "$code" | tr _ -)"
   done
   if [ -n "$need" ]; then
     echo "Installing the OCR languages:$need (once)…"

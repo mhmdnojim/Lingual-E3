@@ -24,6 +24,7 @@ fi
 apt update -q
 apt install -y -q python3 python3-venv git curl gpg tesseract-ocr tesseract-ocr-eng \
   tesseract-ocr-rus tesseract-ocr-bul tesseract-ocr-fas tesseract-ocr-urd tesseract-ocr-ind tesseract-ocr-tur tesseract-ocr-fra \
+  tesseract-ocr-chi-sim tesseract-ocr-chi-tra tesseract-ocr-spa tesseract-ocr-deu tesseract-ocr-jpn tesseract-ocr-kor tesseract-ocr-ara \
   debian-keyring debian-archive-keyring apt-transport-https
 if ! command -v caddy >/dev/null; then
   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --batch --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
