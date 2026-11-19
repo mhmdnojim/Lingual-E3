@@ -313,13 +313,16 @@ def create(user, meta):
     clean = _clean_meta({**meta, 'visibility': 'private'})
     if not clean.get('title'):
         raise LibraryError('Please give a title.')
+    share = bool(meta.get('shareWhenReady'))
+    if share:  # to be public as soon as it is ready: the same licence and rights as when sharing it later
+        clean['license'] = _clean_meta({'visibility': 'public', 'license': meta.get('license'), 'rights': meta.get('rights')})['license']
     bid = 'L' + secrets.token_hex(5)
     now = int(time.time())
     options = _clean_options(meta.get('importOptions', {}))
-    db.run('INSERT INTO books (id, owner, title, author, about, branch, lang, import_options, kind, license, source, created, updated) '
-           'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    db.run('INSERT INTO books (id, owner, title, author, about, branch, lang, import_options, kind, license, source, created, updated, share_when_ready) '
+           'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
            (bid, user['id'], clean['title'], clean.get('author', ''), clean.get('about', ''), clean.get('branch'), options['language'],
-            json.dumps(options, ensure_ascii=False), kind, clean.get('license', ''), clean.get('source', ''), now, now))
+            json.dumps(options, ensure_ascii=False), kind, clean.get('license', ''), clean.get('source', ''), now, now, int(share)))
     os.makedirs(folder(bid, 'source'), exist_ok=True)
     return get(bid)
 
@@ -1087,7 +1090,9 @@ def _make(bid):
     with _jobs_lock:
         _samples.pop(bid, None)
     size = sum(os.path.getsize(os.path.join(dp, f)) for dp, _, fs in os.walk(folder(bid)) for f in fs)
-    db.run("UPDATE books SET status = 'ready', error = '', pages = ?, bytes = ?, updated = ? WHERE id = ?",
+    # (a book added with "everyone can see it" is shown in the public library as soon as it is ready)
+    db.run("UPDATE books SET status = 'ready', error = '', pages = ?, bytes = ?, updated = ?, "
+           "visibility = CASE WHEN share_when_ready = 1 THEN 'public' ELSE visibility END, share_when_ready = 0 WHERE id = ?",
            (json.dumps(meta), size, int(time.time()), bid))
     _set_job(bid, state='done', stage='Ready', done=len(meta), total=len(meta))
 

@@ -1009,7 +1009,7 @@ export class Library {
       const lang = info?.languages.find((l) => l.code === language.value);
       langNote.hidden = !lang || lang.ocr || kind === 'text';
       langNote.textContent = info?.engine === 'tesseract'
-        ? `The server cannot read ${lang?.name} from scans or photos yet. PDFs with their own text work.`
+        ? `The server cannot read ${lang?.name} from scans or photos yet. A PDF that has its own text works, and so does a scan made by an app such as 夸克扫描王 or CamScanner (they keep the text hidden under the picture). A scan or photo with no text at all cannot be read here: the admin must install the ${lang?.name} OCR language (Tesseract “${language.value}”) on the server.`
         : `This computer cannot read ${lang?.name} from scans or photos yet. PDFs with their own text work. For the others, add ${lang?.name} in the Windows Settings (Time & language → Language & region), with “Optical character recognition”.`;
       const other = info?.languages.find((l) => l.code === second.value);
       secondNote.hidden = !other || other.ocr || kind === 'text';
@@ -1136,6 +1136,28 @@ export class Library {
       questions.node.hidden = k === 'text';
       questions.setKind(k);
     };
+    // Who can see the book: only the owner (and the site admins), or everyone as soon as it is made.
+    const who = (() => {
+      const lic = this.me.licenses || {};
+      const choice = (value, label, hint) => {
+        const input = el('input', { type: 'radio', name: 'add-who', value, checked: value === 'private' });
+        return { input, node: el('label', { class: 'check who-choice' }, input, el('span', {}, el('b', {}, label), el('small', { class: 'hint' }, ` ${hint}`))) };
+      };
+      const mine = choice('private', 'Only me', 'private: no one else sees it (the site admins can).');
+      const all = choice('public', 'Everyone', 'shown in the Public library when it is ready; you can make it private again later.');
+      const license = el('select', { class: 'select' }, el('option', { value: '' }, 'Choose the licence…'),
+        ...Object.entries(lic).map(([k, name]) => el('option', { value: k }, name)));
+      const rights = el('input', { type: 'checkbox' });
+      const box = el('div', { class: 'share-box', hidden: true },
+        el('label', { class: 'field' }, el('span', {}, 'Licence'), license),
+        el('label', { class: 'check' }, rights, ' I confirm that I may share this with everyone: it is my own work, in the public domain, or under a licence that allows sharing.'));
+      const sync = () => { box.hidden = !all.input.checked; };
+      mine.input.addEventListener('change', sync); all.input.addEventListener('change', sync);
+      return {
+        node: el('fieldset', { class: 'add-who' }, el('legend', {}, 'Who can see this book?'), mine.node, all.node, box),
+        public: () => all.input.checked, license: () => license.value, rights: () => rights.checked,
+      };
+    })();
     const msg = el('p', { class: 'form-msg', role: 'alert' });
     const go = el('button', { class: 'btn primary', type: 'submit' }, 'Add the book');
     // The tabs and the two buttons stay at the top while the rest scrolls; then the file, the
@@ -1150,7 +1172,7 @@ export class Library {
       el('label', { class: 'field' }, el('span', {}, 'Title'), title),
       el('label', { class: 'field' }, el('span', {}, 'Author'), author),
       place.node,
-      el('p', { class: 'hint' }, 'Your book stays private (only you can see it) until you share it. Only share what you have the right to share.'));
+      who.node);
     setKind(kind);
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -1167,11 +1189,14 @@ export class Library {
       const limits = (await api('GET', '/api/me').catch(() => null))?.limits || this.me.limits;
       const big = tooBig(kind, files, limits);
       if (big) { msg.textContent = big; return; }
+      if (who.public() && !who.license()) { msg.textContent = 'To share the book with everyone, choose its licence.'; return; }
+      if (who.public() && !who.rights()) { msg.textContent = 'To share the book with everyone, confirm that you may share it.'; return; }
       const options = kind === 'text' ? undefined : questions.value();
       if (options) store.set('addOptions', { language: options.language, second: options.second, english: options.english, pinyin: options.pinyin }); // (the next book is likely the same)
       go.disabled = true;
       try {
-        await this.add({ kind, title: title.value, author: author.value, place: place.value(), text: text.value, picture: picture.files[0], files, options }, form);
+        await this.add({ kind, title: title.value, author: author.value, place: place.value(), text: text.value, picture: picture.files[0], files, options,
+          share: who.public() ? { shareWhenReady: true, license: who.license(), rights: true } : {} }, form);
       } catch (err) {
         msg.textContent = err.message;
         go.disabled = false;
@@ -1183,7 +1208,7 @@ export class Library {
 
   async add(d, form) {
     // (a Word file is made into a PDF on the server: the book is a PDF book)
-    const book = await api('POST', '/api/books', { kind: d.kind === 'word' ? 'pdf' : d.kind, title: d.title, author: d.author, ...d.place, importOptions: d.options });
+    const book = await api('POST', '/api/books', { kind: d.kind === 'word' ? 'pdf' : d.kind, title: d.title, author: d.author, ...d.place, ...d.share, importOptions: d.options });
     const bar = el('div', { class: 'rec-progress' }, el('div'));
     const stage = el('p', { class: 'hint' }, 'Sending…');
     form.replaceChildren(el('h3', { class: 'lib-progress-title' }, d.title), bar, stage);

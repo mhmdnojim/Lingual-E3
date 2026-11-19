@@ -203,6 +203,8 @@ def conn():
                 c.execute("ALTER TABLE books ADD COLUMN import_options TEXT NOT NULL DEFAULT '{}'")
             if 'branch' not in columns:
                 c.execute('ALTER TABLE books ADD COLUMN branch INTEGER')
+            if 'share_when_ready' not in columns:  # (chosen when the book was added: shown to everyone as soon as it is made)
+                c.execute('ALTER TABLE books ADD COLUMN share_when_ready INTEGER NOT NULL DEFAULT 0')
             if 'course' in columns:  # (for a while a book had a course and a level: now the branches of them)
                 _courses_to_branches(c)
             # (the Users tab of the Admin page: when each account was last used; plan days given by
