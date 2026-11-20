@@ -146,7 +146,7 @@ def full(b, user):
     v = b['updated']
     out = summary(b, user)
     out.update({
-        'slug': b['id'], 'type': b['title'], 'library': True,
+        'slug': b['id'], 'type': b['title'], 'library': True, 'where': branches.paths().get(b['branch'], []),  # (the branches it is in)
         'pages': [{'n': p['n'], 'path': f"p{p['n']}", 'w': p['w'], 'h': p['h'], 'txt': p.get('words', 0) > 0,
                    'img': f"/lib/{b['id']}/pages/{p['n']}.webp?v={v}", 'thumb': f"/lib/{b['id']}/thumbs/{p['n']}.webp?v={v}"}
                   for p in _pages(b)],

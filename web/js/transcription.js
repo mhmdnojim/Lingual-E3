@@ -129,12 +129,12 @@ function fileBox(app) {
     try {
       const sent = await send(`/api/transcribe-file?name=${encodeURIComponent(f.name)}`, f,
         (x) => { bar.firstChild.style.width = `${Math.round(x * 100)}%`; state.textContent = `Sending it: ${Math.round(x * 100)}%`; });
-      bar.hidden = true;
       let job = { state: 'queued', message: 'Waiting to transcribe…' };
       while (stillOpen(file)) {
         if (job.state === 'done') { showResult(app, result, f, job); state.textContent = `${job.cues.length} lines. Click one to hear it; click it again to pause.`; break; }
         if (job.state === 'error') throw new Error(job.error);
         state.textContent = `${job.message || 'Transcribing…'}${job.progress != null ? ` ${job.progress}%` : ''}`;
+        setBar(bar, job);
         await new Promise((ok) => setTimeout(ok, 1500));
         job = await api('GET', `/api/transcribe-file?job=${encodeURIComponent(sent.job)}`);
       }
@@ -212,10 +212,21 @@ export async function savedTranscript(asset, language = 'en') {
  * Transcribe the recording (or follow a transcription already running: job) and show how far it
  * is in status. apply(cues) when done. alive(): false once that player shows something else.
  */
+/** The bar of a transcription: its percent when the server knows it (Whisper on the computer), else moving (it is working). */
+function setBar(bar, job) {
+  const p = job?.progress;
+  bar.hidden = false;
+  bar.classList.toggle('indeterminate', p == null);
+  bar.firstChild.style.width = p == null ? '' : `${p}%`;
+  bar.setAttribute('aria-valuenow', p == null ? '' : String(p));
+}
+
 export async function transcribeRecording(asset, button, status, apply, alive = () => true, job = null, language = 'en', force = false) {
   button.disabled = true;
   status.classList.remove('err');
   status.textContent = 'Starting…';
+  const bar = el('div', { class: 'rec-progress transcribe-bar indeterminate', role: 'progressbar', 'aria-label': 'Transcription progress', 'aria-valuemin': '0', 'aria-valuemax': '100' }, el('div'));
+  status.after(bar);
   try {
     if (!job) {
       const response = await fetch('/api/transcribe', { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -231,6 +242,7 @@ export async function transcribeRecording(asset, button, status, apply, alive = 
       }
       if (job.state === 'error') throw new Error(job.error);
       status.textContent = `${job.message || 'Transcribing…'}${job.progress != null ? ` ${job.progress}%` : ''}`;
+      setBar(bar, job);
       await new Promise((resolve) => setTimeout(resolve, 1200));
       if (!alive()) return;
       const response = await fetch(`/api/transcript?src=${encodeURIComponent(asset.src)}&language=${encodeURIComponent(language || 'en')}`);
@@ -242,6 +254,7 @@ export async function transcribeRecording(asset, button, status, apply, alive = 
     status.classList.add('err');
     status.textContent = error.message || 'The transcription failed. Try again.';
   } finally {
+    bar.remove();
     if (alive()) button.disabled = false;
   }
 }

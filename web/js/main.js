@@ -498,8 +498,8 @@ class App {
   }
 
   /** The library, in the branch it was in last. */
-  goHome() {
-    const home = this.library.homeHash();
+  goHome(toBook = false) {
+    const home = toBook && this.bookWhere ? (this.bookWhere.length ? `#/@/${this.bookWhere.map(encodeURIComponent).join('/')}` : '#/') : this.library.homeHash();
     if (location.hash !== home) history.pushState(null, '', home);
     return this.route();
   }
@@ -670,6 +670,10 @@ class App {
 
   bookShown(book) {
     $('#book-name').textContent = book.type;
+    // (where it is in the library: its branches; a click goes back to that branch)
+    const where = book.where?.length ? book.where.join(' › ') : '';
+    $('#book-title').title = where ? `Back to the library — this book is in: ${where}` : 'Back to the library';
+    this.bookWhere = book.library ? book.where || [] : null;
     this.setLanguageMode?.(store.get(this.languageModeKey(), 'both')); // (this book's kind: Chinese or not)
     this.translator.setBook(book); // (translated from its language: a Chinese book into English, unless another is chosen)
     document.body.classList.toggle('readonly', book.canEdit === false); // only the owner corrects the text

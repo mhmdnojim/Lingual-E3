@@ -232,7 +232,7 @@ export class Library {
       } catch (err) { toast(`Could not open the importer: ${err.message}`); }
     });
     $('#brand').addEventListener('click', () => this.app.goHome());
-    $('#book-title').addEventListener('click', () => this.app.goHome());
+    $('#book-title').addEventListener('click', () => this.app.goHome(true));
   }
 
   // ---------------------------------------------------------------- The home screen
@@ -465,12 +465,16 @@ export class Library {
     const meta = [author, b.pageCount ? `${b.pageCount} page${b.pageCount === 1 ? '' : 's'}` : '', !b.mine && b.owner && !b.disc ? `shared by ${b.owner}` : '']
       .filter(Boolean).join(' · ');
     const title = shortTitle(b.title, here);
-    const where = (this.pathOf?.(b) || []).filter((name) => !here.includes(name) && !title.includes(name)).join(' › ');
+    const full = this.pathOf?.(b) || [];
+    let where = full.filter((name) => !here.includes(name) && !title.includes(name)).join(' › ');
+    // (a book in no branch: say so, and in which tab, else two books at the top look as if they were nowhere)
+    if (!where && !full.length && !here.length) where = `Top of ${this.scopes().find(([k]) => k === this.scope)?.[1] || 'the library'} (no branch)`;
     return this.manageable(el('article', { class: 'book-card', dataset: { id: b.id, ...(b.link ? { link: b.link } : {}) } },
       el('button', { class: 'bc-cover', 'aria-label': `Open ${b.title}`, onclick: () => this.openBook(b) }, cover),
       el('div', { class: 'bc-body' },
         el('h3', {}, el('button', { class: 'bc-title', onclick: () => this.openBook(b) }, title)),
-        where ? el('p', { class: 'bc-where', html: icon('folder') }, where) : null,
+        where ? el('button', { class: 'bc-where', type: 'button', html: icon('folder'), title: `Open this branch: ${full.join(' › ') || 'the top'}`,
+          onclick: () => this.openFolder(full) }, el('span', {}, where)) : null,
         meta ? el('p', { class: 'bc-meta' }, meta) : null,
         el('p', { class: 'bc-badges' }, ...badges))), this.bookItem(b));
   }

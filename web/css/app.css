@@ -2079,3 +2079,7 @@ body.resizing-panel { user-select: none; cursor: col-resize; }
 #edit-tools-toggle[aria-pressed="false"] { color: var(--accent); }
 .ocr-preview textarea { min-width: 0; width: 100%; }
 .ocr-preview-line textarea { flex: 1 1 auto; }
+.rec-progress.indeterminate div { width: 35%; animation: offline-indeterminate 1.1s ease-in-out infinite alternate; }
+.transcribe-bar { margin: 6px 0 4px; }
+.bc-where { background: none; border: 0; padding: 0; text-align: left; cursor: pointer; font-family: inherit; }
+.bc-where:hover span { color: var(--text); text-decoration: underline; }
