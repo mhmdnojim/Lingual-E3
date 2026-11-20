@@ -216,3 +216,59 @@ def validate_layout(result, page):
         if not inside or min(inside, key=lambda j: areas[j]['w'] * areas[j]['h']) != owners[i]:
             raise LayoutError('The AI grouped overlapping text areas ambiguously. Your existing layout is kept; try again or adjust local outlines.')
     return areas, notes
+
+
+READ_INSTRUCTIONS = (
+    'You read text from a cropped part of a scanned textbook page. Write down exactly the printed text you can see, '
+    'in reading order, one line of the result for each line of text. Keep the original language and writing '
+    '(Chinese characters stay Chinese; do not translate, do not add pinyin, do not correct). Leave out handwriting, '
+    'pen marks and scribbles. If the printed text is faint, read it as well as you can. If there is no printed text, return no lines.')
+READ_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['lines'],
+               'properties': {'lines': {'type': 'array', 'maxItems': 60, 'items': {'type': 'string', 'maxLength': 400}}}}
+
+
+def read_text(png_bytes, key, model, language=''):
+    """The printed text of a small picture (an area of a page), read by the model: a list of lines. The
+    text is shown to the owner to check before it is used; it is never put into a book unseen."""
+    if not key:
+        raise LayoutError('Add an OpenAI API key under Admin → API first.')
+    if not re.fullmatch(r'[A-Za-z0-9_.:\-]{1,100}', model):
+        raise LayoutError('Choose a valid OpenAI model ID under Admin → API.')
+    url = 'data:image/png;base64,' + base64.b64encode(png_bytes).decode('ascii')
+    hint = f' The page is mainly in this language: {language}.' if language else ''
+    body = {'model': model, 'store': False, 'max_output_tokens': 2000, 'instructions': READ_INSTRUCTIONS + hint,
+            'input': [{'role': 'user', 'content': [{'type': 'input_text', 'text': 'Read the printed text in this picture.'},
+                                                   {'type': 'input_image', 'image_url': url, 'detail': 'high'}]}],
+            'text': {'format': {'type': 'json_schema', 'name': 'area_text', 'strict': True, 'schema': READ_SCHEMA}}}
+    req = urllib.request.Request(API + '/responses', json.dumps(body, ensure_ascii=False).encode('utf-8'),
+                                 {'Content-Type': 'application/json', 'Authorization': f'Bearer {key}'})
+    try:
+        with urllib.request.urlopen(req, timeout=90) as response:
+            data = json.loads(response.read(2 * 1024 * 1024).decode('utf-8'))
+    except urllib.error.HTTPError as error:
+        messages = {401: 'OpenAI did not accept this API key. Change it under Admin → API.',
+                    403: 'This OpenAI project is not allowed to use the selected model.',
+                    404: 'The selected model is unavailable to this OpenAI project. Change its model ID.',
+                    429: 'OpenAI usage or rate limit reached. Check API billing and limits before retrying.',
+                    400: 'OpenAI could not use this model to read a picture. Choose a model that can see images.'}
+        try:
+            error.close()
+        finally:
+            raise LayoutError(messages.get(error.code, f'The AI service could not complete the request (HTTP {error.code}).')) from None
+    except (urllib.error.URLError, TimeoutError, OSError):
+        raise LayoutError('The AI service could not be reached or timed out.') from None
+    except (ValueError, UnicodeError):
+        raise LayoutError('The AI service returned an unreadable response.') from None
+    texts = []
+    for output in (data.get('output', []) if isinstance(data, dict) else []):
+        if isinstance(output, dict) and output.get('type') == 'message':
+            for item in output.get('content', []):
+                if isinstance(item, dict) and item.get('type') == 'refusal':
+                    raise LayoutError('The AI service declined to read this picture.')
+                if isinstance(item, dict) and item.get('type') == 'output_text':
+                    texts.append(item.get('text', ''))
+    try:
+        lines = json.loads(''.join(texts))['lines']
+    except (ValueError, TypeError, KeyError):
+        raise LayoutError('The AI service returned no usable text.') from None
+    return [' '.join(str(x).split()) for x in lines if isinstance(x, str) and x.strip()]

@@ -1462,6 +1462,38 @@ def _lines(words, x0, top, sx, sy):
     return lines
 
 
+def pdf_text_in_area(b, n, x, y, x1, y1):
+    """The words the PDF itself has in this area of book page n (a rectangle of the page picture, in pixels): the
+    text layer of a text PDF, or the hidden text a scanner app (夸克扫描王, CamScanner) keeps under its picture. Raw
+    lines like OCR's, in the picture's pixels; None when this book or page has no such text there. This is what
+    the whole page was read from, so an area read again can still get it when the OCR finds nothing."""
+    if b['kind'] != 'pdf':
+        return None
+    entry = next((p for p in _pages(b) if int(p['n']) == int(n)), None)
+    if not entry:
+        return None
+    try:
+        chosen, _total = _selection(b, _options(b))
+        if int(n) - 1 >= len(chosen):
+            return None
+        import pdfplumber
+        with _pdfium_lock, pdfplumber.open(folder(b['id'], 'source', 'book.pdf')) as plumb:
+            p = plumb.pages[chosen[int(n) - 1]]
+            if (p.rotation or 0) % 360:
+                return None
+            words = p.extract_words(use_text_flow=True, keep_blank_chars=False, x_tolerance=1.5)
+            lines = _lines(words, p.bbox[0], p.bbox[1], entry['w'] / p.width, entry['h'] / p.height)
+    except Exception:
+        return None
+    pad = 3
+    out = []
+    for ln in lines:
+        kept = [w for w in ln['words'] if x - pad <= w['x'] + w['w'] / 2 <= x1 + pad and y - pad <= w['y'] + w['h'] / 2 <= y1 + pad]
+        if kept:
+            out.append({'words': kept})
+    return {'w': entry['w'], 'h': entry['h'], 'lines': out} if out else None
+
+
 def _photo_names(src):
     return sorted((f for f in os.listdir(src) if f.startswith('image-')), key=lambda f: int(re.sub(r'\D', '', f)))
 
@@ -1530,6 +1562,18 @@ def _ocr(imgs, build, options, progress):
                     w.update({k: round(w[k] / scale) for k in ('x', 'y', 'w', 'h')})
         raw['w'], raw['h'] = img.width, img.height
     return raws
+
+
+def enlarged(img):
+    """A small or faint crop made easier for OCR: grey, full contrast, 2 to 4 times bigger, with a white margin.
+    (picture, scale, margin): a word's place in it is (x - margin) / scale in the crop."""
+    pic = ImageOps.autocontrast(ImageOps.grayscale(img), cutoff=2)
+    scale = max(2.0, min(4.0, 1400 / max(pic.size)))
+    pic = pic.resize((round(pic.width * scale), round(pic.height * scale)), Image.LANCZOS).filter(ImageFilter.UnsharpMask(radius=2, percent=150, threshold=2))
+    pad = 24
+    out = Image.new('L', (pic.width + 2 * pad, pic.height + 2 * pad), 255)
+    out.paste(pic, (pad, pad))
+    return out.convert('RGB'), scale, pad
 
 
 def _clearer(img):

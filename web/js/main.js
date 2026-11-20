@@ -417,6 +417,7 @@ class App {
     this.assistant = new Assistant(this);
     this.library = new Library(this);
     startHelp();
+    this.bindPanelResize();
     this.follower = new Follower(this);
     initDialog();
 
@@ -510,6 +511,40 @@ class App {
   }
 
   // ---------- Navigation ----------
+
+  /** The width of the side panel: dragged at its left edge (or with the arrow keys; double-click: wide / normal), kept. */
+  bindPanelResize() {
+    const root = document.documentElement, grip = $('#panel-resize'), panel = $('#panel');
+    if (!grip || !panel) return;
+    const MIN = 300, max = () => Math.min(820, Math.round(window.innerWidth * 0.7));
+    const set = (w, keep = true) => {
+      w = Math.max(MIN, Math.min(max(), Math.round(w)));
+      root.style.setProperty('--panel-w', `${w}px`);
+      grip.setAttribute('aria-valuenow', String(w));
+      if (keep) store.set('panelW', w);
+      return w;
+    };
+    const saved = Number(store.get('panelW', 0));
+    if (saved >= MIN && window.innerWidth >= 1100) set(saved, false);
+    grip.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      grip.setPointerCapture(e.pointerId);
+      document.body.classList.add('resizing-panel');
+      const move = (ev) => set(window.innerWidth - ev.clientX, false);
+      const up = () => {
+        grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up);
+        document.body.classList.remove('resizing-panel');
+        store.set('panelW', panel.offsetWidth);
+      };
+      grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', up); grip.addEventListener('pointercancel', up);
+    });
+    grip.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      e.preventDefault();
+      set(panel.offsetWidth + (e.key === 'ArrowLeft' ? 24 : -24));
+    });
+    grip.addEventListener('dblclick', () => set(panel.offsetWidth < 520 ? 600 : 380));
+  }
 
   parseHash() {
     const m = location.hash.match(/^#\/(\w+)\/([^/?]+)/);

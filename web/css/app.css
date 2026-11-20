@@ -2059,3 +2059,23 @@ body { height: 100dvh; padding-left: env(safe-area-inset-left); padding-right: e
 .add-who { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px 10px; margin: 4px 0; display: flex; flex-direction: column; gap: 6px; }
 .add-who legend { padding: 0 6px; font-weight: 600; }
 .who-choice { display: flex; align-items: flex-start; gap: 8px; }
+
+/* Re-reading by area: the buttons stay at the top of the review; numbers do not cover the page (js/editor.js) */
+.ocr-preview-actions.top { position: sticky; top: var(--ocr-sticky, 0); z-index: 3; margin: -10px -10px 8px; padding: 8px 10px; background: var(--surface-2); border-bottom: 1px solid var(--line); border-radius: 10px 10px 0 0; }
+.ocr-area-tools { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 4px 0; }
+.ocr-ai-btn { color: var(--accent); font-weight: 600; }
+.text-layer .edit-outlines .quiet text { display: none; }
+.text-layer .edit-outlines .quiet rect { fill: transparent; stroke: rgba(37, 99, 235, .25); }
+.text-layer .edit-outlines text { font-size: .8em; }
+
+/* The side panel: its width is dragged at its left edge; the editing buttons fold away (js/main.js, js/editor.js) */
+.panel { position: relative; }
+.panel-resize { position: absolute; left: -4px; top: 0; bottom: 0; width: 9px; cursor: col-resize; z-index: 6; touch-action: none; }
+.panel-resize:hover, .panel-resize:focus-visible, body.resizing-panel .panel-resize { background: linear-gradient(90deg, transparent 3px, var(--accent) 3px, var(--accent) 6px, transparent 6px); outline: none; }
+body.resizing-panel { user-select: none; cursor: col-resize; }
+:where([data-device="phone"]) .panel-resize { display: none; }
+.edit-actions.tools-folded .edit-tools, .edit-actions.tools-folded .edit-bulk,
+.edit-actions.reviewing:not(.tools-open) .edit-tools, .edit-actions.reviewing:not(.tools-open) .edit-bulk { display: none; }
+#edit-tools-toggle[aria-pressed="false"] { color: var(--accent); }
+.ocr-preview textarea { min-width: 0; width: 100%; }
+.ocr-preview-line textarea { flex: 1 1 auto; }

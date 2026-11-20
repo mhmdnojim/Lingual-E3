@@ -108,6 +108,7 @@ Other options: --port 8765, --no-browser, --host, --password (the PIN of --lan).
 """
 import argparse
 import base64
+import io
 import json
 import os
 import re
@@ -169,6 +170,7 @@ EDITS = os.environ.get('AEF_EDITS_DIR') or os.path.join(WEB, 'edits')  # correct
 RANGE = re.compile(r'bytes=(\d*)-(\d*)$')
 API_TEXT = re.compile(rf'^/api/text/({ids.BOOK})/({ids.PAGE})$')
 API_OCR_REGION = re.compile(rf'^/api/ocr-region/({ids.BOOK})/({ids.PAGE})$')
+API_AI_READ = re.compile(rf'^/api/ai-read/({ids.BOOK})/({ids.PAGE})$')  # an area of a page read by the AI (shown to be checked)
 API_SEARCH = re.compile(rf'^/api/search/({ids.BOOK})$')
 API_REC = re.compile(r'^/api/recordings/(r\d{8}-\d{6}-[0-9a-f]{4})$')
 API_WORD = re.compile(r'^/api/words/(w[0-9a-f]{12})$')
@@ -1624,6 +1626,9 @@ class Handler(SimpleHTTPRequestHandler):
         region = API_OCR_REGION.match(path)
         if region:
             return self.post_ocr_region(*region.groups()) if self.feature('correction') else None
+        ai_read = API_AI_READ.match(path)
+        if ai_read:
+            return self.post_ai_read(*ai_read.groups()) if self.feature('correction') else None
         if path == '/api/quit' and MODE != 'public' and not TRUST_PROXY and self.client_address[0] == '127.0.0.1':
             # A newer copy of the app is starting: make room for it.
             self.send_json({'ok': True})
@@ -2084,6 +2089,25 @@ class Handler(SimpleHTTPRequestHandler):
                 crop_path = os.path.join(tmp, 'selected-area.png')
                 image.crop((x, y, x1, y1)).save(crop_path)
                 raw = library.read_png(crop_path, language, read, lambda k: tell(at=1 + k), second)
+                if not any(ln.get('words') for ln in raw.get('lines', [])):
+                    # Nothing found: faint or small print. Once more, from the crop made bigger and clearer.
+                    big, scale, pad = library.enlarged(image.crop((x, y, x1, y1)))
+                    big_path = os.path.join(tmp, 'selected-area-big.png')
+                    big.save(big_path)
+                    raw = library.read_png(big_path, language, read, lambda k: tell(at=1 + k), second)
+                    for line in raw.get('lines', []):
+                        for word in line.get('words', []):
+                            word['x'], word['y'] = (word['x'] - pad) / scale, (word['y'] - pad) / scale
+                            word['w'], word['h'] = word['w'] / scale, word['h'] / scale
+                if not any(ln.get('words') for ln in raw.get('lines', [])) and ids.LIBRARY_BOOK_RE.match(book):
+                    # Still nothing: the text the PDF itself has there (the page was first read from it).
+                    own = library.pdf_text_in_area(b, number, x, y, x1, y1)
+                    if own:
+                        for line in own['lines']:
+                            for word in line['words']:
+                                word['x'] -= x
+                                word['y'] -= y
+                        raw = {'w': raw.get('w', image.width), 'h': raw.get('h', image.height), 'lines': own['lines']}
             finally:
                 _ocr_region_lock.release()
             tell(at=1 + len(passes))
@@ -2101,6 +2125,68 @@ class Handler(SimpleHTTPRequestHandler):
             if stream:
                 return tell(error=str(e) or 'The page could not be read.')
             return self.send_json({'error': str(e) or 'The selected area could not be read.'}, 400)
+
+    def post_ai_read(self, book, page):
+        """The printed text of one area of a page, read by the AI (the OpenAI key of Admin → API): {"lines": [...]}.
+        The owner checks it in the review before it is used. Counted like an AI layout page."""
+        if not self.book_access(book, write=True):
+            return self.need_account() if ids.LIBRARY_BOOK_RE.match(book) and not self.user() else self.denied()
+        info = self.layout_ai_info()
+        if not info['can']:
+            return self.denied('The admin has not enabled AI for your account.')
+        if not info['ready']:
+            return self.send_json({'error': 'Add an OpenAI API key under Admin → API first.'}, 400)
+        req = self.read_body()
+        if not isinstance(req, dict):
+            return self.send_json({'error': 'bad request'}, 400)
+        user = self.user()
+        counted = MODE == 'public' and not user['admin'] and bool(access.left(user, 'layout'))
+        if not user['admin'] and not counted and accounts.limited('layout-ai', str(user['id']), info['dailyLimit'] * 5, 86400):
+            return self.send_json({'error': 'Your daily AI limit is reached. Try tomorrow.'}, 429)
+        if counted:
+            try:
+                access.spend(user, 'layout', 1)
+            except access.AccessError as e:
+                return self.send_json({'error': str(e)}, e.status)
+        try:
+            if ids.LIBRARY_BOOK_RE.match(book):
+                number = int(page[1:])
+                b = library.get(book)
+                if not any(int(p['n']) == number for p in library._pages(b)):
+                    raise ValueError('page not found')
+                image_path, language = library.folder(book, 'pages', f'{number}.webp'), library._options(b)['language']
+            else:
+                b = disc_by_slug(book)
+                entry = next((p for p in (b or {}).get('pages', []) if p['path'] == page), None)
+                if not entry:
+                    raise ValueError('page not found')
+                image_path, language = os.path.join(b['_data'], 'pages', b['slug'], page + '.webp'), str(req.get('language') or 'en')
+            coords = [req.get(k) for k in ('x', 'y', 'w', 'h')]
+            if not all(isinstance(v, (int, float)) and 0 <= v <= 10000 for v in coords):
+                raise ValueError('bad region coordinates')
+            with Image.open(image_path) as src:
+                image = src.convert('RGB')
+            x, y, w, h = (int(round(v)) for v in coords)
+            x1, y1 = min(image.width, x + w), min(image.height, y + h)
+            x, y = max(0, x), max(0, y)
+            if x1 - x < 12 or y1 - y < 8:
+                raise ValueError('Select a larger area around the text.')
+            crop = image.crop((x, y, x1, y1))
+            scale = min(3.0, max(1.0, 700 / max(crop.size)))  # (small boxes are shown bigger, big ones not)
+            if scale > 1:
+                crop = crop.resize((round(crop.width * scale), round(crop.height * scale)), Image.LANCZOS)
+            crop.thumbnail((2000, 2000), Image.LANCZOS)
+            png = io.BytesIO()
+            crop.save(png, 'PNG')
+            key, model, _ = layout_ai.settings(auth.config())
+            lines = layout_ai.read_text(png.getvalue(), key, model, ocr.LANGUAGES.get(language, ('', ''))[0])
+            if counted and not lines:
+                access.give_back(user, 'layout', 1)
+            return self.send_json({'lines': lines})
+        except (ValueError, StopIteration, OSError, layout_ai.LayoutError, library.LibraryError) as e:
+            if counted:
+                access.give_back(user, 'layout', 1)
+            return self.send_json({'error': str(e) or 'The area could not be read.'}, 400)
 
     def post_translate(self, path):
         u = self.user()

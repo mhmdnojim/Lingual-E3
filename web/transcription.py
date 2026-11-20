@@ -602,8 +602,10 @@ def _run(aid, path, language='en', how=None, keep=True, token=None):
             with _lock:
                 _jobs.pop(aid, None)
     except ImportError:
-        _update(aid, state='error', at=time.time(), error='Speech recognition is not set up. Add a key of ElevenLabs (Speech recognition…), '
-                                         'or run Setup transcription.bat and restart the app.')
+        how_to = ('Add a key of ElevenLabs (Speech recognition…), or run Setup transcription.bat and restart the app.'
+                  if sys.platform == 'win32' else
+                  'The owner adds a key of ElevenLabs: Speech recognition… (next to Transcribe), or Library → Admin → API.')
+        _update(aid, state='error', at=time.time(), error='Speech recognition is not set up. ' + how_to)
     except (ValueError, FileNotFoundError) as error:
         _update(aid, state='error', error=str(error), at=time.time())
     except Exception as error:

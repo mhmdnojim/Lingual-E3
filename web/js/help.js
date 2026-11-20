@@ -78,6 +78,10 @@ export const HELP = {
   're-read an area': { d: 'Reads part of the page again with OCR (text recognition) when the text is wrong or missing.', use: ['Press it, draw one box or several on the page.', 'Press Read; check what was found; keep it or not.'] },
   'add a sentence after': { d: 'Adds a new, empty sentence after the chosen one, for text that is missing.', use: ['Press it, type the text, press Enter.'] },
   'delete': { d: 'Deletes the chosen sentence. Undo brings it back.', use: ['Choose it and press this button (or the Delete key).'] },
+  'edit-tools-toggle': { d: 'Folds the editing buttons away (and shows them again) so the text list has more room. They fold by themselves while a re-read is being reviewed.', use: ['Click it to fold or show them. It is kept.'] },
+  'panel-resize': { d: 'The width of this side panel. A wider panel gives the text more room.', use: ['Drag the edge left or right, or use the arrow keys.', 'Double-click: wide / normal. It is kept.'] },
+  'data-op:ocr-ai': { d: 'The AI looks at the picture inside this box and writes the printed text it sees: for faint or small print the OCR could not read. Its text goes into the boxes below, for you to check and correct.', use: ['Press it and wait a few seconds.', 'Check the lines, fix any mistake, untick any you do not want.', 'Press “Add selected sentences”.'], note: 'Needs the OpenAI key (Admin → API) and AI left on your account.' },
+  'data-op:ocr-ai-all': { d: 'The AI reads every area that has no text yet, one after the other. You check what it wrote.', use: ['Press it, wait, then check each area.'] },
   // ---- The player and dialogs
   'pl-play': { d: 'Plays or pauses the audio or video.', use: ['Click it, or press the space bar.'] },
   'pl-rate': { d: 'Changes the speed of the audio: slower for learning, faster for review.', use: ['Choose a speed from the list.'] },
@@ -138,7 +142,7 @@ function nameOf(node) {
 }
 
 function entryOf(node) {
-  const data = ['mode', 'lang', 'ptab', 'dtab', 'tab', 'scope'].map((a) => (node.dataset[a] ? `data-${a}:${node.dataset[a]}` : ''));
+  const data = ['mode', 'lang', 'ptab', 'dtab', 'tab', 'scope', 'op'].map((a) => (node.dataset[a] ? `data-${a}:${node.dataset[a]}` : ''));
   const keys = [node.dataset.help, node.id, ...data, ...[...node.classList].filter((c) => HELP[c]), norm(node.getAttribute('aria-label')), norm(node.textContent), norm(node.dataset.helpTitle ?? node.getAttribute('title'))];
   for (const k of keys) if (k && HELP[k]) return HELP[k];
   return null;

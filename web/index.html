@@ -317,6 +317,7 @@
 
   <aside class="panel" id="panel" aria-label="Side panel">
     <!-- Phones: the panel is a sheet at the bottom; drag this bar to make it taller or shorter, tap it to open or close. -->
+    <div class="panel-resize" id="panel-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Width of the side panel" title="Drag to make the panel wider or narrower. Double-click: wide / normal. Arrow keys also work."></div>
     <div class="sheet-handle" id="sheet-handle" role="button" aria-label="Open or close the panel" tabindex="-1"><span></span></div>
     <div class="tabs" role="tablist">
       <button role="tab" data-tab="text" aria-selected="true"><svg class="i"><use href="#i-text"/></svg>Text</button>
@@ -337,6 +338,7 @@
       <div class="panel-actions edit-actions" id="edit-actions" hidden>
         <button class="btn primary" id="edit-done" title="Finish correcting (E)"><svg class="i"><use href="#i-check"/></svg>Done</button>
         <button class="icon-btn" id="edit-undo" title="Undo (Ctrl+Z)" aria-label="Undo"><svg class="i"><use href="#i-back"/></svg></button>
+        <button class="icon-btn" id="edit-tools-toggle" title="Show or hide the editing buttons below, for more room for the text" aria-label="Show or hide the editing buttons" aria-pressed="true"><svg class="i"><use href="#i-sliders"/></svg></button>
         <button class="icon-btn" id="edit-reset" title="Restore the original text of this page" aria-label="Restore the original text"><svg class="i"><use href="#i-restore"/></svg></button>
         <span class="edit-status" id="edit-status" role="status"></span>
         <div class="edit-tools" id="edit-tools" role="toolbar" aria-label="Correct the selected sentence">

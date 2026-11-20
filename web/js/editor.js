@@ -1,7 +1,7 @@
 // Text corrections: change, split, merge, move, add and delete sentences, start or join
 // paragraphs, and mark where a sentence is on the page. Each page is saved on the local
 // server (web/edits/), so corrections survive a rebuild of web/data.
-import { $, $$, el, icon, toast, forgetJSON } from './util.js';
+import { $, $$, el, icon, toast, forgetJSON, store } from './util.js';
 import { clauseRanges, tokenize } from './segment.js';
 import { replacePicture } from './pictures.js';
 import { PlayButtons } from './playbuttons.js';
@@ -777,6 +777,15 @@ export class TextEditor {
     $('#edit-done').addEventListener('click', () => this.stop());
     $('#edit-undo').addEventListener('click', () => this.undo());
     $('#edit-reset').addEventListener('click', () => this.reset());
+    // The editing buttons can be folded away (more room for the text); folded by themselves while a review is open.
+    const foldBtn = $('#edit-tools-toggle'), folded = store.get('editToolsFolded', false);
+    $('#edit-actions').classList.toggle('tools-folded', !!folded);
+    foldBtn.setAttribute('aria-pressed', String(!folded));
+    foldBtn.addEventListener('click', () => {
+      const now = $('#edit-actions').classList.toggle('tools-folded');
+      foldBtn.setAttribute('aria-pressed', String(!now));
+      store.set('editToolsFolded', now);
+    });
     // The tools for the selected sentence, at the top of the panel.
     for (const bar of ['#edit-tools', '#edit-bulk']) {
       $(bar).addEventListener('click', (e) => {
@@ -1693,6 +1702,46 @@ export class TextEditor {
     }
   }
 
+  /**
+   * One area of the review read by the AI (what the OCR could not): its lines go into the area's boxes to be
+   * checked and corrected, never straight into the page. Needs the OpenAI key (Admin → API).
+   */
+  async readAreaWithAI(areaNode, button) {
+    const pv = this.ocrPreview;
+    const k = Number(areaNode?.dataset.area);
+    const rect = pv?.areas?.[k]?.rect;
+    if (!rect || button?.disabled) return;
+    const view = pv.view;
+    const info = await fetch('/api/layout-ai').then((r) => r.json()).catch(() => null);
+    if (!info?.ready) { toast('The AI is not set up: the owner adds an OpenAI key under Library → Admin → API.'); return; }
+    if (!info.can) { toast('AI is not on for your account (no AI pages left, or the admin has not allowed it).'); return; }
+    const label = button?.textContent;
+    if (button) { button.disabled = true; button.textContent = 'The AI is reading…'; }
+    try {
+      const r = await fetch(`/api/ai-read/${view.book.slug}/${view.page.path}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...rect, language: this.areaLanguages(view.book).lang }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || 'The AI could not read this area.');
+      if (this.ocrPreview !== pv || !areaNode.isConnected) return;
+      if (!d.lines?.length) { toast('The AI saw no printed text in this area. Type it yourself, or draw a bigger box.'); return; }
+      const list = areaNode.querySelector('.ocr-preview-rows');
+      for (const row of [...list.querySelectorAll('.ocr-preview-line[data-typed]')]) if (!row.querySelector('textarea').value.trim()) row.remove();
+      for (const line of d.lines) {
+        const text = el('textarea', { rows: 2, 'aria-label': 'Type the sentence', spellcheck: 'true' });
+        text.value = line;
+        list.append(el('label', { class: 'ocr-preview-line', dataset: { typed: 1 } }, el('input', { type: 'checkbox', checked: true, 'aria-label': 'Use this sentence' }), el('span', { class: 'ocr-n plain' }), text));
+        autosize(text);
+      }
+      toast(`The AI read ${d.lines.length} line${d.lines.length === 1 ? '' : 's'}: check them, then press “Add selected sentences”.`);
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      if (button?.isConnected) { button.disabled = false; button.textContent = label; }
+    }
+  }
+
   /** The selected sentence's frame changed on the page (to): its words read again there. */
   readFrame(view, to) {
     const s = this.sel;
@@ -1834,6 +1883,14 @@ export class TextEditor {
         this.cancelMarking();
         if (base) this.ocrPreview = base;
         this.render();
+        return true;
+      }
+      case 'ocr-ai': // the review of an area: its text read by the AI, to be checked
+        this.readAreaWithAI(btn?.closest('.ocr-area'), btn);
+        return true;
+      case 'ocr-ai-all': { // every area with no text
+        const empty = $$('.ocr-area', this.box).filter((a) => ![...a.querySelectorAll('.ocr-preview-line textarea')].some((t) => t.value.trim()));
+        (async () => { for (const a of empty) await this.readAreaWithAI(a, a.querySelector('[data-op="ocr-ai"]')); })();
         return true;
       }
       case 'ocr-type': { // the review of an area: a sentence typed by hand (in that area)
@@ -2087,6 +2144,7 @@ export class TextEditor {
       : 'Click a sentence (here or on the page), then use the buttons above. Double-click a sentence (or press Enter) to change its text; drag it by its number to move it, '
         + 'or the handles of its frame on the page to change its place. Tick the boxes (or Ctrl+click on the page) to choose several sentences. '
         + 'Missing or wrong text: re-read an area, or the whole page. Sentences in the wrong order: “Order by areas”. Changes are saved automatically.')];
+    this.reviewWidth(!!(this.pageRead || this.ocrPreview));
     if (this.pageRead || this.ocrPreview) {
       out.push(this.pageRead ? this.renderPageRead() : this.renderOcrPreview());
       this.box.replaceChildren(...out);
@@ -2106,12 +2164,7 @@ export class TextEditor {
         const body = this.box.closest('.tab-body');
         const bar = body?.querySelector('.panel-actions:not([hidden])'); // (it stays at the top)
         review.style.scrollMarginTop = `${(bar?.offsetHeight || 0) + 8}px`;
-        const actions = !this.pageRead && !this.ocrPreview.whole && review.querySelector('.ocr-preview-actions');
-        if (actions && body && review.offsetHeight > body.clientHeight - (bar?.offsetHeight || 0) - 16) {
-          actions.style.scrollMarginBottom = '24px';
-          actions.scrollIntoView({ block: 'end' });
-          return; // (no caret in a line out of view)
-        }
+        review.style.setProperty('--ocr-sticky', `${bar?.offsetHeight || 0}px`); // (its buttons stay under the panel's bar)
         review.scrollIntoView({ block: 'start' });
         if (!input) return;
         input.focus({ preventScroll: true });
@@ -2165,8 +2218,9 @@ export class TextEditor {
       if (!view.text) { view.showOutlines([]); view.showFrame(null); continue; }
       const set = inAreas ? (this.ordering.view === view ? inAreas : null) : this.checked.get(view);
       const selected = this.sel?.view === view && view.doc?.blocks[this.sel.bi] ? this.flatIndex(this.sel) : -1;
+      const quiet = !!(this.readingAreas || this.ocrPreview || this.pageRead || this.boxing || this.marking); // (the numbers of the sentences would cover the page)
       view.showOutlines(view.doc.sent.map(([a, b], s) => ({
-        rects: view.text.rects(a, b, 0.08), n: s + 1, cls: `o${s === selected ? ' sel' : ''}${set?.has(s) ? ' chk' : ''}${this.mergeSequence?.view === view && this.mergeSequence.list.some((p) => view.doc.blocks[p.bi]?.[0] + p.si === s) ? ' merge-picked' : ''}`,
+        rects: view.text.rects(a, b, 0.08), n: s + 1, cls: `o${quiet ? ' quiet' : ''}${s === selected ? ' sel' : ''}${set?.has(s) ? ' chk' : ''}${this.mergeSequence?.view === view && this.mergeSequence.list.some((p) => view.doc.blocks[p.bi]?.[0] + p.si === s) ? ' merge-picked' : ''}`,
       })));
       // The frame: drag its handles to change the size and place of the sentence on the page.
       const words = selected >= 0 ? view.doc.words.slice(...view.doc.sent[selected]).filter((w) => w[2] > 0 || w[3] > 0) : [];
@@ -2180,6 +2234,20 @@ export class TextEditor {
       view.showFrame(from, (to) => { this.run('fit', { from, to }, sel); this.readFrame(view, to); });
     }
     this.showFound();
+  }
+
+  /** A review of read text is open: the side panel is made wider (and the editing buttons fold) for the text; back after. */
+  reviewWidth(on) {
+    const root = document.documentElement, bar = $('#edit-actions');
+    bar.classList.toggle('reviewing', on);
+    const wide = window.innerWidth >= 1100 && root.dataset.device !== 'phone';
+    if (on && wide && this.widenedFrom === undefined && $('#panel').offsetWidth < 480) {
+      this.widenedFrom = root.style.getPropertyValue('--panel-w');
+      root.style.setProperty('--panel-w', '480px');
+    } else if (!on && this.widenedFrom !== undefined) {
+      if (this.widenedFrom) root.style.setProperty('--panel-w', this.widenedFrom); else root.style.removeProperty('--panel-w');
+      this.widenedFrom = undefined;
+    }
   }
 
   /** The bar for the whole page and the chosen sentences. */
@@ -2259,11 +2327,19 @@ export class TextEditor {
       return el('div', { class: 'ocr-area', dataset: { area: k } },
         areas.length > 1 ? el('h5', {}, `Area ${k + 1}: ${n(own.length, 'sentence')}`) : null,
         el('div', { class: 'ocr-preview-rows' }, ...(own.length || typed.length ? [...own, ...typed] : [typedRow()])),
-        el('button', { class: 'link-btn', type: 'button', dataset: { op: 'ocr-type' } }, '+ Type a sentence yourself'),
+        el('div', { class: 'ocr-area-tools' },
+          el('button', { class: 'link-btn', type: 'button', dataset: { op: 'ocr-type' } }, '+ Type a sentence yourself'),
+          el('button', { class: 'link-btn ocr-ai-btn', type: 'button', dataset: { op: 'ocr-ai' }, title: 'The AI reads the printed text in this box (faint or small print the OCR missed). You check it before it is used. Needs the OpenAI key (Admin → API).' }, '✨ Read this area with AI')),
         el('label', { class: 'check ocr-replace-row' }, el('input', { type: 'checkbox', class: 'ocr-replace', checked: restore?.areas[k]?.replace ?? a.there > 0 }),
           ` Replace the text in this area${a.there ? ` (${n(a.there, 'word')} now)` : ' (there is none)'}`));
     });
+    const actions = el('div', { class: 'ocr-preview-actions top' },
+      el('button', { class: 'btn primary', type: 'button', onclick: () => this.acceptOcrPreview(section) }, 'Add selected sentences'),
+      whole ? null : el('button', { class: 'btn', type: 'button', dataset: { op: 'ocr-more' } }, '+ Draw more areas'),
+      whole || !sentences.length && areas.length ? el('button', { class: 'btn', type: 'button', dataset: { op: 'ocr-ai-all' }, title: 'The AI reads the areas that have no text. You check what it read.' }, '✨ Read empty areas with AI') : null,
+      el('button', { class: 'btn', type: 'button', onclick: () => { this.ocrPreview = null; this.render(); } }, 'Cancel'));
     const section = el('section', { class: 'ocr-preview' },
+      actions,
       el('h4', {}, whole ? `Review the text read again on page ${view.page.n} (${n(sentences.length, 'sentence')})`
         : areas.length > 1 ? `Review the text found in ${areas.length} areas (${n(sentences.length, 'sentence')})`
           : `Review text found in the selected area (${sentences.length} sentences)`),
@@ -2277,11 +2353,7 @@ export class TextEditor {
             areas.length > 1 ? ' The areas are numbered on the page as you drew them.' : ''}`)),
       ...(whole ? [el('div', { class: 'ocr-preview-rows' }, ...rows),
         el('button', { class: 'link-btn', type: 'button', dataset: { op: 'ocr-type' } }, '+ Type a sentence yourself'),
-        el('label', { class: 'check ocr-replace-row' }, replace, ` Replace the text you did not correct${there ? ` (${n(there, 'word')} now)` : ' (there is none)'}`)] : parts),
-      el('div', { class: 'ocr-preview-actions' },
-        el('button', { class: 'btn primary', type: 'button', onclick: () => this.acceptOcrPreview(section) }, 'Add selected sentences'),
-        whole ? null : el('button', { class: 'btn', type: 'button', dataset: { op: 'ocr-more' } }, '+ Draw more areas'),
-        el('button', { class: 'btn', type: 'button', onclick: () => { this.ocrPreview = null; this.render(); } }, 'Cancel')));
+        el('label', { class: 'check ocr-replace-row' }, replace, ` Replace the text you did not correct${there ? ` (${n(there, 'word')} now)` : ' (there is none)'}`)] : parts));
     // Ticking and pointing at a sentence: shown on the page at once.
     const row = (e) => e.target.closest?.('.ocr-preview-line[data-k]');
     section.addEventListener('change', (e) => {
