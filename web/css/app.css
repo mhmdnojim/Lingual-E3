@@ -2083,3 +2083,4 @@ body.resizing-panel { user-select: none; cursor: col-resize; }
 .transcribe-bar { margin: 6px 0 4px; }
 .bc-where { background: none; border: 0; padding: 0; text-align: left; cursor: pointer; font-family: inherit; }
 .bc-where:hover span { color: var(--text); text-decoration: underline; }
+.bc-move { margin: 4px 0 0; font-size: 12.5px; }

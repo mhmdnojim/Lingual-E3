@@ -121,6 +121,17 @@ def _pages(b):
     return json.loads(b['pages'] or '[]')
 
 
+def _source_size(b):
+    """The bytes of the file(s) the book was made from (its PDF, Word file or photos), 0 when not known."""
+    total = 0
+    try:
+        for root, _dirs, files in os.walk(folder(b['id'], 'source')):
+            total += sum(os.path.getsize(os.path.join(root, f)) for f in files)
+    except OSError:
+        pass
+    return total
+
+
 def summary(b, user):
     pages = _pages(b)
     owner = db.one('SELECT name FROM users WHERE id = ?', (b['owner'],))
@@ -131,7 +142,7 @@ def summary(b, user):
         'visibility': b['visibility'], 'license': b['license'], 'licenseName': LICENSES.get(b['license'], ''),
         'source': b['source'], 'hidden': bool(b['hidden']), 'status': b['status'], 'error': b['error'],
         'language': b.get('lang', 'en'),
-        'pageCount': len(pages), 'owner': owner['name'] if owner else '', 'mine': bool(user and b['owner'] == user['id']),
+        'size': _source_size(b), 'pageCount': len(pages), 'owner': owner['name'] if owner else '', 'mine': bool(user and b['owner'] == user['id']),
         'canEdit': can_edit(b, user), 'created': b['created'], 'updated': b['updated'],
         'cover': f"/lib/{b['id']}/thumbs/1.webp?v={v}" if pages else None, 'job': job(b['id']),
     }

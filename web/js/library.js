@@ -115,6 +115,14 @@ const DRAG = 'application/x-lingua-item'; // (what is dragged is a branch or boo
 /** The phone's layout (js/device.js: automatic or chosen): the tree comes over the books, when asked. */
 const isPhone = () => (window.linguaDevice ? window.linguaDevice.isPhone() : matchMedia('(max-width: 700px)').matches);
 
+/** 1234567 -> '1.2 MB' (the size of the file a book was made from: tells apart books with the same name). */
+function fileSize(bytes) {
+  if (!bytes) return '';
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  const mb = bytes / (1024 * 1024);
+  return mb < 1024 ? `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB` : `${(mb / 1024).toFixed(1)} GB`;
+}
+
 /** The address of a branch of the library: #/@/<main branch>/<sub-branch>/…, or #/ (the top). */
 const folderHash = (path) => (path.length ? `#/@/${path.map(encodeURIComponent).join('/')}` : '#/');
 
@@ -462,21 +470,24 @@ export class Library {
     else if (b.status === 'error') cover = el('div', { class: 'cover-note err' }, b.error || 'Something went wrong.');
     else cover = el('div', { class: 'cover-note' }, b.sample ? 'Not finished: check its sample' : 'Not finished');
     const author = b.disc && here.length ? '' : b.author; // (the disc's name: what its branches say)
-    const meta = [author, b.pageCount ? `${b.pageCount} page${b.pageCount === 1 ? '' : 's'}` : '', !b.mine && b.owner && !b.disc ? `shared by ${b.owner}` : '']
+    const meta = [author, b.pageCount ? `${b.pageCount} page${b.pageCount === 1 ? '' : 's'}` : '', fileSize(b.size), !b.mine && b.owner && !b.disc ? `shared by ${b.owner}` : '']
       .filter(Boolean).join(' · ');
     const title = shortTitle(b.title, here);
     const full = this.pathOf?.(b) || [];
     let where = full.filter((name) => !here.includes(name) && !title.includes(name)).join(' › ');
     // (a book in no branch: say so, and in which tab, else two books at the top look as if they were nowhere)
     if (!where && !full.length && !here.length) where = `Top of ${this.scopes().find(([k]) => k === this.scope)?.[1] || 'the library'} (no branch)`;
+    const item = this.bookItem(b);
     return this.manageable(el('article', { class: 'book-card', dataset: { id: b.id, ...(b.link ? { link: b.link } : {}) } },
       el('button', { class: 'bc-cover', 'aria-label': `Open ${b.title}`, onclick: () => this.openBook(b) }, cover),
       el('div', { class: 'bc-body' },
         el('h3', {}, el('button', { class: 'bc-title', onclick: () => this.openBook(b) }, title)),
         where ? el('button', { class: 'bc-where', type: 'button', html: icon('folder'), title: `Open this branch: ${full.join(' › ') || 'the top'}`,
           onclick: () => this.openFolder(full) }, el('span', {}, where)) : null,
+        this.mayManage(item) ? el('button', { class: 'link-btn bc-move', type: 'button', title: 'Put this book in another branch (also in the ⋮ menu)',
+          onclick: () => this.moveDialog(item) }, 'Move to…') : null,
         meta ? el('p', { class: 'bc-meta' }, meta) : null,
-        el('p', { class: 'bc-badges' }, ...badges))), this.bookItem(b));
+        el('p', { class: 'bc-badges' }, ...badges))), item);
   }
 
   // ---------------------------------------------------------------- The tree of branches (on the left)
