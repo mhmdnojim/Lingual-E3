@@ -308,8 +308,31 @@ def layout_lines(raw, image=None):
     return {**raw, 'lines': _reading_order(out)}
 
 
+def reading_order(areas):
+    """The boxes in reading order (the same as the editor's "Order boxes automatically"): the page is split by the empty
+    bands between boxes (across first: a heading over two columns comes first; then down: the left column before the right
+    one); inside a part with no band, the higher box first, then the one further left. Areas: dicts with x, y, w, h."""
+    def cut(items):
+        if len(items) < 2:
+            return list(items)
+        for p, size in (('y', 'h'), ('x', 'w')):
+            ordered = sorted(items, key=lambda a: a[p])
+            groups, end = [[ordered[0]]], ordered[0][p] + ordered[0][size]
+            for a in ordered[1:]:
+                if a[p] >= end:
+                    groups.append([a])
+                else:
+                    groups[-1].append(a)
+                end = max(end, a[p] + a[size])
+            if len(groups) > 1:
+                return [x for g in groups for x in cut(g)]
+        return sorted(items, key=lambda a: (a['y'], a['x']))
+    return cut(areas)
+
+
 def paragraph_areas(doc, w, h):
-    """One outline per paragraph, without merging neighbouring blocks into a template."""
+    """One outline per paragraph, without merging neighbouring blocks into a template; in reading order (columns:
+    the left one first), as the editor orders boxes."""
     areas = []
     for sa, sb in doc['blocks']:
         if sa >= sb:
@@ -322,7 +345,7 @@ def paragraph_areas(doc, w, h):
         x0, y0 = max(0, x0 - pad), max(0, y0 - pad)
         x1, y1 = min(w, x1 + pad), min(h, y1 + pad)
         areas.append({'x': x0 / w, 'y': y0 / h, 'w': (x1 - x0) / w, 'h': (y1 - y0) / h, 'kind': 'paragraph'})
-    return areas[:MOST_AREAS]
+    return reading_order(areas)[:MOST_AREAS]
 
 
 # ---------------------------------------------------------------- Reading a page by its areas

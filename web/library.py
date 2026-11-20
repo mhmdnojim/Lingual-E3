@@ -868,6 +868,10 @@ def review_layout(b, n, fresh=False):
                 # The owner corrected this page's text in the reader and saved no boxes of their own for it:
                 # start from the paragraphs of the corrected text, so the boxes match what the reader shows.
                 areas = designs.paragraph_areas(doc, img.width, img.height)
+            if areas is None and not saved.get('checked') and doc.get('blocks') and doc.get('words'):
+                # The designs were never checked by the owner, so their boxes were not used to read this page: show the
+                # paragraphs its text really has (as "Read this page again" does), in reading order.
+                areas = designs.paragraph_areas(doc, img.width, img.height)
             if areas is None:
                 areas = (design or {}).get('areas') or []
             if not areas and doc.get('words'):
