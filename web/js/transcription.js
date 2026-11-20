@@ -59,19 +59,22 @@ export async function speechDialog(app, onChange = null) {
   const changed = (d) => { info = d; onChange?.(d); };
   const ways = () => {
     const seg = el('div', { class: 'seg speech-ways', role: 'radiogroup', 'aria-label': 'How recordings are transcribed' },
-      ...[['eleven', 'ElevenLabs (on the internet)'], ['local', 'This computer (Whisper)']].map(([k, label]) =>
+      ...[['eleven', 'ElevenLabs (on the internet)'], ['openai', 'OpenAI Whisper (on the internet)'], ['local', 'This computer (Whisper)']].map(([k, label]) =>
         el('button', { type: 'button', role: 'radio', 'aria-checked': String(info.engine === k), dataset: { engine: k }, disabled: !info.owner }, label)));
     const state = el('p', { class: 'hint', 'aria-live': 'polite' });
     const tell = () => {
       state.textContent = info.engine === 'eleven'
         ? 'ElevenLabs writes down what is said, tells the speakers apart, and knows 90+ languages. It is quick; each hour of sound costs some of your ElevenLabs credits.'
-        : info.local ? 'Whisper on this computer: free and without internet, slower, English (and Chinese with its bigger model).'
-          : 'Speech recognition on this computer is not installed (Setup transcription.bat). Use ElevenLabs, or install it.';
+        : info.engine === 'openai'
+          ? 'OpenAI Whisper writes down what is said, in many languages, with your OpenAI key (Library → Admin → API). It costs a few cents for each hour of sound and does not tell the speakers apart.'
+          : info.local ? 'Whisper on this computer: free and without internet, slower, English (and Chinese with its bigger model).'
+            : 'Whisper is not installed on this computer yet. On your laptop run Setup transcription.bat; on the website the owner runs the update (update.sh), which installs it. Or use ElevenLabs or OpenAI.';
     };
     seg.addEventListener('click', async (e) => {
       const b = e.target.closest('button');
       if (!b || b.dataset.engine === info.engine) return;
       if (b.dataset.engine === 'eleven' && !info.ready) { how.replaceChildren(...keyForm()); return; }
+      if (b.dataset.engine === 'openai' && !info.openaiReady) { state.textContent = 'There is no OpenAI key yet: the owner adds one under Library → Admin → API (OpenAI), then chooses this again.'; return; }
       try { changed(await api('PUT', '/api/speech-ai', { engine: b.dataset.engine })); } catch (err) { state.textContent = err.message; return; }
       seg.querySelectorAll('button').forEach((x) => x.setAttribute('aria-checked', String(x.dataset.engine === info.engine)));
       tell();

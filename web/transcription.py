@@ -257,7 +257,8 @@ def language_code(language):
 
 def local_ready():
     """Is speech recognition on this computer installed (Setup transcription.bat)?"""
-    return (MODEL_DIR / 'model.bin').is_file() and (PACKAGES / 'faster_whisper').is_dir()
+    import importlib.util
+    return (MODEL_DIR / 'model.bin').is_file() and ((PACKAGES / 'faster_whisper').is_dir() or importlib.util.find_spec('faster_whisper') is not None)
 
 
 # ---------------------------------------------------------------- ElevenLabs (Speech to Text)
@@ -270,6 +271,8 @@ def speech_settings(config):
     """(key, model, engine) of transcription: ElevenLabs's key and model (web/server-config.json
     'speechKey', 'speechModel'; else ELEVENLABS_API_KEY) and the way used: 'eleven' when there is a
     key, unless this computer was chosen ('speechEngine': 'local'); else 'local'."""
+    if config.get('speechEngine') == 'openai':  # OpenAI (Whisper on the internet), with the OpenAI key of the Admin page
+        return openai_key(config), OPENAI_MODEL, 'openai'
     key = config.get('speechKey') or os.environ.get('ELEVENLABS_API_KEY', '')
     engine = 'local' if not key or config.get('speechEngine') == 'local' else 'eleven'
     return key, config.get('speechModel') or SPEECH_MODEL, engine
@@ -393,6 +396,113 @@ def _eleven(path, key, model, language, speakers, timeout, info):
     return cues
 
 
+# ---------------------------------------------------------------- OpenAI (Whisper on the internet)
+
+OPENAI_API = os.environ.get('LB_OPENAI_API', 'https://api.openai.com/v1')  # (tests: a stand-in)
+OPENAI_MODEL = 'whisper-1'
+OPENAI_LIMIT = 24 * 2 ** 20  # OpenAI takes files up to 25 MB: longer sound is cut in pieces
+PIECE_SECONDS = 1200
+ONLINE = ('eleven', 'openai')
+MADE_BY = {'eleven': 'elevenlabs/', 'openai': 'openai/'}
+NAMES = {'english': 'en', 'chinese': 'zh', 'arabic': 'ar', 'french': 'fr', 'german': 'de', 'spanish': 'es', 'italian': 'it',
+         'portuguese': 'pt', 'russian': 'ru', 'turkish': 'tr', 'persian': 'fa', 'urdu': 'ur', 'hindi': 'hi', 'japanese': 'ja',
+         'korean': 'ko', 'dutch': 'nl', 'polish': 'pl', 'indonesian': 'id', 'vietnamese': 'vi', 'thai': 'th'}
+NO_SPACE = re.compile('[\u3040-\u30ff\u3400-\u9fff\u0e00-\u0e7f]')  # Chinese, Japanese, Thai: no space between words
+
+
+def openai_key(config):
+    """The OpenAI key for transcription: the one of the page layouts, or of the pictures, or OPENAI_API_KEY."""
+    return str(config.get('layoutKey') or config.get('imageKey') or os.environ.get('OPENAI_API_KEY', '') or '').strip()
+
+
+def _pieces(path):
+    """[(bytes, file name, kind, seconds from the start)] sent to OpenAI: the sound as it is when it is small enough;
+    else cut into pieces of 20 minutes (needs ffmpeg)."""
+    data, name, kind = _sound_of(path)
+    if len(data) <= OPENAI_LIMIT:
+        return [(data, name, kind, 0.0)]
+    exe = _ffmpeg()
+    if not exe:
+        raise SpeechError('This sound is over 25 MB and OpenAI takes no more. Use ElevenLabs, or a shorter file.')
+    with tempfile.TemporaryDirectory() as folder:
+        try:
+            subprocess.run([exe, '-v', 'error', '-i', str(path), '-vn', '-ac', '1', '-ar', '16000', '-b:a', '48k',
+                            '-f', 'segment', '-segment_time', str(PIECE_SECONDS), '-reset_timestamps', '1',
+                            str(Path(folder) / 'p%04d.mp3')], capture_output=True, timeout=3600)
+        except (OSError, subprocess.SubprocessError):
+            pass
+        files = sorted(Path(folder).glob('p*.mp3'))
+        if not files:
+            raise SpeechError('This sound could not be cut into pieces for OpenAI. Try another file.')
+        return [(f.read_bytes(), f.name, 'audio/mpeg', float(i * PIECE_SECONDS)) for i, f in enumerate(files)]
+
+
+def _openai_error(e):
+    try:
+        said = json.loads(e.read().decode('utf-8')).get('error') or {}
+    except Exception:
+        said = {}
+    finally:
+        e.close()
+    return str(said.get('code') or ''), str(said.get('message') or '')
+
+
+def _openai_piece(data, name, kind, key, model, language, timeout):
+    fields = [('model', model), ('response_format', 'verbose_json'), ('timestamp_granularities[]', 'word')]
+    if language_code(language):
+        fields.append(('language', language_code(language)))
+    boundary = uuid.uuid4().hex
+    body = b''.join(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode('utf-8') for k, v in fields)
+    body += (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{name}"\r\n'
+             f'Content-Type: {kind}\r\n\r\n').encode('utf-8') + data + f'\r\n--{boundary}--\r\n'.encode('utf-8')
+    req = urllib.request.Request(f'{OPENAI_API}/audio/transcriptions', body,
+                                 {'Content-Type': f'multipart/form-data; boundary={boundary}', 'Authorization': f'Bearer {key}'})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        code, said = _openai_error(e)
+        if e.code == 401:
+            raise SpeechError('OpenAI did not accept the key. Use a key of OpenAI (platform.openai.com → API keys): '
+                              'Library → Admin → API.')
+        if e.code == 429 and code == 'insufficient_quota':
+            raise SpeechError('Your OpenAI account has no credit left for this. Add some at platform.openai.com, then try again.')
+        if e.code == 429:
+            raise SpeechError('OpenAI is busy (too many at once). Try again in a minute.')
+        if e.code == 413:
+            raise SpeechError('This sound is too big for OpenAI (over 25 MB).')
+        raise SpeechError(f'OpenAI said no ({e.code}){": " + said[:300] if said else ""}.')
+    except (urllib.error.URLError, TimeoutError, OSError):
+        raise SpeechError('OpenAI could not be reached (no internet?). Try again.')
+    except ValueError:
+        raise SpeechError('OpenAI sent back something that is not a transcript. Try again.')
+
+
+def openai_transcribe(path, key, model=OPENAI_MODEL, language=None, timeout=1800, info=None):
+    """The timed lines of a recording or video, written down by OpenAI (Whisper): as transcribe() gives. It does not tell
+    the speakers apart. info (a dict): its 'language' put in."""
+    if not key:
+        raise SpeechError('There is no key of OpenAI yet.')
+    words, found = [], None
+    for data, name, kind, offset in _pieces(path):
+        d = _openai_piece(data, name, kind, key, model or OPENAI_MODEL, language, timeout)
+        found = found or d.get('language')
+        for w in d.get('words') or []:
+            text = str(w.get('word') or '').strip()
+            if not text or w.get('start') is None:
+                continue
+            start = float(w['start']) + offset
+            end = max(start, float(w.get('end') if w.get('end') is not None else w['start']) + offset)
+            spaced = words and not NO_SPACE.search(text[0]) and not NO_SPACE.search(words[-1].word[-1])
+            words.append(SimpleNamespace(word=(' ' if spaced else '') + text, start=start, end=end))
+    if info is not None:
+        info['language'] = spoken_language(NAMES.get(str(found or '').lower(), found)) or spoken_language(language) or 'en'
+    cues = sentences([SimpleNamespace(words=words)], [])
+    if not cues:
+        raise ValueError('No speech was detected in this recording.')
+    return cues
+
+
 # ElevenLabs's codes of languages (ISO 639-3, or 639-1) -> the translator's (translate.SOURCES).
 THREE = {'eng': 'en', 'zho': 'zh', 'cmn': 'zh', 'yue': 'zh', 'ara': 'ar', 'fra': 'fr', 'deu': 'de', 'spa': 'es',
          'ita': 'it', 'por': 'pt', 'rus': 'ru', 'tur': 'tr', 'fas': 'fa', 'pes': 'fa', 'urd': 'ur', 'hin': 'hi',
@@ -496,7 +606,7 @@ def start(src, path, language='en', force=False, how=None):
             return dict(current)
         _jobs[aid] = {'state': 'queued', 'message': 'Waiting to transcribe…', 'token': token}
         _stopping.pop(aid, None)
-    online = bool(how and how[2] == 'eleven')
+    online = bool(how and how[2] in ONLINE)
     (_online if online else _pool).submit(_run, aid, path, language, how, True, token)
     return {'state': 'queued', 'message': 'Waiting to transcribe…'}
 
@@ -516,7 +626,7 @@ def stop(srcs, pause=False):
                 else:
                     del _jobs[aid]
                 n += 1
-            elif job.get('state') == 'running' and job.get('engine') != 'eleven':
+            elif job.get('state') == 'running' and job.get('engine') not in ONLINE:
                 _stopping[aid] = 'pause' if pause else 'stop'
                 n += 1
     return n
@@ -544,7 +654,7 @@ def done_by(aid, engine=None):
         made = json.loads((CACHE / f'{aid}.json').read_text(encoding='utf-8')).get('model')
     except (OSError, ValueError, AttributeError):
         return False
-    return str(made or '').startswith('elevenlabs/') if engine == 'eleven' else True
+    return str(made or '').startswith(MADE_BY[engine]) if engine in ONLINE else True
 
 
 def counts(srcs, engine=None):
@@ -559,7 +669,7 @@ def counts(srcs, engine=None):
             running += 1
         elif job.get('state') == 'error':
             failed += 1
-        elif engine == 'eleven' and done_by(aid, engine) or engine != 'eleven' and (
+        elif engine in ONLINE and done_by(aid, engine) or engine not in ONLINE and (
                 job.get('state') == 'done' or (CACHE / f'{aid}.json').is_file()):
             done += 1
     return {'done': done, 'running': running, 'failed': failed}
@@ -578,11 +688,11 @@ def _run(aid, path, language='en', how=None, keep=True, token=None):
                 return
     try:
         key, model_id, engine = how or ('', '', 'local')
-        if engine == 'eleven':
-            _update(aid, state='running', message='ElevenLabs is writing it down…', engine='eleven')
+        if engine in ONLINE:
+            _update(aid, state='running', message=f'{"OpenAI" if engine == "openai" else "ElevenLabs"} is writing it down…', engine=engine)
             found = {}
-            cues = eleven(path, key, model_id, language, info=found)
-            made_by, spoken = f'elevenlabs/{model_id}', found.get('language')
+            cues = (openai_transcribe if engine == 'openai' else eleven)(path, key, model_id, language, info=found)
+            made_by, spoken = f'{MADE_BY[engine]}{model_id}', found.get('language')
         else:
             _update(aid, state='running', message='Preparing speech recognition…')
             def progress(p):
@@ -643,7 +753,7 @@ def start_file(name, data, language=None, how=None, check=None):
     with _lock:
         _jobs[job] = {'state': 'queued', 'message': 'Waiting to transcribe…', 'at': time.time()}
         _scripts[job] = f'AU-{hashlib.sha256(data).hexdigest()[:32]}'
-    online = bool(how and how[2] == 'eleven')
+    online = bool(how and how[2] in ONLINE)
     (_online if online else _pool).submit(_run, job, path, language, how, False)
     return job
 

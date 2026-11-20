@@ -1710,7 +1710,7 @@ export class Library {
       const t = d.transcripts;
       state.textContent = !d.files ? 'All its recordings and videos have their scripts on the disc.'
         : `${d.files} of its recordings and videos have no script on the disc: ${t.done} of them written by `
-          + `${d.engine === 'eleven' ? 'ElevenLabs' : 'speech recognition'}${t.running ? `, ${t.running} being transcribed now…` : '.'}`
+          + `${d.engine === 'eleven' ? 'ElevenLabs' : d.engine === 'openai' ? 'OpenAI' : 'speech recognition'}${t.running ? `, ${t.running} being transcribed now…` : '.'}`
           + `${t.failed ? ` ${t.failed} could not be: Transcribe them all again to try them again.` : ''}`;
       go.hidden = !d.files || t.done >= d.files || t.running > 0;
       clearTimeout(polling);

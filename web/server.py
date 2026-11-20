@@ -1759,7 +1759,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if a.get('t') in ('audio', 'video') and transcription.asset_id(src) and (not a.get('script') or a.get('auto')):
                     media[src] = media.get(src, False) or bool(a.get('auto'))
         # On this computer: a script it wrote before is done; with ElevenLabs only one ElevenLabs wrote.
-        todo = [src for src, auto in media.items() if how[2] == 'eleven' or not auto]
+        todo = [src for src, auto in media.items() if how[2] in transcription.ONLINE or not auto]
         if start:
             for src in todo:
                 if transcription.done_by(transcription.asset_id(src), how[2]):
@@ -1833,7 +1833,10 @@ class Handler(SimpleHTTPRequestHandler):
         'local', local: Whisper installed on this computer, admin, can: may this user start one}."""
         u = self.user()
         key, model, engine = transcription.speech_settings(auth.config())
-        return {'ready': bool(key), 'engine': engine, 'model': model, 'local': transcription.local_ready(),
+        config = auth.config()
+        eleven_key = bool(config.get('speechKey') or os.environ.get('ELEVENLABS_API_KEY'))
+        return {'ready': eleven_key, 'openaiReady': bool(transcription.openai_key(config)), 'engine': engine, 'model': model,
+                'local': transcription.local_ready(),
                 'admin': bool(u and u['admin']), 'owner': accounts.is_owner(u), 'can': self.may_transcribe() and bool(u)}
 
     def assistant_token(self):
@@ -1966,8 +1969,8 @@ class Handler(SimpleHTTPRequestHandler):
         changes = {}
         if 'key' in body:
             changes['speechKey'] = str(body.get('key') or '').strip()[:200] or None
-        if body.get('engine') in ('eleven', 'local'):
-            changes['speechEngine'] = None if body['engine'] == 'eleven' else 'local'
+        if body.get('engine') in ('eleven', 'local', 'openai'):
+            changes['speechEngine'] = None if body['engine'] == 'eleven' else body['engine']
         auth.set_config(**changes)
         return self.send_json(self.speech_info())
 

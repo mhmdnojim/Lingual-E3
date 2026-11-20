@@ -31,6 +31,21 @@ if command -v tesseract >/dev/null; then
     apt-get -o DPkg::Lock::Timeout=1800 install -y -q $need || echo "Some OCR languages could not be installed: scans in them cannot be read yet."
   fi
 fi
+# (Whisper on the server: the "This computer (Whisper)" way of Speech recognition; once, a few minutes, ~300 MB)
+if [ ! -f web/vendor/models/base.en/model.bin ] || [ ! -f web/vendor/models/base/model.bin ]; then
+  echo "Installing Whisper (speech recognition) on the server (once)…"
+  {
+    sudo -u lingua .venv/bin/pip install -q -r web/transcription-requirements.txt &&
+    sudo -u lingua env HF_HOME=/opt/lingua-books/web/_build/huggingface .venv/bin/python -c "
+from pathlib import Path
+from faster_whisper import download_model
+Path('web/vendor/models').mkdir(parents=True, exist_ok=True)
+for name in ('base.en', 'base'):
+    if not Path(f'web/vendor/models/{name}/model.bin').is_file():
+        download_model(name, output_dir=f'web/vendor/models/{name}')
+print('Whisper is ready.')"
+  } || echo "Whisper could not be installed: use ElevenLabs or OpenAI for Speech recognition."
+fi
 # (servers set up before it was in setup-server.sh: started again 3 s after a stop, not at once —
 # else five quick failures in a row and systemd gives up)
 if ! systemctl cat lingua-books | grep -q '^RestartSec='; then
