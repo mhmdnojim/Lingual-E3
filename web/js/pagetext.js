@@ -5,6 +5,19 @@
 const X = 0, Y = 1, W = 2, H = 3, T = 4, LINE = 5, SPACE = 6;
 const hasBox = (w) => w[W] > 0 || w[H] > 0;
 
+/**
+ * The width a word really takes on the page. A text layer (or OCR) sometimes gives a word a box far wider than its
+ * letters (it runs on to the end of the line or the column), and the highlight then covers blank page after the text.
+ * A box more than 1.8 times what the letters need is cut back to them. Blanks to fill in (___ ...) keep their width.
+ */
+export function visibleWidth(word) {
+  const w = word[W], text = String(word[T] ?? '');
+  if (!(w > 0) || !word[H] || !/[\p{L}\p{N}]/u.test(text)) return w;
+  const wide = (text.match(/[぀-ヿ㐀-鿿가-힯]/g) || []).length;
+  const expected = word[H] * (0.62 * (text.length - wide) + 1.05 * wide + 0.3);
+  return w > 1.8 * expected ? expected * 1.25 : w;
+}
+
 export class PageText {
   constructor(doc) {
     this.words = doc.words;
@@ -90,12 +103,12 @@ export class PageText {
       const w = this.words[k];
       if (!hasBox(w)) continue;
       if (!cur || cur.line !== w[LINE]) {
-        cur = { line: w[LINE], x0: w[X], y0: w[Y], x1: w[X] + w[W], y1: w[Y] + w[H] };
+        cur = { line: w[LINE], x0: w[X], y0: w[Y], x1: w[X] + visibleWidth(w), y1: w[Y] + w[H] };
         out.push(cur);
       } else {
         cur.x0 = Math.min(cur.x0, w[X]);
         cur.y0 = Math.min(cur.y0, w[Y]);
-        cur.x1 = Math.max(cur.x1, w[X] + w[W]);
+        cur.x1 = Math.max(cur.x1, w[X] + visibleWidth(w));
         cur.y1 = Math.max(cur.y1, w[Y] + w[H]);
       }
     }
@@ -112,9 +125,10 @@ export class PageText {
       if (!hasBox(w)) return { x: 0, y: 0, w: 0, h: 0 };
       const prev = ws[k - 1], next = ws[k + 1];
       const padY = Math.max(4, w[H] * 0.22);
-      let x0 = w[X] - 4, x1 = w[X] + w[W] + 4;
-      if (prev && hasBox(prev) && prev[LINE] === w[LINE]) x0 = Math.min(x0, (prev[X] + prev[W] + w[X]) / 2);
-      if (next && hasBox(next) && next[LINE] === w[LINE]) x1 = Math.max(x1, (w[X] + w[W] + next[X]) / 2);
+      const width = visibleWidth(w);
+      let x0 = w[X] - 4, x1 = w[X] + width + 4;
+      if (prev && hasBox(prev) && prev[LINE] === w[LINE]) x0 = Math.min(x0, (prev[X] + visibleWidth(prev) + w[X]) / 2);
+      if (next && hasBox(next) && next[LINE] === w[LINE]) x1 = Math.max(x1, (w[X] + width + next[X]) / 2);
       return { x: x0, y: w[Y] - padY, w: x1 - x0, h: w[H] + 2 * padY };
     });
   }

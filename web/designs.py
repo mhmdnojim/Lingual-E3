@@ -228,6 +228,21 @@ def proposed(doc, w, h, lists=(), raw=None):
     return out[:MOST_AREAS]
 
 
+_WIDE = re.compile('[぀-ヿ㐀-鿿가-힯]')
+
+
+def tight_width(word):
+    """The width a word really takes: a text layer (or OCR) sometimes gives a word a box far wider than its letters (it
+    runs on to the end of the line), and the highlight then covers blank page. A box over 1.8 times what the letters
+    need is cut back to them. Blanks to fill in (___) keep their width. (The reader does the same: js/pagetext.js.)"""
+    text, w, h = str(word.get('t') or ''), word.get('w') or 0, word.get('h') or 0
+    if w <= 0 or h <= 0 or not re.search(r'[^\W_]', text):
+        return w
+    wide = len(_WIDE.findall(text))
+    expected = h * (0.62 * (len(text) - wide) + 1.05 * wide + 0.3)
+    return round(expected * 1.25) if w > 1.8 * expected else w
+
+
 def layout_lines(raw, image=None):
     """Separate repeated column gutters before any paragraph grouping.
 
@@ -239,6 +254,8 @@ def layout_lines(raw, image=None):
     all_words = [w for ln in lines for w in ln['words']]
     if not all_words:
         return {**raw, 'lines': []}
+    for w in all_words:
+        w['w'] = tight_width(w)
     unit = statistics.median(w['h'] for w in all_words)
     gray = image.convert('L') if image is not None else None
     # A drop cap overlaps several lines vertically; attach it to the top line only.
