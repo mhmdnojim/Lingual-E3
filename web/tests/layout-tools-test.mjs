@@ -1,6 +1,6 @@
 // The page-layout editor's tools (web/js/designs.js), as the owner uses them:
 //  - the open tab is clearly marked;
-//  - "Draw areas in reading order": the first box drawn is number 1, then 2 …; boxes not numbered follow, faded;
+//  - "Draw an area in reading order": the boxes inside a rectangle drawn are numbered one after the other, the others keep their order;
 //  - "Merge in chosen order": the areas chosen are numbered 1, 2 on the page; "Finish merge" joins them;
 //  - sentences: numbered on the page (every sentence on the Merge tab), chosen by a click in the order
 //    chosen, merged into the first one chosen, the result shown first;
@@ -154,39 +154,44 @@ try {
   await sleep(150);
   assert.equal(await page.$$eval('.layout-sentence-line', (r) => r.length), 0, 'and hides them again');
 
-  // ---- Draw areas in reading order: the boxes are numbered from the top of the page down, whatever the drawing order.
+  // ---- Draw an area in reading order: the boxes inside the rectangle are numbered top to bottom, from the smallest number among them.
   const before = first.length;
-  await ui.action('Draw areas in reading order');
-  await ui.drag(0.05, 0.6, 0.9, 0.66);   // "Fourth paragraph at the bottom…" first
+  await ui.action('Draw an area in reading order');
+  await ui.drag(0.0, 0.97, 0.05, 0.995);   // (a rectangle with no box in it: told so, nothing changes)
+  assert.match(await ui.status(), /No box has its middle inside/);
+  assert.equal((await ui.areas()).length, before);
+  // The lower part of the page: its boxes are renumbered among themselves, the number of boxes does not change, the heading stays number 1.
+  const topText = (await ui.areas())[0].text;
+  await ui.drag(0.0, 0.3, 1.0, 1.0);
+  assert.match(await ui.status(), /boxes? numbered \d/);
   let rows = await ui.areas();
-  assert.equal(rows.length, before + 1);
-  assert.equal(rows[0].n, '1', 'the box drawn first is number 1');
-  assert.ok(rows.slice(1).every((r) => r.faded), 'the boxes not numbered yet are faded');
-  assert.match(await ui.status(), /Box numbered 1/);
+  assert.equal(rows.length, before, 'no box was added or lost');
+  assert.equal(rows[0].text, topText, 'a box outside the rectangle keeps its number');
+  assert.ok(!rows.some((r) => r.faded), 'no box is faded');
+  // The whole page: the higher a box, the smaller its number; the heading is number 1.
+  await ui.drag(0.0, 0.0, 1.0, 1.0);
+  rows = await ui.areas();
+  assert.equal(rows.length, before);
+  assert.match(rows[0].text, /Our reading page/, 'the heading is number 1');
+  const tops = await page.$$eval('.frames .frame', (gs) => gs.map((g) => +g.querySelector('rect').getAttribute('y')));
+  assert.deepEqual(tops, [...tops].sort((a, b) => a - b), 'the boxes are in order from the top of the page down');
   await shot('shot-1-order');
-  await ui.drag(0.05, 0.05, 0.9, 0.12);   // then the heading
-  rows = await ui.areas();
-  assert.equal(rows.length, before + 2);
-  assert.deepEqual(rows.slice(0, 2).map((r) => r.n), ['1', '2']);
-  assert.match(await page.$eval('.design-area:nth-child(1) .design-area-content', (e) => e.textContent), /^(?!.*Fourth paragraph)/is, 'number 1 is the highest box on the page (the heading drawn second), not the first drawn');
-  // A click on a box that has no number yet gives it the next number.
-  const clicked = await page.$eval('.frames .frame:nth-of-type(5) > rect:first-child', (r) => { const b = r.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; });
-  await page.mouse.click(clicked.x, clicked.y);
-  await sleep(150);
-  rows = await ui.areas();
-  assert.equal(rows.filter((r) => !r.faded).length, 3, 'the clicked box is number 3');
-  // Delete the boxes I did not number; Undo brings them back.
-  await ui.action('Delete the');
-  rows = await ui.areas();
-  assert.equal(rows.length, 3, 'only the 3 boxes numbered are left');
   await ui.action('Finish ordering');
-  await page.keyboard.down('Control'); await page.keyboard.press('z'); await page.keyboard.up('Control'); // (Ctrl+Z undoes the deletion)
+  for (let k = 0; k < 4; k++) await page.click('[aria-label="Undo the last layout edit"]').catch(() => {});
   await sleep(150);
-  assert.equal((await ui.areas()).length, before + 2, 'Undo brings the deleted boxes back');
-  await page.click('[aria-label="Undo the last layout edit"]'); await page.click('[aria-label="Undo the last layout edit"]'); await page.click('[aria-label="Undo the last layout edit"]');
-  await page.click('[aria-label="Undo the last layout edit"]').catch(() => {});
-  await sleep(150);
-  assert.equal((await ui.areas()).length, before, 'Undo takes the numbered boxes back too');
+
+  // The rule itself (orderInside), with a page written from the right too.
+  const rule = await page.evaluate(async () => {
+    const { orderInside } = await import('./js/designs.js');
+    const box = (id, x, y, w = 0.2, h = 0.05) => ({ id, x, y, w, h, kind: 'text' });
+    const ids = (r) => r.areas.map((a) => a.id).join('');
+    const list = [box('A', 0.1, 0.05), box('B', 0.1, 0.2), box('E', 0.1, 0.8), box('C', 0.1, 0.5), box('F', 0.1, 0.95), box('D', 0.6, 0.5)];
+    const low = orderInside(list, { x: 0, y: 0.45, w: 1, h: 0.45 }); // (E, C and D are inside: they take the places from the third on; A and B stay; F is outside)
+    const row = [box('X', 0.7, 0.1), box('Y', 0.4, 0.1), box('Z', 0.1, 0.1)];
+    return { low: ids(low), inside: low.inside, first: low.first, ltr: ids(orderInside(row, { x: 0, y: 0, w: 1, h: 1 })), rtl: ids(orderInside(row, { x: 0, y: 0, w: 1, h: 1 }, true)) };
+  });
+  assert.deepEqual([rule.low, rule.inside, rule.first], ['ABCDEF', 3, 3], 'the boxes inside take the places from the smallest number; those outside keep their order');
+  assert.equal(rule.ltr, 'ZYX', 'left to right'); assert.equal(rule.rtl, 'XYZ', 'right to left (Arabic and the like)');
 
   // ---- Merge in chosen order: the areas chosen are numbered on the page; Finish merge joins them.
   await ui.tab('merge');

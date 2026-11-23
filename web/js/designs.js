@@ -27,7 +27,7 @@ const SMALLEST = 0.01; // (an area smaller than this, drawn by a slip, is not on
  * heading above two columns comes first; then down: the left column before the right one), and
  * inside a part with no band, the higher box first, then the one further left.
  */
-export function readingOrder(areas) {
+export function readingOrder(areas, rtl = false) { // (rtl: a language written from the right: the right column first)
   const cut = (items) => {
     if (items.length < 2) return items;
     for (const [p, size] of [['y', 'h'], ['x', 'w']]) {
@@ -38,11 +38,29 @@ export function readingOrder(areas) {
         if (item[p] >= end) groups.push([item]); else groups[groups.length - 1].push(item);
         end = Math.max(end, item[p] + item[size]);
       }
-      if (groups.length > 1) return groups.flatMap(cut);
+      if (groups.length > 1) return (rtl && p === 'x' ? groups.reverse() : groups).flatMap(cut);
     }
-    return [...items].sort((a, b) => a.y - b.y || a.x - b.x);
+    return [...items].sort((a, b) => a.y - b.y || (rtl ? (b.x + b.w) - (a.x + a.w) : a.x - b.x));
   };
   return cut(areas);
+}
+
+/**
+ * "Draw an area in reading order": the boxes whose middle is inside rect are put in reading order (top to
+ * bottom, left to right; right to left when rtl) and take the places in the list that those boxes had,
+ * starting at the smallest of them; the other boxes keep their order around them.
+ * Returns { areas: the new list, inside: how many boxes were in rect, first: the number (from 1) the first of them has }.
+ */
+export function orderInside(areas, rect, rtl = false) {
+  const inside = areas.filter((a) => {
+    const cx = a.x + a.w / 2, cy = a.y + a.h / 2;
+    return cx >= rect.x && cx <= rect.x + rect.w && cy >= rect.y && cy <= rect.y + rect.h;
+  });
+  if (!inside.length) return { areas, inside: 0, first: 0 };
+  const at = areas.indexOf(inside[0]); // (the smallest number: the list is in order)
+  const others = areas.filter((a) => !inside.includes(a));
+  const before = areas.slice(0, at).filter((a) => !inside.includes(a)).length;
+  return { areas: [...others.slice(0, before), ...readingOrder(inside, rtl), ...others.slice(before)], inside: inside.length, first: before + 1 };
 }
 const clamp = (v) => Math.min(1, Math.max(0, v));
 const splitSentenceText = (text) => String(text || '').split(/\r?\n/).flatMap((line) =>
@@ -142,7 +160,7 @@ export function framed(src, areas, label = '') {
  */
 export function designEditor({ info, picture, fallbackPicture = null, pageKey = null, first, onSave, onCancel, onPage,
   aiInfo = null, built = () => false, mediaPanel = null, onNewAudio = null, onAnalyze, onReadArea = null, onReplacePicture = null, onLoadButtons = null, onChangeButton = null, onBeforeSave = null,
-  dictationLanguage = 'en-US', onSentences = null }) {
+  dictationLanguage = 'en-US', rtlBook = false, onSentences = null }) {
   const designs = structuredClone(info.designs);
   const other = [...info.other];
   const numbers = [...new Set(info.pages || [...designs.flatMap((d) => d.pages), ...other])].sort((a, b) => a - b);
@@ -362,42 +380,22 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
     setAreaDrawing(on);
     const left = mine().areas.length;
     status.textContent = on
-      ? (left ? `Draw a box, or click one of the ${left} boxes already here. The boxes are numbered from the top of the page down: the higher a box, the lower its number. Boxes you do not number follow after yours.`
-        : 'Draw boxes around the areas, in any order. They are numbered from the top of the page down: the highest box is number 1.')
+      ? (left ? 'Drag a rectangle over a part of the page. The boxes inside it are numbered one after the other: top to bottom, then left to right (right to left for Arabic and the like). The first of them keeps the smallest number it had.'
+        : 'This page has no boxes yet. Draw them with “Draw boxes”, or read the page in the Read tab.')
       : 'Reading order kept in the draft. Press Apply changes to use it in the book.';
     renderAll();
   };
-  /** The box is the next one in the reading order: it goes to the front, after the boxes numbered before it. */
-  function takeNext(area) {
+  /** The boxes inside the rectangle drawn are numbered in reading order, from the smallest number among them. */
+  function orderRect(rect) {
     const d = mine();
-    const from = d.areas.indexOf(area);
-    if (from < 0) return;
-    d.areas.splice(from, 1);
-    // The numbered boxes stay in page order: the higher on the page, the lower the number (then left to right).
-    let to = 0;
-    while (to < orderCount && (d.areas[to].y < area.y || (d.areas[to].y === area.y && d.areas[to].x <= area.x))) to += 1;
-    d.areas.splice(to, 0, area);
-    sel = to; orderCount += 1; sentenceMergeOrder = []; focusSelectionPending = true;
-    const left = d.areas.length - orderCount;
-    status.textContent = `Box numbered ${to + 1}: the boxes are numbered from the top of the page down.${left ? ` ${left} not numbered yet: they will follow after number ${orderCount}.` : ''} Draw or click the next box, or press Finish ordering.`;
-  }
-  function pickExisting(k) {
-    const d = mine();
-    const area = d.areas[k];
-    if (!area) return;
-    if (k < orderCount) { status.textContent = `That box is number ${k + 1} already. Click a box that has no number yet.`; return; }
+    const out = orderInside(d.areas, rect, rtlBook);
+    if (!out.inside) { status.textContent = 'No box has its middle inside that rectangle. Drag over the boxes you want to number.'; return; }
     remember();
-    takeNext(area);
-  }
-  function dropUnnumbered() {
-    const d = mine();
-    const left = d.areas.length - orderCount;
-    if (left <= 0 || !confirm(`Delete the ${left} boxes you did not number? Undo brings them back.`)) return;
-    remember();
-    d.areas.splice(orderCount);
-    sel = -1; areaOrderCursor = null;
-    status.textContent = `${left} boxes deleted. Only the ${orderCount} boxes you numbered are left.`;
-    renderAll();
+    const picked = d.areas[sel];
+    d.areas.splice(0, d.areas.length, ...out.areas);
+    sel = picked ? d.areas.indexOf(picked) : -1; sentenceMergeOrder = []; areaOrderCursor = null;
+    orderCount = out.inside;
+    status.textContent = `${out.inside} box${out.inside === 1 ? '' : 'es'} numbered ${out.first}${out.inside > 1 ? `–${out.first + out.inside - 1}` : ''}, ${rtlBook ? 'from the right' : 'from the left'} and from the top. The other boxes keep their order around them. Drag over another part, or press Finish ordering.`;
   }
   const action = (label, fn, symbol, { pressed, disabled = false, title = label, danger = false, primary = false } = {}) =>
     el('button', { class: `btn small layout-tool-action${danger ? ' danger' : ''}${primary ? ' primary' : ''}`, type: 'button', title, disabled,
@@ -1234,20 +1232,16 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
         ? 'AI layout suggestions use the OpenAI key configured in Admin → API.'
         : 'To enable AI suggestions, configure OpenAI under Admin → API.'} “Read this page again” reads the page from the PDF text, or with OCR, and finds its areas again. “Read the selected area again” replaces that area’s text. Apply then saves it.`;
     } else if (activeToolTab === 'order') {
-      items.push(action(ordering() ? `Finish ordering (${orderCount} numbered)` : 'Draw areas in reading order', () => setOrderRun(!ordering()),
+      items.push(action(ordering() ? 'Finish ordering' : 'Draw an area in reading order', () => setOrderRun(!ordering()),
         ordering() ? 'check' : 'select-area', { pressed: ordering(), primary: ordering(),
-          title: 'Draw boxes (or click the ones already here), in any order: they are numbered from the top of the page down' }));
-      if (ordering() && mine().areas.length > orderCount) {
-        items.push(action(`Delete the ${mine().areas.length - orderCount} boxes I did not number`, dropUnnumbered, 'trash', { danger: true,
-          title: 'Keep only the boxes you numbered in this run' }));
-      }
+          title: 'Drag a rectangle over some boxes: they are numbered one after the other, from the top down and from the left (right for Arabic)' }));
       items.push(action('Reference, then click areas', () => setAreaOrder(!areaOrderMode), 'grip', { pressed: areaOrderMode,
         title: 'Choose a starting area, then click each area to place it after the previous one' }));
       items.push(action('Order boxes automatically', () => {
         const d = mine();
         if (d.areas.length < 2) return;
         remember();
-        d.areas.splice(0, d.areas.length, ...readingOrder(d.areas));
+        d.areas.splice(0, d.areas.length, ...readingOrder(d.areas, rtlBook));
         sentenceMergeOrder = [];
         sel = -1; areaOrderCursor = null;
         status.textContent = 'Boxes ordered the way a page is read: a heading or a band across first, then each column from top to bottom, left column first. Check the numbers: use Reference, then click areas to fix one.';
@@ -1676,7 +1670,7 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
     renderAI();
     renderToolPanel();
     areaOrderHint.hidden = !(areaDrawing || areaOrderMode);
-    if (ordering()) areaOrderHint.textContent = `Reading order: ${orderCount} box${orderCount === 1 ? '' : 'es'} numbered. Drag over the next paragraph, or click a box that has no number yet: it takes the next number.`;
+    if (ordering()) areaOrderHint.textContent = 'Drag a rectangle over the boxes to number. They are numbered top to bottom, then ' + (rtlBook ? 'right to left' : 'left to right') + ', from the smallest number among them.';
     else if (areaDrawing) areaOrderHint.textContent = 'Drag over each paragraph or page section. Boxes are numbered in the order you draw them.';
     else if (areaOrderMode) areaOrderHint.textContent = areaOrderCursor
       ? 'Reference set. Click the next area to move it after the reference; each next click goes after the last area moved. Press the button again to finish.'
@@ -1722,7 +1716,7 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
     const d = mine();
     pic.classList.toggle('off', !d); // (a page of no design: its areas cannot be drawn)
     const ref = d?.areas?.indexOf(areaOrderCursor) ?? -1;
-    const overlays = showBoxes ? frames(d?.areas || [], tall, sel, ref, mergePicked, ordering() ? orderCount : -1) : [];
+    const overlays = showBoxes ? frames(d?.areas || [], tall, sel, ref, mergePicked) : [];
     const data = loaded.get(at);
     let sentenceRecords = [];
     if (areaReview && areaReview.page === at) {
@@ -1822,11 +1816,10 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
         drawFrames();
         renderAll();
       };
-      list.append(el('li', { class: `design-area ${a.kind}${i === sel ? ' on' : ''}${a === areaOrderCursor ? ' reference' : ''}${mergePicked.includes(i) ? ' merge-picked' : ''}${ordering() && i >= orderCount ? ' unordered' : ''}`, dataset: { areaIndex: i }, onclick: (e) => {
+      list.append(el('li', { class: `design-area ${a.kind}${i === sel ? ' on' : ''}${a === areaOrderCursor ? ' reference' : ''}${mergePicked.includes(i) ? ' merge-picked' : ''}`, dataset: { areaIndex: i }, onclick: (e) => {
         if (e.target.closest('textarea')) return;
         const rowHit = e.target === e.currentTarget || e.target.classList.contains('n') || e.target.closest('.design-area-content');
-        if (ordering() && rowHit) { if (i >= orderCount) pickExisting(i); else { sel = i; focusSelectionPending = true; } renderAll(); return; }
-        if (mergeMode && rowHit) { toggleMergeArea(i); return; }
+                if (mergeMode && rowHit) { toggleMergeArea(i); return; }
         if (areaOrderMode && rowHit) { orderArea(i); return; }
         if (rowHit) {
           if (sel === i && !areaReview) return; // (selected already: the list is not made again, so a double-click finds its text)
@@ -2041,12 +2034,12 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
       e.preventDefault();
       return;
     }
-    if (pictureMode || mergeAreaMode || rereadDraw) {
-      const special = rereadDraw ? 'reread' : pictureMode ? 'picture' : 'merge';
+    if (pictureMode || mergeAreaMode || rereadDraw || ordering()) {
+      const special = rereadDraw ? 'reread' : pictureMode ? 'picture' : ordering() ? 'order' : 'merge';
       drag = { mode: 'special', special, from: p, rect: null };
     } else if (areaDrawing) {
       sel = -1;
-      drag = { mode: 'draw', from: p, a: null, clickFrame: ordering() && frame ? +frame.dataset.k : -1 };
+      drag = { mode: 'draw', from: p, a: null };
     } else if (handle && sel >= 0) drag = { mode: handle.dataset.h, from: p, a: { ...d.areas[sel] } };
     else if (frame) {
       const nextSel = +frame.dataset.k;
@@ -2117,6 +2110,8 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
       } else if (special === 'reread') {
         rereadBoxes.push(rect);
         status.textContent = `${rereadBoxes.length} box${rereadBoxes.length === 1 ? '' : 'es'} drawn. Draw another, or press Read ${rereadBoxes.length === 1 ? 'box' : 'boxes'} (OCR).`;
+      } else if (special === 'order') {
+        orderRect(rect);
       } else if (special === 'merge') {
         mergeAreaMode = false;
         const hits = d.areas.map((a, i) => ({ a, i })).filter(({ a }) => a.x < rect.x + rect.w && a.x + a.w > rect.x && a.y < rect.y + rect.h && a.y + a.h > rect.y).map(({ i }) => i);
@@ -2129,12 +2124,8 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
     else if (sel >= 0 && d?.areas[sel] && (d.areas[sel].w < SMALLEST || d.areas[sel].h < SMALLEST)) Object.assign(d.areas[sel], drag.a);
     const finished = drag;
     drag = null;
-    if (ordering() && finished.mode === 'draw') { // (Draw areas in reading order: the box drawn, or clicked, takes the next number)
-      if (finished.a && finished.a.w >= SMALLEST && finished.a.h >= SMALLEST) takeNext(finished.a);
-      else if (!finished.a && finished.clickFrame >= 0) pickExisting(finished.clickFrame);
-    }
-    else if (autoOrder && finished.mode === 'draw' && finished.a && finished.a.w >= SMALLEST && finished.a.h >= SMALLEST && !newTextArea && d.areas.includes(finished.a)) {
-      d.areas.splice(0, d.areas.length, ...readingOrder(d.areas)); // (the box drawn takes its place by itself)
+    if (autoOrder && finished.mode === 'draw' && finished.a && finished.a.w >= SMALLEST && finished.a.h >= SMALLEST && !newTextArea && d.areas.includes(finished.a)) {
+      d.areas.splice(0, d.areas.length, ...readingOrder(d.areas, rtlBook)); // (the box drawn takes its place by itself)
       sel = d.areas.indexOf(finished.a); sentenceMergeOrder = []; focusSelectionPending = true;
       status.textContent = `Box ${sel + 1} of ${d.areas.length}: it took its place in the reading order by itself. If that is wrong, use Reference, then click areas.`;
     }

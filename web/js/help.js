@@ -103,7 +103,7 @@ export const HELP = {
   'analyze again': { d: 'Asks the AI again for this page, for a new suggestion.', use: ['Press it after changing your instruction.'] },
   'add a text area': { d: 'Draws a new box where the app found no text, so you can add text to it.', use: ['Press it, drag a box on the page.'] },
   'order boxes automatically': { d: 'Numbers the boxes in reading order (top to bottom, columns left to right). A new box you draw gets its place by itself while this is on.', use: ['Click it to switch on or off.'] },
-  'draw areas in reading order': { d: 'You draw boxes in the order they must be read; they are numbered 1, 2, 3 as you draw.', use: ['Press it, draw box after box.', 'Press Finish when done.'] },
+  'draw an area in reading order': { d: 'You drag a rectangle over some boxes. The boxes inside it are numbered one after the other: top to bottom, then left to right (right to left for Arabic and the like). The first one keeps the smallest number the boxes had; the other boxes keep their order around them.', use: ['Press it, drag a rectangle over the boxes.', 'Drag again for another part of the page.', 'Press Finish when done.'] },
   'reference, then click areas': { d: 'Puts boxes in order with a reference box: choose the first, then click the others in order.', use: ['Press it, click the starting box, click the rest in order.', 'Press it again to stop.'] },
   'merge with next area': { d: 'Joins the chosen box and the next one into one box.', use: ['Choose a box and press it.'] },
   'merge with previous area': { d: 'Joins the chosen box and the one before it.', use: ['Choose a box and press it.'] },

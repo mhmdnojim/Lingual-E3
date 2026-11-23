@@ -1373,7 +1373,7 @@ export class Library {
     }
     let layoutNode = null, sentencesChanged = false;
     layoutNode = designEditor({
-      info, first: n, pageKey: book.id, aiInfo, dictationLanguage: DICTATION[options?.language] || 'en-US',
+      info, first: n, pageKey: book.id, aiInfo, dictationLanguage: DICTATION[options?.language] || 'en-US', rtlBook: ['ar', 'fa', 'ur', 'he'].includes(options?.language),
       picture: (k) => book.status === 'ready' ? `/lib/${book.id}/pages/${k}.webp?v=${book.updated}` : `/lib/${book.id}/designs/${k}.webp?v=${info.token}`,
       fallbackPicture: (k) => book.status === 'ready' ? `/lib/${book.id}/designs/${k}.webp?v=${info.token}` : `/lib/${book.id}/pages/${k}.webp`,
       onCancel: () => { closeDialog(); if (!returnToReader) this.setScope('mine'); },
