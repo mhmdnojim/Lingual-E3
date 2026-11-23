@@ -1232,6 +1232,12 @@ export function designEditor({ info, picture, fallbackPicture = null, pageKey = 
         ? 'AI layout suggestions use the OpenAI key configured in Admin → API.'
         : 'To enable AI suggestions, configure OpenAI under Admin → API.'} “Read this page again” reads the page from the PDF text, or with OCR, and finds its areas again. “Read the selected area again” replaces that area’s text. Apply then saves it.`;
     } else if (activeToolTab === 'order') {
+      if (ordering() || areaOrderMode) { // (a way of ordering is on: Done leaves it and applies the changes, with no question)
+        items.push(action('Done: apply and stop ordering', () => {
+          if (ordering()) setOrderRun(false); else setAreaOrder(false);
+          save.click();
+        }, 'check', { primary: true, title: 'Stop ordering and apply the changes to the book' }));
+      }
       items.push(action(ordering() ? 'Finish ordering' : 'Draw an area in reading order', () => setOrderRun(!ordering()),
         ordering() ? 'check' : 'select-area', { pressed: ordering(), primary: ordering(),
           title: 'Drag a rectangle over some boxes: they are numbered one after the other, from the top down and from the left (right for Arabic)' }));

@@ -436,6 +436,17 @@ try {
   }
 
   assert.deepEqual(errors, []);
+  // ---- Order tab: Done stops the way of ordering and applies the changes, with no question asked.
+  await ui.tab('order');
+  await ui.action('Draw an area in reading order');
+  await ui.drag(0.0, 0.0, 1.0, 1.0);
+  let asked = 0; const count = () => { asked += 1; };
+  page.on('dialog', count);
+  await ui.action('Done: apply and stop ordering');
+  await page.waitForFunction(() => [...document.querySelectorAll('.layout-tool-action')].some((b) => b.textContent.startsWith('Draw an area in reading order')), { timeout: 60000 });
+  await sleep(1500);
+  page.off('dialog', count);
+  assert.equal(asked, 0, 'Done applies the changes without asking');
   console.log('PASS: open tab marked, reading order from 1, numbered merge picks, sentence merge, boxes read again, apply progress, play aloud, dictation');
 } finally {
   await browser?.close();

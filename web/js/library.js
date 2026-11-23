@@ -1412,9 +1412,6 @@ export class Library {
       mediaPanel: (changed) => this.mediaBox(book, changed),
       // New audio with a natural voice (My audio): its sentences are chosen on the page; its form is shown in the window.
       onNewAudio: ({ page, sentences, host }) => this.app.recordings.createFromLayout({ book, page, sentences, host }),
-      onBeforeSave: (pages) => book.status !== 'ready' || confirm(pages
-        ? `Page ${pages.join(', ')} will be made again with this layout. The sentence corrections made on ${pages.length === 1 ? 'this page' : 'these pages'} in “Correct the text” are kept, in every box whose text is read as before; the other pages stay as they are. Continue?`
-        : 'Reprocessing replaces the extracted page text and clears manual sentence corrections. Continue?'),
       // pages: only these pages are made again (a finished book); null: the whole book.
       onSave: async (designs, pageAreas, reportProgress, pages = null) => {
         await api('PUT', `/api/books/${book.id}/designs`, { designs, pageAreas });
