@@ -31,6 +31,16 @@ if command -v tesseract >/dev/null; then
     apt-get -o DPkg::Lock::Timeout=1800 install -y -q $need || echo "Some OCR languages could not be installed: scans in them cannot be read yet."
   fi
 fi
+# (more accurate Tesseract models for Chinese and English pages: once, ~60 MB; the app uses them when they are there)
+if command -v tesseract >/dev/null; then
+  best=/opt/lingua-books/web/vendor/tessdata_best
+  for code in chi_sim chi_tra eng; do
+    if [ ! -s "$best/$code.traineddata" ]; then
+      sudo -u lingua mkdir -p "$best"
+      sudo -u lingua curl -fsSL -o "$best/$code.traineddata.part" "https://github.com/tesseract-ocr/tessdata_best/raw/main/$code.traineddata"         && sudo -u lingua mv "$best/$code.traineddata.part" "$best/$code.traineddata"         || { sudo -u lingua rm -f "$best/$code.traineddata.part"; echo "Could not download the accurate OCR model $code (the standard one is used)."; }
+    fi
+  done
+fi
 # (Whisper on the server: the "This computer (Whisper)" way of Speech recognition; once, a few minutes, ~300 MB)
 if [ ! -f web/vendor/models/base.en/model.bin ] || [ ! -f web/vendor/models/base/model.bin ]; then
   echo "Installing Whisper (speech recognition) on the server (once)…"

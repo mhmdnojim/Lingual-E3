@@ -157,8 +157,19 @@ def read_pages(pngs, language='en', english=False, progress=None, second=None, p
     return [_merge_scripts(main, other, script(language), script(second)) for main, other in zip(pages, others)]
 
 
+BEST = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'vendor', 'tessdata_best')  # (the accurate models, put there by deploy/update.sh)
+
+
+def _best_args(language):
+    """['--tessdata-dir', BEST, '--oem', '1'] when every language of the code (chi_sim+eng) has its accurate model there, else []."""
+    parts = language.split('+')
+    if parts and all(os.path.isfile(os.path.join(BEST, f'{p}.traineddata')) for p in parts):
+        return ['--tessdata-dir', BEST, '--oem', '1']
+    return []
+
+
 def _tesseract(png, language='eng'):
-    r = subprocess.run(['tesseract', png, 'stdout', '-l', language, '--psm', '3', 'tsv'],
+    r = subprocess.run(['tesseract', png, 'stdout', '-l', language, *_best_args(language), '--psm', '3', 'tsv'],
                        capture_output=True, timeout=300)
     if r.returncode:
         message = r.stderr.decode('utf-8', 'replace')[-300:] or 'Tesseract failed.'
