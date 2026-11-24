@@ -1,0 +1,33 @@
+:root { color-scheme: dark; --bg:#14161b; --panel:#1d2027; --border:#343a45; --text:#f0f2f7; --muted:#a6afbd; --pink:#ff5369; --teal:#12b8a6; --blue:#3978ff; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+a { color:inherit; }
+.tutorial-top { height:68px; display:flex; align-items:center; justify-content:space-between; padding:0 max(22px,calc((100vw - 1400px)/2)); border-bottom:1px solid var(--border); background:#1b1e25; }
+.brand { display:flex; align-items:center; gap:10px; text-decoration:none; font-size:18px; font-weight:750; }
+.brand b { color:var(--pink); }
+.brand-mark { display:grid; place-items:center; width:34px; height:34px; border-radius:9px; color:#17191f; background:var(--pink); font-size:13px; font-weight:900; }
+.back-link { color:#c3cbd6; text-decoration:none; padding:8px 12px; border:1px solid var(--border); border-radius:9px; }
+.back-link:hover { border-color:#758196; color:white; }
+.tutorial-main { max-width:1400px; margin:auto; padding:36px 24px 58px; }
+.tutorial-intro { max-width:780px; margin:0 auto 30px; text-align:center; }
+.eyebrow { margin:0 0 10px; color:#7fd8d0; font-size:12px; letter-spacing:.13em; font-weight:800; }
+h1 { margin:0; font-size:clamp(28px,4vw,44px); line-height:1.12; letter-spacing:-.035em; }
+.tutorial-intro>p:not(.eyebrow) { color:var(--muted); font-size:17px; margin:14px auto 18px; max-width:700px; }
+.intro-pills { display:flex; justify-content:center; flex-wrap:wrap; gap:8px; }
+.intro-pills span { border:1px solid #37414d; color:#d6dce5; border-radius:99px; padding:5px 11px; font-size:13px; }
+.tutorial-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+.tutorial-card { min-width:0; overflow:hidden; background:var(--panel); border:1px solid var(--border); border-radius:14px; box-shadow:0 12px 26px #0002; }
+.tutorial-card video { display:block; width:100%; aspect-ratio:16/9; background:#0c0e12; object-fit:contain; }
+.card-copy { padding:16px 18px 14px; }
+.card-topline { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.card-topline h2 { font-size:19px; line-height:1.25; margin:0; }
+.duration { flex:none; padding:3px 8px; border-radius:99px; background:#2b3039; color:#d3d9e2; font-size:12px; }
+.card-copy>p { color:var(--muted); margin:9px 0 10px; }
+.card-actions { display:flex; align-items:center; gap:12px; margin-bottom:8px; }
+.download-link { display:inline-flex; text-decoration:none; color:#ffd9de; font-weight:700; font-size:14px; }
+.download-link:hover { text-decoration:underline; }
+details { border-top:1px solid #333944; padding-top:9px; color:#c2cad6; }
+summary { cursor:pointer; color:#dce2ec; font-size:14px; }
+.transcript { margin:8px 0 2px; color:#b7c0cd; font-size:14px; }
+.tutorial-note { text-align:center; margin:25px auto 0; color:#8792a2; font-size:13px; }
+@media(max-width:760px) { .tutorial-main { padding:25px 14px 40px; } .tutorial-grid { grid-template-columns:1fr; gap:13px; } .tutorial-top { padding:0 14px; } .back-link { font-size:14px; } }
