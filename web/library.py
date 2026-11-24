@@ -1568,7 +1568,9 @@ def _ocr(imgs, build, options, progress):
         pngs.append(os.path.join(tmp, f'{i:04d}.png'))
         pic.save(pngs[-1])
         scales.append(scale)
-    raws = ocr.read_pages(pngs, options['language'], options.get('english', False), second=options.get('second'))
+    many = f"Reading the words of {len(imgs)} page{'s' if len(imgs) > 1 else ''} (OCR)…"
+    raws = ocr.read_pages(pngs, options['language'], options.get('english', False), second=options.get('second'),
+                          page_done=lambda k: progress(many, k, len(imgs)))
     shutil.rmtree(tmp, ignore_errors=True)
     for raw, scale, img in zip(raws, scales, imgs):
         if scale != 1:  # back to the places on the page picture

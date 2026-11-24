@@ -114,10 +114,10 @@ def passes(language, english=False, second=None):
     return [language, second]
 
 
-def read_pages(pngs, language='en', english=False, progress=None, second=None):
+def read_pages(pngs, language='en', english=False, progress=None, second=None, page_done=None):
     """Raw OCR of each image path (PNG), in order. One call for all pages (starting the
     engine takes a moment). second: the pages also have this language (read by OCR made for it
-    too; english: it is English). progress(k): pass k of passes() starts."""
+    too; english: it is English). progress(k): pass k of passes() starts. page_done(k): k pages are read (Tesseract)."""
     progress = progress or (lambda k: None)
     second = second_of(language, english, second)
     which = engine()
@@ -138,7 +138,12 @@ def read_pages(pngs, language='en', english=False, progress=None, second=None):
         if (second == 'en' or language in ('zh-Hans', 'zh-Hant', 'ja', 'ko')) and language != 'en' and 'en' in installed():
             code += '+eng'  # pinyin, romaji and English words in these books
         progress(0)
-        return [_tesseract(p, code) for p in pngs]
+        out = []
+        for p in pngs:
+            out.append(_tesseract(p, code))
+            if page_done:
+                page_done(len(out))
+        return out
     # (Windows' Chinese reads Latin letters too, but not the tone marks of pinyin well: ǎ -> ä; and
     # English much worse than English OCR, so with English on the pages both read them.)
     progress(0)
