@@ -22,6 +22,8 @@
   .msg { min-height: 24px; color: #bd1532; font-size: 14px; }
   .hidden { display: none !important; }
   .owner { margin-top: 18px; padding-top: 12px; border-top: 1px solid #e5e6ea; }
+  .google-section { margin-top: 20px; padding-top: 16px; border-top: 1px solid #e5e6ea; }
+  .google-section p { margin: 0 0 12px; font-size: 14px; }
   a { color: #b20f2a; }
 </style>
 </head>
@@ -40,6 +42,10 @@
       <label>Password<input id="password" type="password" required minlength="8" autocomplete="new-password"></label>
       <label id="owner-label" class="owner">Owner setup code (site owner only)<input id="owner-code" type="password" autocomplete="off"></label>
       <button id="account-submit" class="full">Create account</button>
+      <div id="google-section" class="google-section hidden">
+        <p>Or continue with Google</p>
+        <div id="google-button"></div>
+      </div>
     </form>
   </section>
   <section id="redeem" class="hidden">
@@ -49,7 +55,8 @@
   <p id="message" class="msg" role="status" aria-live="polite"></p>
   <p><a href="/web/">Return to Lingua Books</a></p>
 </main>
-<script>
+<script type="module">
+  import { mountGoogleButton } from './js/google-auth.js';
   const $ = (id) => document.getElementById(id);
   const params = new URLSearchParams(location.search);
   const codeFromLink = params.get('code') || '';
@@ -126,6 +133,20 @@
       button.disabled = false;
     }
   });
+  mountGoogleButton($('google-button'), {
+    setupCode: () => $('owner-code').value,
+    onError: (error) => { $('message').textContent = error.message; },
+    onSuccess: () => {
+      signedIn = true;
+      if (codeFromLink) showRedeem();
+      else {
+        $('account').classList.add('hidden');
+        $('redeem').classList.remove('hidden');
+        $('intro').textContent = 'You are signed in. Enter the access code from your administrator.';
+        $('code').focus();
+      }
+    },
+  }).then((enabled) => $('google-section').classList.toggle('hidden', !enabled));
   $('redeem-button').addEventListener('click', redeemNow);
   $('code').addEventListener('keydown', (event) => { if (event.key === 'Enter') redeemNow(); });
   setTab('signup');

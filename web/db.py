@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS users (
   disabled INTEGER NOT NULL DEFAULT 0,
   version INTEGER NOT NULL DEFAULT 1,      -- raised to log out everywhere
   created INTEGER NOT NULL,
-  last_seen INTEGER NOT NULL DEFAULT 0     -- the last time it was used (at most every 5 minutes)
+  last_seen INTEGER NOT NULL DEFAULT 0,    -- the last time it was used (at most every 5 minutes)
+  google_sub TEXT UNIQUE                  -- stable Google account ID; never sent to the browser
 );
 CREATE TABLE IF NOT EXISTS books (
   id TEXT PRIMARY KEY,
@@ -211,6 +212,9 @@ def conn():
             # an admin are kept as a code of kind 'given', used at once)
             if 'last_seen' not in {r[1] for r in c.execute('PRAGMA table_info(users)').fetchall()}:
                 c.execute('ALTER TABLE users ADD COLUMN last_seen INTEGER NOT NULL DEFAULT 0')
+            if 'google_sub' not in {r[1] for r in c.execute('PRAGMA table_info(users)').fetchall()}:
+                c.execute('ALTER TABLE users ADD COLUMN google_sub TEXT')
+            c.execute('CREATE UNIQUE INDEX IF NOT EXISTS users_google_sub ON users(google_sub) WHERE google_sub IS NOT NULL')
             if 'kind' not in {r[1] for r in c.execute('PRAGMA table_info(subscription_codes)').fetchall()}:
                 c.execute("ALTER TABLE subscription_codes ADD COLUMN kind TEXT NOT NULL DEFAULT 'code'")
             # (plans: a code or a grant of a plan, and how long the app may stay offline with it)

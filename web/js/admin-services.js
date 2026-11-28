@@ -85,8 +85,28 @@ export function servicesAdmin() {
       } }, 'Test');
       return el('div', { class: 'service free', dataset: { service: f.key } }, el('div', { class: 'service-head' }, el('b', {}, f.name), state(f.state), test), said);
     });
+    const googleId = el('input', { type: 'text', class: 'input', autocomplete: 'off', spellcheck: 'false',
+      value: d.google?.clientId || '', placeholder: '123456789-example.apps.googleusercontent.com',
+      'aria-label': 'Google OAuth Web client ID' });
+    const googleMsg = el('p', { class: 'hint service-said', 'aria-live': 'polite' });
+    const googleSave = el('button', { class: 'btn small primary', type: 'button' }, 'Save Google sign-in');
+    googleSave.addEventListener('click', async () => {
+      googleSave.disabled = true;
+      try {
+        d = await api('PUT', '/api/admin/services', { googleClientId: googleId.value.trim() });
+        googleMsg.textContent = d.google?.enabled ? 'Google sign-in is ready. It may take a moment for the change to appear.' : 'Google sign-in is turned off.';
+        toast('Google sign-in setting saved.');
+      } catch (err) { googleMsg.textContent = err.message; }
+      googleSave.disabled = false;
+    });
+    const google = el('div', { class: 'service-group google-signin-setting' },
+      el('h3', {}, 'Google sign-in'),
+      el('p', { class: 'hint' }, 'Optional. Create an OAuth client with type Web application in Google Cloud Console. Add your site origin (for example, https://dolinguabooks.com) under Authorized JavaScript origins, then paste the client ID here. No Google client secret is needed.'),
+      el('div', { class: 'service-fields' }, googleId),
+      el('div', { class: 'form-buttons user-acts' }, googleSave), googleMsg);
     box.replaceChildren(
       el('p', { class: 'hint' }, 'Only you see this page. Keys are kept on the server (web/server-config.json), never shown again, and never sent to anyone’s browser.'),
+      google,
       ...groups,
       el('div', { class: 'service-group' }, el('h3', {}, 'Free services (no key)'),
         el('p', { class: 'hint' }, 'When one of these fails, its paid backup above is used, if its key is saved.'), ...free));

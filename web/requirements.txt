@@ -6,3 +6,4 @@ pdfplumber       # PDF books: the words of each page, with their place (and pypd
 Pillow           # page images, text lessons, photos
 pypinyin         # the pinyin of Chinese sentences broken down (made here, without the internet)
 qrcode           # administrator access-code QR images (SVG output)
+google-auth[requests]>=2.29,<3  # server-side verification of Google sign-in ID tokens

@@ -82,7 +82,128 @@ def role(u):
 
 def public_user(u):
     return {'id': u['id'], 'name': u['name'], 'email': u['email'], 'admin': bool(u['admin']),
-            'owner': is_owner(u), 'role': role(u)} if u else None
+            'owner': is_owner(u), 'role': role(u), 'googleConnected': bool(u.get('google_sub')),
+            'hasPassword': bool(u.get('pw'))} if u else None
+
+
+def verify_google_credential(credential, client_id, nonce):
+    """Verify a Google Identity Services ID token on the server. The browser is not trusted."""
+    if not isinstance(credential, str) or not credential or len(credential) > 12000:
+        raise AccountError('Google did not return a valid sign-in credential. Please try again.')
+    if not client_id:
+        raise AccountError('Google sign-in has not been configured yet.')
+    try:
+        from google.auth.transport.requests import Request
+        from google.oauth2 import id_token
+    except ImportError:
+        raise AccountError('Google sign-in needs the server package google-auth. Install the server requirements first.')
+    try:
+        claims = id_token.verify_oauth2_token(credential, Request(timeout=10), audience=client_id)
+    except Exception:
+        raise AccountError('Google could not verify this sign-in. Please try again.')
+    issuer = claims.get('iss')
+    if issuer not in ('accounts.google.com', 'https://accounts.google.com'):
+        raise AccountError('Google could not verify this sign-in. Please try again.')
+    claimed_nonce = claims.get('nonce')
+    if not nonce or not isinstance(claimed_nonce, str) or not hmac.compare_digest(claimed_nonce, nonce):
+        raise AccountError('This Google sign-in expired. Please try again.')
+    email = str(claims.get('email') or '').strip().lower()
+    sub = str(claims.get('sub') or '')
+    if not claims.get('email_verified') or not EMAIL_RE.match(email) or not sub or len(sub) > 255:
+        raise AccountError('Google must provide a verified e-mail address to sign in.')
+    name = ' '.join(str(claims.get('name') or email.split('@', 1)[0]).split())[:60] or email
+    return {'sub': sub, 'email': email, 'name': name, 'hostedDomain': str(claims.get('hd') or '').lower()}
+
+
+def google_login(profile, address, admin_setup_token=''):
+    """Return an existing linked account, safely link a verified Gmail/Workspace email, or create one."""
+    if limited('google-login', address, 10, 900):
+        raise AccountError('Too many sign-in tries. Wait 15 minutes, then try again.')
+    email, sub = profile['email'], profile['sub']
+
+    def activate_owner(c, row):
+        if row['email'].lower() not in ADMINS or row['admin']:
+            return row
+        if os.environ.get('LB_REQUIRE_SUBSCRIPTION', '').strip().lower() in ('1', 'true', 'yes', 'on'):
+            expected = os.environ.get('LB_ADMIN_SETUP_TOKEN', '')
+            if not expected:
+                raise AccountError('The owner setup code is not configured on this server yet.')
+            if not hmac.compare_digest(expected, str(admin_setup_token)):
+                raise AccountError('Enter the owner setup code to activate the administrator account.')
+        c.execute('UPDATE users SET admin = 1 WHERE id = ?', (row['id'],))
+        return c.execute('SELECT * FROM users WHERE id = ?', (row['id'],)).fetchone()
+
+    def resolve(c):
+        u = c.execute('SELECT * FROM users WHERE google_sub = ?', (sub,)).fetchone()
+        if u:
+            if u['disabled']:
+                raise AccountError('This account is blocked. Ask the website\'s admin.')
+            u = activate_owner(c, u)
+            return dict(u), False
+
+        u = c.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+        if u:
+            if u['disabled']:
+                raise AccountError('This account is blocked. Ask the website\'s admin.')
+            u = activate_owner(c, u)
+            if u['google_sub']:
+                raise AccountError('This e-mail is connected to a different Google account. Log in with your password and contact the admin.')
+            # Google confirms Gmail addresses and Workspace identities (hd). For other e-mail
+            # providers, require the user to log in first and explicitly connect Google.
+            if not (email.endswith('@gmail.com') or profile['hostedDomain']):
+                raise AccountError('This e-mail already has an account. Log in with its password, then connect Google in your account settings.')
+            try:
+                c.execute('UPDATE users SET google_sub = ? WHERE id = ? AND google_sub IS NULL', (sub, u['id']))
+            except Exception as error:
+                if 'UNIQUE' in str(error).upper():
+                    raise AccountError('This Google account is already connected to another user.')
+                raise
+            return dict(c.execute('SELECT * FROM users WHERE id = ?', (u['id'],)).fetchone()), False
+
+        if limited('signup', address, 5, 3600):
+            raise AccountError('Too many new accounts from here. Try again later.')
+        is_admin = email in ADMINS
+        if is_admin and os.environ.get('LB_REQUIRE_SUBSCRIPTION', '').strip().lower() in ('1', 'true', 'yes', 'on'):
+            expected = os.environ.get('LB_ADMIN_SETUP_TOKEN', '')
+            if not expected:
+                raise AccountError('The owner setup code is not configured on this server yet.')
+            if not hmac.compare_digest(expected, str(admin_setup_token)):
+                raise AccountError('Enter the owner setup code to activate the administrator account.')
+        try:
+            uid = c.execute('INSERT INTO users (email, name, pw, admin, created, google_sub) VALUES (?, ?, \'\', ?, ?, ?)',
+                            (email, profile['name'], int(is_admin), int(time.time()), sub)).lastrowid
+        except Exception as error:
+            if 'UNIQUE' in str(error).upper():
+                raise AccountError('This Google account is already connected to another user.')
+            raise
+        return dict(c.execute('SELECT * FROM users WHERE id = ?', (uid,)).fetchone()), True
+
+    u, created = db.transaction(resolve)
+    seen(u['id'])
+    return u, created
+
+
+def link_google(uid, profile):
+    """Connect Google only from an authenticated account and only when its verified e-mail matches."""
+    u = user(uid)
+    if not u:
+        raise AccountError('Please log in first.')
+    if profile['email'] != u['email']:
+        raise AccountError('The Google e-mail must match the e-mail on your Lingua Books account.')
+    if u['google_sub'] == profile['sub']:
+        return u
+    if u['google_sub']:
+        raise AccountError('A different Google account is already connected. Contact the admin to change it.')
+    try:
+        db.run('UPDATE users SET google_sub = ? WHERE id = ? AND google_sub IS NULL', (profile['sub'], uid))
+    except Exception as error:
+        if 'UNIQUE' in str(error).upper():
+            raise AccountError('This Google account is already connected to another user.')
+        raise
+    u = user(uid)
+    if not u or u['google_sub'] != profile['sub']:
+        raise AccountError('Google could not be connected. Please try again.')
+    return u
 
 
 def seen(uid, now=None):
@@ -145,7 +266,7 @@ def log_in(email, password, address, admin_setup_token=''):
 
 def change_password(uid, old, new):
     u = user(uid)
-    if not u or not _password_ok(u['pw'], str(old)):
+    if not u or (u['pw'] and not _password_ok(u['pw'], str(old))) or (not u['pw'] and not u['google_sub']):
         raise AccountError('The current password is not right.')
     if len(str(new)) < 8:
         raise AccountError('The new password needs at least 8 characters.')

@@ -1209,6 +1209,10 @@ body.lib-open :is(.pager, .view-tools, .read-tools, .tb-group.end, #btn-pages, #
 
 /* Forms in dialogs (adding a book, settings, accounts, reports) */
 .lib-form { display: grid; gap: 2px; width: min(580px, 92vw); padding: 16px 20px 20px; overflow: auto; } /* (taller than the screen: it scrolls) */
+.google-auth-section { display: grid; gap: 8px; margin-top: 10px; padding-top: 12px; border-top: 1px solid var(--line, #343a46); }
+.google-auth-divider { margin: 0; color: var(--muted, #9ba5b5); font-size: .9em; text-align: center; }
+.google-auth-button { display: flex; justify-content: center; min-height: 40px; }
+.google-connected { margin: 0; }
 .lib-form > p { margin: 0 0 8px; }
 .input { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--text); font: inherit; }
 .lib-form .input { height: 40px; }

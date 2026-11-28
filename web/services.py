@@ -78,7 +78,10 @@ def listing():
             row['region'] = config.get('azureSpeechRegion') or TEXTS['azureSpeechRegion']
         out.append(row)
     free = [{'key': k, 'name': name, 'state': _state.get(k)} for k, name in FREE.items()]
-    return {'services': out, 'free': free}
+    client_id = str(config.get('googleClientId') or '').strip()
+    return {'services': out, 'free': free,
+            # A web OAuth client ID is public by design; the Google client secret is not used.
+            'google': {'clientId': client_id, 'enabled': bool(client_id)}}
 
 
 def save(changes):
@@ -107,6 +110,10 @@ def save(changes):
         elif k in TEXTS:
             if v and not __import__('re').fullmatch(r'[a-z0-9]{2,40}', v):
                 raise ServiceError('The Azure region is a short name such as eastasia or westeurope.')
+            clean[k] = v or None
+        elif k == 'googleClientId':
+            if v and not __import__('re').fullmatch(r'[A-Za-z0-9-]{10,260}\.apps\.googleusercontent\.com', v):
+                raise ServiceError('Enter a Google OAuth Web client ID ending in .apps.googleusercontent.com.')
             clean[k] = v or None
         else:
             raise ServiceError('Unknown setting.')

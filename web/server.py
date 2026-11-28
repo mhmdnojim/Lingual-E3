@@ -7,6 +7,7 @@ Accounts (accounts.py) and the library (library.py: books made from a text, a PD
     GET    /api/me                         {mode, user, disc}: who is logged in
     POST   /api/assistant-token             prepared tutor and short-lived ElevenLabs token (key stays server-side)
     POST   /api/signup  /api/login  /api/logout  /api/password
+    GET    /api/google/config   POST /api/google-login /api/google-link (Google Identity Services)
     GET    /api/books?scope=public|mine|local|all&q=…   lists of books
     GET    /api/books/<id>                 one book with its pages (to read it)
     POST   /api/books                      a new book {title, author, about, kind: text|pdf|images}
@@ -112,6 +113,7 @@ import io
 import json
 import os
 import re
+import secrets
 import socket
 import subprocess
 import sys
@@ -154,7 +156,7 @@ import words
 
 # Raise when the app needs new server features; web/js/main.js checks it (NEEDS_API) and asks
 # to restart the app if an older server is still running.
-API_VERSION = 44  # 44: prepare page layouts without OCRing sample pages; 43: edit and reprocess layouts
+API_VERSION = 45  # 45: securely connect and sign in with Google
 
 # The agent id is not a secret. The ElevenLabs API key, when needed for a private
 # agent, stays in server-config.json and is never sent to the browser.
@@ -687,7 +689,8 @@ class Handler(SimpleHTTPRequestHandler):
             return True
         if (path.startswith('/web/') or path in ('/', '/index.html', '/web')
                 or path in ('/api/version', '/api/me', '/api/login', '/api/signup', '/api/logout',
-                            '/api/password', '/api/redeem', '/api/admin/subscriptions',
+                            '/api/password', '/api/redeem', '/api/google/config', '/api/google-login',
+                            '/api/google-link', '/api/admin/subscriptions',
                             '/api/tr-languages')  # (only the names of the languages)
                 or API_PLANS.match(path)  # (the plans are seen, and paid for, without one)
                 or path.startswith('/api/admin/subscription-codes')
@@ -729,6 +732,8 @@ class Handler(SimpleHTTPRequestHandler):
         if not isinstance(body, dict):
             return self.denied('bad request', 400)
         secure = self.https()
+        google_flow = path in ('/api/google-login', '/api/google-link')
+        clear_google_nonce = ('lb_google_nonce=; Path=/api; Max-Age=0; HttpOnly; SameSite=Strict' + ('; Secure' if secure else ''))
         if path == '/api/logout':
             if STUDENT:  # (a student's computer: logged out on the website too, which frees this device)
                 student.log_out()
@@ -738,7 +743,27 @@ class Handler(SimpleHTTPRequestHandler):
                 devices.unlink(u['id'], self._device)
             return self.send_json({'ok': True}, headers=[('Set-Cookie', accounts.cookie('', secure, 0))])
         try:
-            if path == '/api/login' and MODE == 'lan':
+            if google_flow:
+                if MODE != 'public' or STUDENT:
+                    return self.send_json({'error': 'Google sign-in is available on the public website only.'}, 404)
+                nonce_cookie = SimpleCookie(self.headers.get('Cookie') or '').get('lb_google_nonce')
+                nonce = nonce_cookie.value if nonce_cookie else ''
+                if accounts.limited('google-credential', self.client_ip(), 60, 900):
+                    return self.send_json({'error': 'Too many Google sign-in requests. Wait a little, then try again.'},
+                                          429, headers=[('Set-Cookie', clear_google_nonce)])
+                profile = accounts.verify_google_credential(body.get('credential'),
+                    str(auth.config().get('googleClientId') or '').strip(), nonce)
+                if path == '/api/google-login':
+                    u, created = accounts.google_login(profile, self.client_ip(), body.get('adminSetupCode', ''))
+                    if created and subscriptions.required() and not u['admin']:
+                        plans.start_trial(u['id'])
+                else:
+                    current = self.user()
+                    if not current:
+                        return self.send_json({'error': 'Log in to your account before connecting Google.'}, 401,
+                                              headers=[('Set-Cookie', clear_google_nonce)])
+                    u, created = accounts.link_google(current['id'], profile), False
+            elif path == '/api/login' and MODE == 'lan':
                 if accounts.limited('pin', self.client_ip(), 8, 900):
                     return self.send_json({'error': 'Too many wrong tries. Wait 15 minutes.'}, 429)
                 if str(body.get('password', '')) != PIN:
@@ -771,19 +796,29 @@ class Handler(SimpleHTTPRequestHandler):
             else:
                 return self.denied()
         except accounts.AccountError as e:
-            return self.send_json({'error': str(e)}, 400)
+            headers = [('Set-Cookie', clear_google_nonce)] if google_flow else ()
+            return self.send_json({'error': str(e)}, 400, headers=headers)
+        if google_flow and path == '/api/google-link':
+            return self.send_json({'ok': True, 'user': accounts.public_user(u), 'linked': True},
+                                  headers=[('Set-Cookie', clear_google_nonce)])
         device = ''
-        if MODE == 'public' and path in ('/api/login', '/api/signup'):
+        if MODE == 'public' and path in ('/api/login', '/api/signup', '/api/google-login'):
             try:
                 device = devices.link(u, body.get('device'), self.headers.get('User-Agent', ''))
             except devices.DeviceError as e:
-                return self.send_json({'error': str(e), 'devices': True}, 403)
+                headers = [('Set-Cookie', clear_google_nonce)] if google_flow else ()
+                return self.send_json({'error': str(e), 'devices': True}, 403, headers=headers)
         elif MODE == 'public' and path == '/api/password':
             device = self._device  # (the same device, a new cookie)
             if device:
                 devices.link(u, device, self.headers.get('User-Agent', ''))
-        return self.send_json({'ok': True, 'user': accounts.public_user(u), 'device': device or None},
-                              headers=[('Set-Cookie', accounts.cookie(accounts.new_session(u, device), secure))])
+        headers = [('Set-Cookie', accounts.cookie(accounts.new_session(u, device), secure))]
+        if google_flow:
+            headers.append(('Set-Cookie', clear_google_nonce))
+        result = {'ok': True, 'user': accounts.public_user(u), 'device': device or None}
+        if google_flow:
+            result.update({'created': created, 'linked': path == '/api/google-link'})
+        return self.send_json(result, headers=headers)
 
     # ---------- The library ----------
 
@@ -1324,6 +1359,14 @@ class Handler(SimpleHTTPRequestHandler):
             return self.migration_api('GET', path)
         if path == '/api/version':
             return self.send_json({'api': API_VERSION})
+        if path == '/api/google/config':
+            client_id = str(auth.config().get('googleClientId') or '').strip()
+            if MODE != 'public' or STUDENT or not client_id:
+                return self.send_json({'enabled': False}, headers=[('Cache-Control', 'no-store')])
+            nonce = secrets.token_urlsafe(32)
+            cookie = f'lb_google_nonce={nonce}; Path=/api; Max-Age=300; HttpOnly; SameSite=Strict' + ('; Secure' if self.https() else '')
+            return self.send_json({'enabled': True, 'clientId': client_id, 'nonce': nonce},
+                                  headers=[('Set-Cookie', cookie), ('Cache-Control', 'no-store')])
         if path == '/api/assistant-token':
             return self.send_json({'error': 'Use POST to start a conversation.'}, 405, [('Allow', 'POST')])
         if path == '/api/me':
@@ -1605,7 +1648,7 @@ class Handler(SimpleHTTPRequestHandler):
         path = urlsplit(self.path).path
         if not self.same_origin():
             return self.denied()
-        if path in ('/api/login', '/api/logout', '/api/signup', '/api/password'):
+        if path in ('/api/login', '/api/logout', '/api/signup', '/api/password', '/api/google-login', '/api/google-link'):
             return self.post_account(path)
         if path == '/api/redeem':
             if not self.gate(path):

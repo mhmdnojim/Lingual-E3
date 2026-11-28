@@ -11,6 +11,7 @@ import { giveBooksPanel, giveBooksLoad } from './give-books.js';
 import { plansAdmin, plansDialog } from './plans.js';
 import { servicesAdmin } from './admin-services.js';
 import { statsAdmin } from './admin-stats.js';
+import { mountGoogleButton } from './google-auth.js';
 
 /** The library's dialogs (adding a book, settings, names, accounts …) stay open when the page outside them is clicked. */
 const openDialog = (title, body) => showDialog(title, body, null, { keep: true });
@@ -1890,14 +1891,28 @@ export class Library {
     const sub = this.me.subscription;
     const access = sub?.required ? (sub.admin ? 'Administrator access' : sub.active
       ? `Access until ${when(sub.expiresAt)}` : 'No active subscription') : '';
-    openDialog('Your account', el('div', { class: 'lib-form' },
+    const body = el('div', { class: 'lib-form' },
       el('p', {}, el('b', {}, u.name), el('br'), u.email, u.admin ? el('span', { class: 'badge' }, 'Admin') : null),
       access ? el('p', { class: 'hint' }, access) : null,
+      u.googleConnected ? el('p', { class: 'hint google-connected' }, 'Google is connected to this account.') : null,
       el('div', { class: 'form-buttons' },
         sub?.required && !u.admin ? el('button', { class: 'btn', type: 'button', onclick: () => { closeDialog(); this.plansDialog(); } }, 'Plans') : null,
         sub?.required && !u.admin ? el('button', { class: 'btn', type: 'button', onclick: () => { closeDialog(); this.redeemDialog(); } }, 'Redeem an access code') : null,
-        this.me.mode === 'public' ? el('button', { class: 'btn', type: 'button', onclick: () => this.passwordDialog() }, 'Change the password') : null,
-        el('button', { class: 'btn primary', type: 'button', onclick: () => this.logOut() }, 'Log out'))));
+        this.me.mode === 'public' ? el('button', { class: 'btn', type: 'button', onclick: () => this.passwordDialog() }, u.hasPassword === false ? 'Set a password' : 'Change the password') : null,
+        el('button', { class: 'btn primary', type: 'button', onclick: () => this.logOut() }, 'Log out')));
+    openDialog('Your account', body);
+    if (this.me.mode === 'public' && !u.googleConnected) {
+      const section = el('div', { class: 'google-auth-section', hidden: true },
+        el('p', { class: 'google-auth-divider' }, 'Connect a Google account'),
+        el('div', { class: 'google-auth-button' }),
+        el('p', { class: 'form-msg', role: 'alert' }));
+      body.append(section);
+      const host = section.querySelector('.google-auth-button');
+      const status = section.querySelector('.form-msg');
+      mountGoogleButton(host, { endpoint: '/api/google-link', onError: (error) => { status.textContent = error.message; },
+        onSuccess: async () => { closeDialog(); await this.refreshMe(); toast('Google is connected to your account.'); } })
+        .then((enabled) => { section.hidden = !enabled && !host.dataset.error; });
+    }
   }
 
   async logOut() {
@@ -1918,6 +1933,10 @@ export class Library {
     const setupRow = el('label', { class: 'field' }, el('span', {}, 'Owner setup code (site owner only; leave blank otherwise)'), setupCode);
     const terms = el('p', { class: 'hint', html: 'By creating an account you agree to the <a href="/web/terms.html" target="_blank">terms and privacy rules</a>.' });
     const msg = el('p', { class: 'form-msg', role: 'alert' });
+    const googleStatus = el('p', { class: 'form-msg', role: 'alert' });
+    const googleHost = el('div', { class: 'google-auth-button' });
+    const googleSection = el('div', { class: 'google-auth-section', hidden: true },
+      el('p', { class: 'google-auth-divider' }, 'Or continue with Google'), googleHost, googleStatus);
     const go = el('button', { class: 'btn primary', type: 'submit' });
     const seg = el('div', { class: 'seg', role: 'radiogroup' },
       el('button', { type: 'button', role: 'radio', dataset: { t: 'login' }, onclick: () => set('login') }, 'Log in'),
@@ -1933,7 +1952,7 @@ export class Library {
     const form = el('form', { class: 'lib-form' },
       why ? el('p', {}, why) : null, seg,
       el('label', { class: 'field' }, el('span', {}, 'E-mail'), email), nameRow, setupRow,
-      el('label', { class: 'field' }, el('span', {}, 'Password (at least 8 characters)'), pw), trap, terms, msg,
+      el('label', { class: 'field' }, el('span', {}, 'Password (at least 8 characters)'), pw), trap, terms, msg, googleSection,
       el('div', { class: 'form-buttons' }, el('button', { class: 'btn', type: 'button', onclick: closeDialog }, 'Cancel'), go));
     set(tab);
     form.addEventListener('submit', async (e) => {
@@ -1953,6 +1972,15 @@ export class Library {
       toast(tab === 'signup' ? `Welcome, ${this.user.name}!` : 'Logged in.');
     });
     openDialog(tab === 'signup' ? 'Create an account' : 'Log in', form);
+    if (this.me.mode === 'public' && !this.me.student) {
+      mountGoogleButton(googleHost, { setupCode: () => setupCode.value,
+        onError: (error) => { googleStatus.textContent = error.message; },
+        onSuccess: async (result) => {
+          closeDialog();
+          await this.refreshMe();
+          toast(result.created ? `Welcome, ${this.user.name}!` : 'Logged in with Google.');
+        } }).then((enabled) => { googleSection.hidden = !enabled && !googleHost.dataset.error; });
+    }
     email.focus();
   }
 
@@ -1988,11 +2016,12 @@ export class Library {
   }
 
   passwordDialog() {
-    const old = el('input', { type: 'password', class: 'input', autocomplete: 'current-password', required: true });
+    const needsOldPassword = this.user?.hasPassword !== false;
+    const old = el('input', { type: 'password', class: 'input', autocomplete: 'current-password', required: needsOldPassword });
     const nw = el('input', { type: 'password', class: 'input', autocomplete: 'new-password', required: true, minlength: 8 });
     const msg = el('p', { class: 'form-msg', role: 'alert' });
     const form = el('form', { class: 'lib-form' },
-      el('label', { class: 'field' }, el('span', {}, 'Current password'), old),
+      needsOldPassword ? el('label', { class: 'field' }, el('span', {}, 'Current password'), old) : null,
       el('label', { class: 'field' }, el('span', {}, 'New password (at least 8 characters)'), nw),
       el('p', { class: 'hint' }, 'Other devices where you are logged in are logged out.'), msg,
       el('div', { class: 'form-buttons' }, el('button', { class: 'btn', type: 'button', onclick: closeDialog }, 'Cancel'),

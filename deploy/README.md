@@ -172,6 +172,18 @@ existing server, update those values in `/etc/lingua-books.env`, restart the ser
 the configured e-mail with the owner setup code. To turn subscriptions off, set
 `LB_REQUIRE_SUBSCRIPTION=0` and restart the service.
 
+### Google sign-in
+
+Google sign-in is optional and is enabled after the owner configures it in **Admin → API → Google
+sign-in**. In Google Cloud Console, create an OAuth client of type **Web application**, add the
+website origin (for example, `https://dolinguabooks.com`) under **Authorized JavaScript origins**,
+then paste its client ID into that setting. No Google client secret is needed. The server verifies
+Google ID tokens and keeps Google's stable account ID for linking (it is not exposed to the
+browser); it does not trust email text sent by the browser. New sign-ups use the same trial, device, and owner setup rules as
+password sign-ups. Existing Gmail or Workspace accounts can be matched to their verified Google
+identity; other existing e-mail accounts must sign in with their password and connect Google from
+the account menu first. The feature is only enabled on the public website.
+
 Only serve books you are allowed to distribute. Add them to the server's library and share them
 there; do not expose the original `.shared` or `web/data` folders as static files. The server
 checks access for each book API and page image request. A user who has already received or saved
