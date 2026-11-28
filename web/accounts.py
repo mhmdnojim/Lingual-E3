@@ -9,6 +9,7 @@ tab of the Admin page, admin_users.py); only the owner makes admins and changes 
 """
 import hashlib
 import hmac
+import logging
 import os
 import re
 import secrets
@@ -98,8 +99,12 @@ def verify_google_credential(credential, client_id, nonce):
     except ImportError:
         raise AccountError('Google sign-in needs the server package google-auth. Install the server requirements first.')
     try:
-        claims = id_token.verify_oauth2_token(credential, Request(timeout=10), audience=client_id)
-    except Exception:
+        # google-auth's Request constructor accepts a Session; timeout belongs to its
+        # request call. Passing timeout here raises before any token can be verified.
+        claims = id_token.verify_oauth2_token(credential, Request(), audience=client_id, clock_skew_in_seconds=30)
+    except Exception as error:
+        # Log the exception class and its reason (e.g. "wrong audience", "Token used too early", no network); never the ID token.
+        logging.getLogger(__name__).warning('Google ID-token verification failed (%s): %s', type(error).__name__, str(error)[:300])
         raise AccountError('Google could not verify this sign-in. Please try again.')
     issuer = claims.get('iss')
     if issuer not in ('accounts.google.com', 'https://accounts.google.com'):
